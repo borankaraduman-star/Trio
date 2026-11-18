@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { deviceMissing, type DeviceInfoLike } from './lib/devices'
+import { repairDeviceChoice, type DeviceInfoLike } from './lib/devices'
 import { settingsStore } from './settings'
 
 async function enumerate(): Promise<DeviceInfoLike[]> {
@@ -57,24 +57,40 @@ export function useDevices(): {
 }
 
 /**
- * On `devicechange`, a chosen device that has disappeared falls back to the
- * default one (the setting is reset, which the voice engine follows live).
+ * Keeps the stored device choices pointing at real devices: on load, on
+ * `devicechange`, and whenever `recheck` changes (the Session passes the voice
+ * status: joining is when the browser starts showing names and ids). A device
+ * whose id changed is found again by its name; one that is gone falls back to
+ * the default (the setting is updated, which the voice engine follows live).
  */
-export function useDeviceFallback(): void {
+export function useDeviceFallback(recheck: unknown = null): void {
   useEffect(() => {
-    const media = navigator.mediaDevices
-    if (!media?.addEventListener) return
+    let cancelled = false
     const check = async () => {
       const devices = await enumerate()
+      if (cancelled) return
       const settings = settingsStore.getSnapshot()
       const patch: Parameters<typeof settingsStore.update>[0] = {}
-      if (deviceMissing(devices, 'audioinput', settings.micDeviceId)) patch.micDeviceId = ''
-      if (deviceMissing(devices, 'videoinput', settings.cameraDeviceId)) patch.cameraDeviceId = ''
-      if (deviceMissing(devices, 'audiooutput', settings.outputDeviceId)) patch.outputDeviceId = ''
+      const mic = repairDeviceChoice(devices, 'audioinput', settings.micDeviceId, settings.micDeviceLabel)
+      if (mic) Object.assign(patch, { micDeviceId: mic.id, micDeviceLabel: mic.label })
+      const camera = repairDeviceChoice(devices, 'videoinput', settings.cameraDeviceId, settings.cameraDeviceLabel)
+      if (camera) Object.assign(patch, { cameraDeviceId: camera.id, cameraDeviceLabel: camera.label })
+      const output = repairDeviceChoice(devices, 'audiooutput', settings.outputDeviceId, settings.outputDeviceLabel)
+      if (output) Object.assign(patch, { outputDeviceId: output.id, outputDeviceLabel: output.label })
       if (Object.keys(patch).length > 0) settingsStore.update(patch)
+    }
+    void check()
+    const media = navigator.mediaDevices
+    if (!media?.addEventListener) {
+      return () => {
+        cancelled = true
+      }
     }
     const onChange = () => void check()
     media.addEventListener('devicechange', onChange)
-    return () => media.removeEventListener('devicechange', onChange)
-  }, [])
+    return () => {
+      cancelled = true
+      media.removeEventListener('devicechange', onChange)
+    }
+  }, [recheck])
 }

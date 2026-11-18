@@ -74,6 +74,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       }),
   )
   const voice = useSyncExternalStore(engine.subscribe, engine.getSnapshot)
+  useDeviceFallback(voice.status)
 
   // --- v2: settings, push-to-talk, devices, attachments ------------------------
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot)
@@ -81,7 +82,6 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
   const setPttOpen = useCallback((open: boolean) => engine.setPttOpen(open), [engine])
   usePtt(settings.inputMode, settings.pttKey, setPttOpen)
-  useDeviceFallback()
   const applied = useRef({
     mic: settings.micDeviceId,
     camera: settings.cameraDeviceId,

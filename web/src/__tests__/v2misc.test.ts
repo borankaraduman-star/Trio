@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { gateOpen, micConstraints } from '../audio/pipeline'
 import { buildTiles, gridColumns } from '../components/CallStage'
-import { deviceMissing, deviceOptions, labelsHidden } from '../lib/devices'
+import { deviceOptions, labelsHidden, repairDeviceChoice } from '../lib/devices'
 import { createInitialState, reducer, type AppState } from '../store'
 import type { Message, ServerEvent } from '../types'
 
@@ -53,13 +53,29 @@ describe('devices', () => {
     expect(deviceOptions(hidden, 'audioinput')).toEqual([{ id: '', label: 'Sistem varsayılanı' }])
     expect(labelsHidden(hidden, 'audioinput')).toBe(true)
     expect(labelsHidden(devices, 'audioinput')).toBe(false)
-    expect(deviceMissing(hidden, 'audioinput', 'a1')).toBe(false)
+    expect(repairDeviceChoice(hidden, 'audioinput', 'a1', 'USB Mikrofon')).toBeNull()
   })
 
-  it('a chosen device that disappeared is missing; the default never is', () => {
-    expect(deviceMissing(devices, 'audioinput', 'gone')).toBe(true)
-    expect(deviceMissing(devices, 'audioinput', 'a1')).toBe(false)
-    expect(deviceMissing(devices, 'audioinput', '')).toBe(false)
+  it('a chosen device that disappeared falls back to the default; the default never changes', () => {
+    expect(repairDeviceChoice(devices, 'audioinput', 'gone', '')).toEqual({ id: '', label: '' })
+    expect(repairDeviceChoice(devices, 'audioinput', 'gone', 'Başka mikrofon')).toEqual({ id: '', label: '' })
+    expect(repairDeviceChoice(devices, 'audioinput', 'a1', 'USB Mikrofon')).toBeNull()
+    expect(repairDeviceChoice(devices, 'audioinput', '', '')).toBeNull()
+  })
+
+  it('a chosen device whose id changed (a new page load) is found again by its name', () => {
+    expect(repairDeviceChoice(devices, 'audioinput', 'old-id', 'USB Mikrofon')).toEqual({ id: 'a1', label: 'USB Mikrofon' })
+    // Not the pseudo-device that carries the same name in its label.
+    expect(repairDeviceChoice(devices, 'audioinput', 'old-id', 'Varsayılan - USB')).toEqual({ id: '', label: '' })
+    // Two devices with the same name: no guess.
+    const twins = [
+      { deviceId: 'x1', kind: 'videoinput', label: 'Kamera' },
+      { deviceId: 'x2', kind: 'videoinput', label: 'Kamera' },
+    ]
+    expect(repairDeviceChoice(twins, 'videoinput', 'old', 'Kamera')).toEqual({ id: '', label: '' })
+    // Ids visible but names not yet: nothing can be concluded about the name.
+    const unnamed = [{ deviceId: 'n1', kind: 'audioinput', label: '' }]
+    expect(repairDeviceChoice(unnamed, 'audioinput', 'old', 'USB Mikrofon')).toBeNull()
   })
 })
 

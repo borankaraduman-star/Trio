@@ -36,11 +36,21 @@ describe('validateSettings', () => {
       micDeviceId: 'mic-1',
       outputDeviceId: 'out-1',
       cameraDeviceId: 'cam-1',
+      micDeviceLabel: 'USB Mikrofon',
+      outputDeviceLabel: 'Kulaklık',
+      cameraDeviceLabel: 'Kamera',
       noiseSuppression: false,
       inputMode: 'ptt',
       pttKey: 'KeyV',
     }
     expect(validateSettings(full)).toEqual(full)
+  })
+
+  it('a device name is kept only beside its device id', () => {
+    const result = validateSettings({ micDeviceId: '', micDeviceLabel: 'USB Mikrofon', cameraDeviceId: 'c', cameraDeviceLabel: 7 })
+    expect(result.micDeviceLabel).toBe('')
+    expect(result.cameraDeviceLabel).toBe('')
+    expect(validateSettings({ outputDeviceId: 'o', outputDeviceLabel: 'Kulaklık' }).outputDeviceLabel).toBe('Kulaklık')
   })
 
   it('repairs bad fields one by one and keeps the good ones', () => {

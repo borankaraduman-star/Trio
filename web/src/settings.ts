@@ -13,6 +13,15 @@ export interface Settings {
   micDeviceId: string
   outputDeviceId: string
   cameraDeviceId: string
+  /**
+   * The chosen devices' names when they were chosen. A device id is not
+   * stable everywhere (Chrome issues new ids on every load unless the
+   * permission is a lasting one, e.g. after "allow this time"); the name is
+   * how the choice is found again (`repairDeviceChoice`).
+   */
+  micDeviceLabel: string
+  outputDeviceLabel: string
+  cameraDeviceLabel: string
   noiseSuppression: boolean
   inputMode: InputMode
   /** A `KeyboardEvent.code`, or one of the mouse buttons (desktop app). */
@@ -26,6 +35,9 @@ export const DEFAULT_SETTINGS: Settings = {
   micDeviceId: '',
   outputDeviceId: '',
   cameraDeviceId: '',
+  micDeviceLabel: '',
+  outputDeviceLabel: '',
+  cameraDeviceLabel: '',
   noiseSuppression: true,
   inputMode: 'activity',
   pttKey: 'Backquote',
@@ -52,6 +64,10 @@ export function validateSettings(raw: unknown): Settings {
   result.micDeviceId = deviceId(record.micDeviceId) ?? DEFAULT_SETTINGS.micDeviceId
   result.outputDeviceId = deviceId(record.outputDeviceId) ?? DEFAULT_SETTINGS.outputDeviceId
   result.cameraDeviceId = deviceId(record.cameraDeviceId) ?? DEFAULT_SETTINGS.cameraDeviceId
+  // A label belongs to its id: with no id there is nothing to find again.
+  result.micDeviceLabel = (result.micDeviceId && deviceId(record.micDeviceLabel)) || ''
+  result.outputDeviceLabel = (result.outputDeviceId && deviceId(record.outputDeviceLabel)) || ''
+  result.cameraDeviceLabel = (result.cameraDeviceId && deviceId(record.cameraDeviceLabel)) || ''
 
   if (typeof record.noiseSuppression === 'boolean') result.noiseSuppression = record.noiseSuppression
 

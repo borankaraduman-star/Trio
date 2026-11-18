@@ -50,17 +50,33 @@ export function labelsHidden(devices: readonly DeviceInfoLike[], kind: DeviceKin
   return ofKind.length > 0 && ofKind.every((device) => device.label.trim() === '')
 }
 
-/**
- * True only when we can SEE that a chosen device is gone. With no visible ids
- * (no permission) nothing can be concluded, and a stored choice is kept.
- */
-export function deviceMissing(devices: readonly DeviceInfoLike[], kind: DeviceKind, id: string): boolean {
-  if (!id) return false
-  const ofKind = devices.filter((device) => device.kind === kind && device.deviceId !== '')
-  if (ofKind.length === 0) return false
-  return !ofKind.some((device) => device.deviceId === id)
-}
-
 export function sinkIdSupported(): boolean {
   return typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype
 }
+
+/**
+ * What a stored device choice should become, given the devices visible now:
+ * the same id when it is still there; the device with the stored NAME when
+ * the id is not (ids that change between page loads); '' when the device can
+ * be seen to be gone; unchanged when nothing can be concluded (no ids or names
+ * visible yet). Returns null when the choice stands as it is.
+ */
+export function repairDeviceChoice(
+  devices: readonly DeviceInfoLike[],
+  kind: DeviceKind,
+  id: string,
+  label: string,
+): { id: string; label: string } | null {
+  if (!id) return null
+  const ofKind = devices.filter((device) => device.kind === kind && device.deviceId !== '')
+  if (ofKind.length === 0 || ofKind.some((device) => device.deviceId === id)) return null
+  if (label) {
+    if (ofKind.every((device) => device.label.trim() === '')) return null
+    const named = new Set(
+      ofKind.filter((device) => device.label === label && !PSEUDO_IDS.has(device.deviceId)).map((device) => device.deviceId),
+    )
+    if (named.size === 1) return { id: [...named][0], label }
+  }
+  return { id: '', label: '' }
+}
+

@@ -26,7 +26,7 @@ function DeviceSelect({
   kind: DeviceKind
   value: string
   devices: ReturnType<typeof useDevices>['devices']
-  onChange: (deviceId: string) => void
+  onChange: (deviceId: string, label: string) => void
   testId: string
 }) {
   const options = deviceOptions(devices, kind)
@@ -35,7 +35,12 @@ function DeviceSelect({
   return (
     <div className="settings-field">
       <label htmlFor={id}>{label}</label>
-      <select id={id} data-testid={testId} value={known ? value : ''} onChange={(event) => onChange(event.target.value)}>
+      <select id={id} data-testid={testId} value={known ? value : ''} onChange={(event) => {
+          const id = event.target.value
+          // The browser's own name, not a "Mikrofon 2" placeholder: it is what finds the device again.
+          const device = devices.find((d) => d.kind === kind && d.deviceId === id)
+          onChange(id, device?.label.trim() ?? '')
+        }}>
         {options.map((option) => (
           <option key={option.id || 'default'} value={option.id}>
             {option.label}
@@ -201,7 +206,7 @@ export function SettingsDialog({
             kind="audioinput"
             value={settings.micDeviceId}
             devices={devices}
-            onChange={(micDeviceId) => onChange({ micDeviceId })}
+            onChange={(micDeviceId, micDeviceLabel) => onChange({ micDeviceId, micDeviceLabel })}
           />
           {outputSupported ? (
             <DeviceSelect
@@ -211,7 +216,7 @@ export function SettingsDialog({
               kind="audiooutput"
               value={settings.outputDeviceId}
               devices={devices}
-              onChange={(outputDeviceId) => onChange({ outputDeviceId })}
+              onChange={(outputDeviceId, outputDeviceLabel) => onChange({ outputDeviceId, outputDeviceLabel })}
             />
           ) : (
             <p className="settings-hint">Bu tarayıcı ses çıkış cihazı seçmeyi desteklemiyor.</p>
@@ -223,7 +228,7 @@ export function SettingsDialog({
             kind="videoinput"
             value={settings.cameraDeviceId}
             devices={devices}
-            onChange={(cameraDeviceId) => onChange({ cameraDeviceId })}
+            onChange={(cameraDeviceId, cameraDeviceLabel) => onChange({ cameraDeviceId, cameraDeviceLabel })}
           />
         </section>
 
