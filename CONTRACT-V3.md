@@ -209,3 +209,27 @@ Hashed assets under `/assets/` keep their own headers.
   writable by the server. Started as a non-root user already, it changes
   nothing. If the volume cannot be made writable for `trio`, it logs that and
   runs as root rather than not at all.
+
+## 10. `message.send` is idempotent by nonce
+
+A client that loses the acknowledgement of a send (the socket dropped after
+the server stored the message, before `message.new` came back) may send the
+same frame again with the same `nonce`.
+
+- The server remembers `(user id, nonce)` → the stored message for **10
+  minutes** (in process memory, at most 500 nonces per user, oldest first;
+  a server restart forgets them).
+- A `message.send` whose nonce this user already used within that time
+  stores NOTHING. The server answers with the ORIGINAL `message.new`
+  (`message` exactly as first sent, plus `nonce`) to that user's
+  connections only; other users receive nothing.
+- The repeat is answered before its attachments are checked: the attachments
+  stay on the first message and the repeat does not get `INVALID_ATTACHMENT`.
+  Its `content`/`attachment_ids` are not compared with the first send — the
+  nonce is the identity.
+- A send that was refused with an `error` frame is not remembered; the same
+  nonce may be used again.
+- Without a nonce every send is a new message (unchanged).
+
+**client:** keep the nonce of a pending message across reconnects and resend
+it with the same nonce.

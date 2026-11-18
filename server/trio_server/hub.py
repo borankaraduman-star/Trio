@@ -20,6 +20,8 @@ from typing import Any
 
 from starlette.websockets import WebSocket
 
+from trio_server.nonces import NonceCache
+
 # Frames waiting for one slow client. Past it the connection is dropped rather
 # than letting one stalled tab hold memory or delay everybody else.
 SEND_QUEUE_SIZE = 512
@@ -108,6 +110,8 @@ class Hub:
         self.conns: dict[int, set[Connection]] = {}
         self.voice: dict[int, dict[int, VoiceMember]] = {}  # channel id -> user id -> member
         self.voice_of: dict[int, int] = {}  # user id -> channel id
+        # (user id, nonce) -> the message a send stored (CONTRACT-V3 §10).
+        self.nonces = NonceCache()
 
     def load(self, users: list[dict[str, Any]], channels: list[dict[str, Any]]) -> None:
         self.users = {u["id"]: u for u in users}

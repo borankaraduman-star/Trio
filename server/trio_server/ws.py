@@ -141,6 +141,15 @@ class Session:
         if nonce is not None and not (isinstance(nonce, str) and len(nonce) <= NONCE_MAX):
             raise FrameError("BAD_REQUEST", "'nonce' must be a short string")
         async with self.db.write_lock:
+            if nonce is not None:
+                stored = self.hub.nonces.get(self.user["id"], nonce, self.now())
+                if stored is not None:
+                    # A retry of a send that was stored (its acknowledgement was
+                    # lost): store nothing, answer the sender's connections again.
+                    self.hub.send_to_user(
+                        self.user["id"], {"type": "message.new", "message": stored, "nonce": nonce}
+                    )
+                    return
             try:
                 message = await self.db.create_message(
                     channel_id,
@@ -160,6 +169,7 @@ class Session:
             event = {"type": "message.new", "message": message}
             self.hub.broadcast(event, exclude_user=self.user["id"])
             if nonce is not None:
+                self.hub.nonces.put(self.user["id"], nonce, message, self.now())
                 event = {**event, "nonce": nonce}
             self.hub.send_to_user(self.user["id"], event)
 

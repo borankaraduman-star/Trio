@@ -279,7 +279,7 @@ def send_messages(trio, user, count: int, channel_id: int = 1) -> None:
                     "type": "message.send",
                     "channel_id": channel_id,
                     "content": f"m{i}",
-                    "nonce": str(i),
+                    "nonce": f"{channel_id}-{i}",
                 }
             )
             assert sock.receive_json()["type"] == "message.new"
