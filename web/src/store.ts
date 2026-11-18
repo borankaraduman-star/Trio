@@ -193,10 +193,17 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
 
       // After a reconnect anything may have been missed. The open channel is
       // refetched by the caller; every other cache is dropped so that opening
-      // the channel loads it again.
+      // the channel loads it again, except what only this tab has: messages not
+      // sent yet (pending or failed) stay, and a load merges them back.
       const messages: Record<number, ChannelMessages> = {}
       if (activeChannelId !== null && state.messages[activeChannelId]) {
         messages[activeChannelId] = state.messages[activeChannelId]
+      }
+      for (const [key, channel] of Object.entries(state.messages)) {
+        const unsent = channel.items.filter((item) => item.status !== 'sent')
+        if (Number(key) !== activeChannelId && unsent.length > 0) {
+          messages[Number(key)] = { ...EMPTY_CHANNEL, items: unsent }
+        }
       }
       return {
         ...state,

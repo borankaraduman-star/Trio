@@ -1,4 +1,4 @@
-/** The store across connection drops: lost echoes (finding 2). */
+/** The store across connection drops: lost echoes (finding 2), unsent rows in other channels (3). */
 import { describe, expect, it } from 'vitest'
 import { claimEchoes, isEchoOf, RECONCILE_WINDOW_MS } from '../lib/reconcile'
 import { channelMessages, createInitialState, reducer, type Action, type AppState, type UiMessage } from '../store'
@@ -196,5 +196,30 @@ describe('"Tekrar dene" with the same nonce', () => {
     state = drop(reducer(state, { type: 'message.optimistic', message: local('n1', 'selam') }))
     state = reducer(state, { type: 'message.retry', channelId: 10, nonce: 'n1', at: T0 + 5 })
     expect(channelMessages(state, 10).items[1]).toMatchObject({ nonce: 'n1', key: 'n1', status: 'pending', sentAt: T0 + 5 })
+  })
+})
+
+describe('unsent rows in other channels (finding 3)', () => {
+  it('survive the reconnect, attachments included, and merge into the next load', () => {
+    let state = readyWith(11, [1, 2])
+    const row = local('n1', 'liste', { channel_id: 11, attachments: [FILE] })
+    state = reducer(state, { type: 'message.optimistic', message: row })
+    state = reducer(state, { type: 'channel.select', channelId: 10 })
+    state = drop(state)
+    const kept = channelMessages(state, 11)
+    expect(kept.loaded).toBe(false)
+    expect(kept.items).toEqual([{ ...row, status: 'failed' }])
+
+    state = reducer(state, { type: 'channel.select', channelId: 11 })
+    state = reducer(state, page(11, [stored(1, { channel_id: 11 }), stored(2, { channel_id: 11 }), stored(3, { channel_id: 11 })]))
+    expect(rows(state, 11)).toEqual(['1:sent:m1', '2:sent:m2', '3:sent:m3', '-1:failed:liste'])
+    expect(channelMessages(state, 11).items[3].attachments).toEqual([FILE])
+  })
+
+  it('a cache with only confirmed rows is still dropped', () => {
+    let state = readyWith(11, [1])
+    state = reducer(state, { type: 'channel.select', channelId: 10 })
+    state = drop(state)
+    expect(state.messages[11]).toBeUndefined()
   })
 })
