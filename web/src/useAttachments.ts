@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
-import { ApiError } from './api'
 import { fileProblem, MAX_ATTACHMENTS, uploadErrorMessage } from './lib/attachments'
 import {
+  hasFailed,
   isUploading,
   pendingReducer,
   readyAttachments,
@@ -9,7 +9,8 @@ import {
   type PendingAttachment,
 } from './lib/pending'
 import type { Attachment } from './types'
-import { uploadFile, type UploadHandle } from './uploads'
+import { UploadQueue } from './lib/uploadQueue'
+import { uploadFile } from './uploads'
 
 let counter = 0
 function localId(): string {
@@ -25,6 +26,8 @@ export interface AttachmentsApi {
   /** The uploaded attachments of a channel, removed from the pending list. */
   take: (channelId: number) => Attachment[]
   uploading: (channelId: number | null) => boolean
+  /** A chip of this channel failed; the message waits until it is removed. */
+  failed: (channelId: number | null) => boolean
   /** A Turkish sentence about files that were not added, or null. */
   notice: string | null
   dismissNotice: () => void
@@ -32,23 +35,39 @@ export interface AttachmentsApi {
   files: ReadonlyMap<string, File>
 }
 
-/** Pending attachments per channel, uploaded as soon as they are added. */
+/**
+ * Pending attachments per channel, uploaded as soon as they are added — one
+ * at a time, in the order they were added (CONTRACT-V3 §4).
+ */
 export function useAttachments(token: string, onUnauthorized: () => void): AttachmentsApi {
   const [state, dispatch] = useReducer(pendingReducer, {})
   const stateRef = useRef(state)
   stateRef.current = state
-  const uploads = useRef(new Map<string, UploadHandle>())
   const fileMap = useRef(new Map<string, File>())
   const [notice, setNotice] = useState<string | null>(null)
+  const unauthorized = useRef(onUnauthorized)
+  unauthorized.current = onUnauthorized
 
-  // Leaving the session cancels whatever is still uploading.
-  useEffect(() => {
-    const running = uploads.current
-    return () => {
-      for (const handle of running.values()) handle.abort()
-      running.clear()
-    }
-  }, [])
+  const [queue] = useState(
+    () =>
+      new UploadQueue<File>((file, name, onProgress) => uploadFile(token, file, name, onProgress), {
+        onStart: (id) => dispatch({ type: 'start', localId: id }),
+        onProgress: (id, progress) => dispatch({ type: 'progress', localId: id, progress }),
+        onDone: (id, attachment) => dispatch({ type: 'done', localId: id, attachment }),
+        onWaiting: (id) => dispatch({ type: 'waiting', localId: id }),
+        onError: (id, code, status) => {
+          if (code === 'ABORTED') return
+          if (code === 'UNAUTHORIZED' || status === 401) {
+            unauthorized.current()
+            return
+          }
+          dispatch({ type: 'error', localId: id, error: uploadErrorMessage(code) })
+        },
+      }),
+  )
+
+  // Leaving the session cancels whatever is still uploading or waiting.
+  useEffect(() => () => queue.stop(), [queue])
 
   const add = useCallback(
     (channelId: number, files: readonly File[]) => {
@@ -76,7 +95,7 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
           name: file.name,
           size: file.size,
           type: file.type,
-          status: 'uploading',
+          status: 'queued',
           progress: 0,
           attachment: null,
           error: null,
@@ -88,39 +107,19 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
       if (skipped > 0) problems.push(`Bir mesaja en fazla ${MAX_ATTACHMENTS} dosya eklenebilir.`)
       setNotice(problems.length > 0 ? problems.join(' ') : null)
       dispatch({ type: 'add', items })
-
-      for (const { item, file } of starts) {
-        const handle = uploadFile(token, file, file.name, (progress) =>
-          dispatch({ type: 'progress', localId: item.localId, progress }),
-        )
-        uploads.current.set(item.localId, handle)
-        handle.promise.then(
-          (attachment) => {
-            uploads.current.delete(item.localId)
-            dispatch({ type: 'done', localId: item.localId, attachment })
-          },
-          (error: unknown) => {
-            uploads.current.delete(item.localId)
-            const code = error instanceof ApiError ? error.code : 'UNKNOWN'
-            if (code === 'ABORTED') return
-            if (code === 'UNAUTHORIZED' || (error instanceof ApiError && error.status === 401)) {
-              onUnauthorized()
-              return
-            }
-            dispatch({ type: 'error', localId: item.localId, error: uploadErrorMessage(code) })
-          },
-        )
-      }
+      for (const { item, file } of starts) queue.add(item.localId, file, file.name)
     },
-    [token, onUnauthorized],
+    [queue],
   )
 
-  const remove = useCallback((id: string) => {
-    uploads.current.get(id)?.abort()
-    uploads.current.delete(id)
-    fileMap.current.delete(id)
-    dispatch({ type: 'remove', localId: id })
-  }, [])
+  const remove = useCallback(
+    (id: string) => {
+      queue.cancel(id)
+      fileMap.current.delete(id)
+      dispatch({ type: 'remove', localId: id })
+    },
+    [queue],
+  )
 
   const take = useCallback((channelId: number) => {
     const list = stateRef.current[channelId] ?? []
@@ -138,7 +137,11 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
     (channelId: number | null) => (channelId === null ? false : isUploading(state[channelId] ?? [])),
     [state],
   )
+  const failed = useCallback(
+    (channelId: number | null) => (channelId === null ? false : hasFailed(state[channelId] ?? [])),
+    [state],
+  )
 
   const dismissNotice = useCallback(() => setNotice(null), [])
-  return { pending, add, remove, take, uploading, notice, dismissNotice, files: fileMap.current }
+  return { pending, add, remove, take, uploading, failed, notice, dismissNotice, files: fileMap.current }
 }

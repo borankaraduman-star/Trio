@@ -54,6 +54,13 @@ export function uploadErrorMessage(code: string): string {
       return `Dosya çok büyük. En fazla ${formatSize(MAX_UPLOAD_BYTES)} yüklenebilir.`
     case 'INVALID_UPLOAD':
       return 'Dosya yüklenemedi (boş ya da geçersiz).'
+    case 'QUOTA_EXCEEDED':
+      // A lifetime figure: files cannot be deleted, so only the admin can make room.
+      return 'Yükleme kotan doldu; bu dosya sığmıyor. Kota yüklediğin tüm dosyaların toplamıdır, sunucuyu yöneten kişi artırabilir.'
+    case 'UPLOAD_IN_PROGRESS':
+      return 'Başka bir sekmede ya da cihazda yükleme sürüyor. O bitince bu dosyayı yeniden ekle.'
+    case 'STORAGE_FULL':
+      return 'Sunucunun diski dolu, dosya kaydedilemedi. Sunucuyu yöneten kişiye haber ver.'
     case 'UNAUTHORIZED':
       return 'Oturum geçersiz. Yeniden giriş yap.'
     case 'NETWORK':
