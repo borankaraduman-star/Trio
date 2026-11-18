@@ -5,7 +5,7 @@
  * Everything another process needs to find the server is kept in
  * `.state/server.json`: its port, its pid, and the environment it runs with.
  */
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -30,6 +30,8 @@ export interface ServerState {
   dataDir: string
   dbPath: string
   logFile: string
+  /** Extra environment this server was started with (kept across a restart). */
+  env?: Record<string, string>
 }
 
 /** The directory whose `trio_server` package is run. `TRIO_E2E_SERVER_DIR` overrides it. */
@@ -37,9 +39,9 @@ export function serverDir(): string {
   return path.resolve(process.env.TRIO_E2E_SERVER_DIR ?? path.join(ROOT, 'server'))
 }
 
-/** The uvicorn of the server's virtualenv (always `server/.venv`). */
-function uvicorn(): string {
-  return path.join(ROOT, 'server', '.venv', 'bin', 'uvicorn')
+/** The python of the server's virtualenv (always `server/.venv`). */
+export function python(): string {
+  return path.join(ROOT, 'server', '.venv', 'bin', 'python')
 }
 
 export function readState(): ServerState {
@@ -97,7 +99,9 @@ async function healthy(port: number): Promise<boolean> {
  * Start a server. `dataDir` reuses an existing database (a restart);
  * without it a fresh, empty one is created.
  */
-export async function startServer(options: { port?: number; dataDir?: string } = {}): Promise<ServerState> {
+export async function startServer(
+  options: { port?: number; dataDir?: string; env?: Record<string, string> } = {},
+): Promise<ServerState> {
   const port = options.port ?? (await freePort())
   const dataDir = options.dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'trio-e2e-'))
   const dbPath = path.join(dataDir, 'trio.db')
@@ -116,16 +120,19 @@ export async function startServer(options: { port?: number; dataDir?: string } =
     // and a STUN server out on the internet would only slow ICE down.
     TRIO_STUN_URLS: '',
     PYTHONDONTWRITEBYTECODE: '1',
+    ...options.env,
   }
+  // The server's own entry point: it holds the uvicorn options production
+  // runs with (one worker, the websocket size cap, the 20 s ping) — CONTRACT-V3 §1, §6.
   const child = spawn(
-    uvicorn(),
-    ['trio_server.main:app', '--host', '127.0.0.1', '--port', String(port), '--log-level', 'warning'],
+    python(),
+    ['-m', 'trio_server', '--host', '127.0.0.1', '--port', String(port), '--log-level', 'warning'],
     { cwd: serverDir(), env, stdio: ['ignore', log, log], detached: true },
   )
   child.unref()
   fs.closeSync(log)
   if (!child.pid) throw new Error('could not start the server')
-  const state: ServerState = { port, pid: child.pid, serverDir: serverDir(), dataDir, dbPath, logFile }
+  const state: ServerState = { port, pid: child.pid, serverDir: serverDir(), dataDir, dbPath, logFile, env: options.env }
   writeState(state)
 
   await waitFor(
@@ -162,12 +169,25 @@ export async function stopServer(signal: NodeJS.Signals = 'SIGTERM'): Promise<vo
 export async function restartServer(signal: NodeJS.Signals = 'SIGKILL'): Promise<ServerState> {
   const state = readState()
   await stopServer(signal)
-  return startServer({ port: state.port, dataDir: state.dataDir })
+  return startServer({ port: state.port, dataDir: state.dataDir, env: state.env })
 }
 
-/** A brand-new server (empty database, fresh rate limits) on the same port. */
-export async function freshServer(): Promise<ServerState> {
+/** A brand-new server (empty database, fresh rate limits) on the same port; `env` adds settings. */
+export async function freshServer(env?: Record<string, string>): Promise<ServerState> {
   const state = readState()
   await stopServer('SIGTERM')
-  return startServer({ port: state.port })
+  return startServer({ port: state.port, env })
+}
+
+/**
+ * `python -m trio_server.admin --db <this run's database> <args>` (CONTRACT-V3 §3),
+ * as the server's operator would run it against the live file. Returns stdout.
+ */
+export function admin(...args: string[]): string {
+  const state = readState()
+  return execFileSync(python(), ['-m', 'trio_server.admin', '--db', state.dbPath, ...args], {
+    cwd: state.serverDir,
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+    encoding: 'utf8',
+  })
 }
