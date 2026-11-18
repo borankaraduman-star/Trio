@@ -13,13 +13,17 @@ services:
     restart: unless-stopped
     environment:
       TRIO_INVITE_CODE: ${TRIO_INVITE_CODE:?set TRIO_INVITE_CODE in deploy/.env}
-      TRIO_MAX_USERS: ${TRIO_MAX_USERS:-10}
+      TRIO_MAX_USERS: ${TRIO_MAX_USERS:-5}
       # coturn runs on this same machine, so its public hostname is the domain.
       TRIO_TURN_HOST: ${TRIO_DOMAIN:?set TRIO_DOMAIN in deploy/.env}
       TRIO_TURN_SECRET: ${TRIO_TURN_SECRET:?set TRIO_TURN_SECRET in deploy/.env}
       # Default: our own coturn also answers STUN, so no third party is involved.
       TRIO_STUN_URLS: ${TRIO_STUN_URLS:-stun:${TRIO_DOMAIN}:3478}
       TRIO_MAX_UPLOAD_MB: ${TRIO_MAX_UPLOAD_MB:-25}
+      TRIO_USER_QUOTA_MB: ${TRIO_USER_QUOTA_MB:-1024}
+      TRIO_DISK_RESERVE_MB: ${TRIO_DISK_RESERVE_MB:-200}
+      # Caddy is the one proxy in front of the app.
+      TRIO_TRUSTED_PROXY_HOPS: ${TRIO_TRUSTED_PROXY_HOPS:-1}
       # Optional: Cloudflare TURN instead of (takes precedence over) coturn.
       TRIO_CF_TURN_KEY_ID: ${TRIO_CF_TURN_KEY_ID:-}
       TRIO_CF_TURN_API_TOKEN: ${TRIO_CF_TURN_API_TOKEN:-}
