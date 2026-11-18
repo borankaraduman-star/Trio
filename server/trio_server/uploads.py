@@ -8,10 +8,12 @@ joined to a path.
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import re
 import secrets
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +42,7 @@ INLINE_TYPES = frozenset(
         "image/jpeg",
         "image/gif",
         "image/webp",
+        "image/avif",
         "video/mp4",
         "video/webm",
         "audio/mpeg",
@@ -86,6 +89,67 @@ EXTENSION_TYPES = {
 }
 OCTET_STREAM = "application/octet-stream"
 
+# ISO base media files ("ftyp" box at byte 4) by brand. The major brand is at
+# bytes 8-12 and compatible brands follow from byte 16. Only what a browser's
+# <video> actually plays is video/mp4: QuickTime and HEIF share the box format
+# but not the codecs, and served as video/mp4 they were a broken player.
+FTYP_BRANDS = {
+    # MP4 proper (ISO 14496-12/14), and widely used MP4 flavours.
+    "isom": "video/mp4",
+    "iso2": "video/mp4",
+    "iso3": "video/mp4",
+    "iso4": "video/mp4",
+    "iso5": "video/mp4",
+    "iso6": "video/mp4",
+    "mp41": "video/mp4",
+    "mp42": "video/mp4",
+    "avc1": "video/mp4",
+    "dash": "video/mp4",  # MPEG-DASH segments
+    "M4V ": "video/mp4",  # Apple iTunes video
+    "MSNV": "video/mp4",  # Sony PSP / many cameras
+    "mmp4": "video/mp4",  # 3GPP-flavoured MP4 from phones
+    # Audio-only MP4.
+    "M4A ": "audio/mp4",
+    "M4B ": "audio/mp4",
+    # Apple QuickTime (.mov): not reliably playable in browsers.
+    "qt  ": "video/quicktime",
+    # HEIF stills and sequences (iPhone photos).
+    "heic": "image/heic",
+    "heix": "image/heic",
+    "heim": "image/heic",
+    "heis": "image/heic",
+    "hevc": "image/heic",
+    "hevx": "image/heic",
+    # AVIF: browsers render it.
+    "avif": "image/avif",
+    "avis": "image/avif",
+}
+# Generic HEIF brands: what the file is depends on the compatible brands
+# (an AVIF often says "mif1" first and "avif" later).
+HEIF_GENERIC = frozenset({"mif1", "msf1"})
+
+
+def _ftyp_type(head: bytes) -> str | None:
+    """The type an ftyp box names, or None when it names nothing we know."""
+    major = head[8:12].decode("latin-1")
+    compatible = [head[i : i + 4].decode("latin-1") for i in range(16, len(head) - 3, 4)]
+    # Only the brands inside the box count; its size is the first 4 bytes.
+    box_size = int.from_bytes(head[0:4], "big")
+    if 16 <= box_size <= len(head):
+        compatible = compatible[: (box_size - 16) // 4]
+    if major in HEIF_GENERIC:
+        if any(b in ("avif", "avis") for b in compatible):
+            return "image/avif"
+        return "image/heic"
+    if major in FTYP_BRANDS:
+        return FTYP_BRANDS[major]
+    for brand in compatible:
+        if brand in HEIF_GENERIC:
+            return "image/heic"
+        if brand in FTYP_BRANDS:
+            return FTYP_BRANDS[brand]
+    return None
+
 
 def new_attachment_id() -> str:
     return secrets.token_urlsafe(32)  # 43 characters
@@ -122,7 +186,11 @@ def sniff_content_type(head: bytes, filename: str) -> str:
     if head.startswith(b"%PDF-"):
         return "application/pdf"
     if head[4:8] == b"ftyp":
-        return "audio/mp4" if head[8:12] == b"M4A " else "video/mp4"
+        found = _ftyp_type(head)
+        if found is not None:
+            return found
+        # Brands we do not know: never guessed to be playable; the extension
+        # allowlist below decides, which for .mp4 means a download.
     if head.startswith(b"\x1a\x45\xdf\xa3") and b"webm" in head:
         return "video/webm"
     if head.startswith(b"OggS"):
@@ -160,15 +228,39 @@ def _too_large() -> ApiError:
     return ApiError(413, "FILE_TOO_LARGE", "file is too large")
 
 
+def _over_quota() -> ApiError:
+    return ApiError(413, "QUOTA_EXCEEDED", "this upload would exceed your storage quota")
+
+
+def storage_full() -> ApiError:
+    return ApiError(507, "STORAGE_FULL", "the server's disk is full")
+
+
+# Writes that fail because the disk, the volume or a quota is full.
+_FULL_ERRNOS = frozenset({errno.ENOSPC, errno.EDQUOT, errno.EFBIG})
+# How often (bytes written) the free space is looked at again while streaming.
+SPACE_CHECK_BYTES = 1024 * 1024
+
+
 def _invalid(message: str) -> ApiError:
     return ApiError(422, "INVALID_UPLOAD", message)
 
 
-async def receive_upload(request: Request, destination: Path, max_bytes: int) -> ReceivedFile:
+async def receive_upload(
+    request: Request,
+    destination: Path,
+    max_bytes: int,
+    *,
+    quota_bytes: int | None = None,
+    space_left: Callable[[], bool] | None = None,
+) -> ReceivedFile:
     """Stream the multipart part ``file`` into ``destination``.
 
     The size is counted as the bytes arrive; past ``max_bytes`` the partial
-    file is removed and 413 raised. Any refusal removes what was written.
+    file is removed and 413 FILE_TOO_LARGE raised, past ``quota_bytes`` (what
+    is left of the user's quota) 413 QUOTA_EXCEEDED. ``space_left`` is asked
+    again every SPACE_CHECK_BYTES; False, or the disk filling up during a
+    write, is 507 STORAGE_FULL. Any refusal removes what was written.
     """
     mime, options = parse_options_header(request.headers.get("content-type", ""))
     boundary = options.get(b"boundary")
@@ -177,6 +269,12 @@ async def receive_upload(request: Request, destination: Path, max_bytes: int) ->
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > max_bytes + FRAMING_ALLOWANCE:
         raise _too_large()
+    if (
+        quota_bytes is not None
+        and declared.isdigit()
+        and int(declared) > quota_bytes + FRAMING_ALLOWANCE
+    ):
+        raise _over_quota()
 
     state: dict[str, Any] = {
         "header_field": b"",
@@ -225,6 +323,8 @@ async def receive_upload(request: Request, destination: Path, max_bytes: int) ->
         state["size"] += len(chunk)
         if state["size"] > max_bytes:
             raise _too_large()
+        if quota_bytes is not None and state["size"] > quota_bytes:
+            raise _over_quota()
         if len(state["head"]) < SNIFF_BYTES:
             state["head"] = (state["head"] + chunk)[:SNIFF_BYTES]
         pending.append(chunk)
@@ -252,21 +352,39 @@ async def receive_upload(request: Request, destination: Path, max_bytes: int) ->
     )
 
     total = 0
+    written = 0
+    next_space_check = SPACE_CHECK_BYTES
     completed = False
-    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        with os.fdopen(fd, "wb") as out:
-            async for chunk in request.stream():
-                total += len(chunk)
-                if total > max_bytes + FRAMING_ALLOWANCE:
-                    raise _too_large()
-                try:
-                    parser.write(chunk)
-                except MultipartParseError:
-                    raise _invalid("malformed multipart body") from None
-                for piece in pending:
-                    out.write(piece)
-                pending.clear()
+        fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as exc:
+        if exc.errno in _FULL_ERRNOS:
+            raise storage_full() from None
+        raise
+    try:
+        try:
+            with os.fdopen(fd, "wb") as out:
+                async for chunk in request.stream():
+                    total += len(chunk)
+                    if total > max_bytes + FRAMING_ALLOWANCE:
+                        raise _too_large()
+                    try:
+                        parser.write(chunk)
+                    except MultipartParseError:
+                        raise _invalid("malformed multipart body") from None
+                    for piece in pending:
+                        out.write(piece)
+                        written += len(piece)
+                    pending.clear()
+                    if space_left is not None and written >= next_space_check:
+                        next_space_check = written + SPACE_CHECK_BYTES
+                        if not space_left():
+                            raise storage_full()
+        except OSError as exc:
+            # ENOSPC on a write or on the final flush: the volume is full.
+            if exc.errno in _FULL_ERRNOS:
+                raise storage_full() from None
+            raise
         try:
             parser.finalize()
         except MultipartParseError:

@@ -53,7 +53,40 @@ CREATE TABLE IF NOT EXISTS attachments (
 CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments (message_id, position);
 CREATE INDEX IF NOT EXISTS idx_attachments_orphans ON attachments (created_ts)
     WHERE message_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_uploader ON attachments (uploader_id);
+-- v3: one-time codes that sign another device in as an existing user.
+CREATE TABLE IF NOT EXISTS link_codes (
+    code_hash  TEXT PRIMARY KEY,       -- SHA-256 hex; the code itself is never stored
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_ts REAL NOT NULL,
+    expires_ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_link_codes_user ON link_codes (user_id, expires_ts);
 """
+
+# v3 columns on tables an older database already has. CREATE TABLE IF NOT
+# EXISTS cannot add a column, so each one is an ALTER run only when missing.
+#   users.removed_at: set by `python -m trio_server.admin remove-user`. The row
+#   (and its name) stays so that old messages still show who wrote them; its
+#   name_key is replaced, which frees the name for somebody new.
+UPGRADE_COLUMNS = {"users": {"removed_at": "ALTER TABLE users ADD COLUMN removed_at TEXT"}}
+
+# SQLite's INTEGER is a signed 64-bit value; a larger Python int cannot be bound.
+SQL_INT_MAX = 2**63 - 1
+
+
+def upgrade_statements(table: str, existing_columns: set[str]) -> list[str]:
+    return [
+        sql
+        for column, sql in UPGRADE_COLUMNS.get(table, {}).items()
+        if column not in existing_columns
+    ]
+
+
+def removed_name_key(user_id: int) -> str:
+    """The name_key a removed user is given: unique, and never what name_key() returns."""
+    return f"#removed:{user_id}"
+
 
 SEED_CHANNELS = (("genel", "text"), ("Sohbet", "voice"))
 
@@ -61,6 +94,11 @@ SEED_CHANNELS = (("genel", "text"), ("Sohbet", "voice"))
 def utc_now() -> str:
     """ISO-8601 UTC with milliseconds and a trailing Z."""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def utc_iso(ts: float) -> str:
+    """An app-clock timestamp (seconds) in the same format as ``utc_now``."""
+    return datetime.fromtimestamp(ts, UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def hash_token(token: str) -> str:
@@ -93,6 +131,18 @@ class ServerFullError(Exception):
     pass
 
 
+class TooManyLinkCodesError(Exception):
+    pass
+
+
+class StorageFullError(Exception):
+    """SQLite could not write because the disk (or the volume) is full."""
+
+
+def is_disk_full(exc: BaseException) -> bool:
+    return isinstance(exc, sqlite3.OperationalError) and "full" in str(exc).lower()
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self._path = path
@@ -115,6 +165,10 @@ class Database:
         await self._conn.execute("PRAGMA synchronous=NORMAL")
         await self._conn.execute("PRAGMA busy_timeout=5000")
         await self._conn.executescript(SCHEMA)
+        for table in UPGRADE_COLUMNS:
+            columns = {r["name"] for r in await self._all(f"PRAGMA table_info({table})")}
+            for sql in upgrade_statements(table, columns):
+                await self._conn.execute(sql)
         async with self._conn.execute("SELECT count(*) FROM channels") as cur:
             (count,) = await cur.fetchone()
         if count == 0:
@@ -137,7 +191,7 @@ class Database:
     # -- users and tokens ---------------------------------------------------
 
     async def list_users(self) -> list[dict[str, Any]]:
-        rows = await self._all("SELECT id, name FROM users ORDER BY id")
+        rows = await self._all("SELECT id, name FROM users WHERE removed_at IS NULL ORDER BY id")
         return [{"id": r["id"], "name": r["name"]} for r in rows]
 
     async def create_user(
@@ -147,7 +201,8 @@ class Database:
         rows = await self._all("SELECT 1 FROM users WHERE name_key = ?", (name_key,))
         if rows:
             raise NameTakenError
-        (count_row,) = await self._all("SELECT count(*) AS n FROM users")
+        # A removed user no longer holds a slot.
+        (count_row,) = await self._all("SELECT count(*) AS n FROM users WHERE removed_at IS NULL")
         if count_row["n"] >= max_users:
             raise ServerFullError
         now = utc_now()
@@ -171,14 +226,98 @@ class Database:
         return {"id": user_id, "name": name}
 
     async def user_for_token(self, token: str) -> dict[str, Any] | None:
+        return await self.user_for_token_hash(hash_token(token))
+
+    async def user_for_token_hash(self, token_hash: str) -> dict[str, Any] | None:
         rows = await self._all(
             "SELECT u.id, u.name FROM tokens t JOIN users u ON u.id = t.user_id "
-            "WHERE t.token_hash = ?",
-            (hash_token(token),),
+            "WHERE t.token_hash = ? AND u.removed_at IS NULL",
+            (token_hash,),
         )
         if not rows:
             return None
         return {"id": rows[0]["id"], "name": rows[0]["name"]}
+
+    async def live_token_hashes(self, token_hashes: Sequence[str]) -> set[str]:
+        """Which of ``token_hashes`` still sign somebody in."""
+        live: set[str] = set()
+        hashes = list(token_hashes)
+        for start in range(0, len(hashes), 500):
+            chunk = hashes[start : start + 500]
+            marks = ",".join("?" * len(chunk))
+            # Only "?" placeholders are formatted into the statement.
+            sql = (
+                "SELECT t.token_hash FROM tokens t JOIN users u ON u.id = t.user_id "  # noqa: S608
+                f"WHERE u.removed_at IS NULL AND t.token_hash IN ({marks})"
+            )
+            live.update(r["token_hash"] for r in await self._all(sql, tuple(chunk)))
+        return live
+
+    async def delete_token(self, token_hash: str) -> bool:
+        """The caller holds ``write_lock``."""
+        cur = await self.conn.execute("DELETE FROM tokens WHERE token_hash = ?", (token_hash,))
+        await self.conn.commit()
+        return cur.rowcount > 0
+
+    # -- link codes -----------------------------------------------------------
+
+    async def create_link_code(
+        self, user_id: int, code_hash: str, now_ts: float, ttl: float, max_live: int
+    ) -> float:
+        """Store a code for ``user_id``; its expiry. The caller holds ``write_lock``."""
+        try:
+            # Expired codes are worthless; this is their sweep.
+            await self.conn.execute("DELETE FROM link_codes WHERE expires_ts <= ?", (now_ts,))
+            (row,) = await self._all(
+                "SELECT count(*) AS n FROM link_codes WHERE user_id = ?", (user_id,)
+            )
+            if row["n"] >= max_live:
+                await self.conn.commit()
+                raise TooManyLinkCodesError
+            expires = now_ts + ttl
+            await self.conn.execute(
+                "INSERT INTO link_codes (code_hash, user_id, created_ts, expires_ts) "
+                "VALUES (?, ?, ?, ?)",
+                (code_hash, user_id, now_ts, expires),
+            )
+            await self.conn.commit()
+        except TooManyLinkCodesError:
+            raise
+        except BaseException:
+            await self.conn.rollback()
+            raise
+        return expires
+
+    async def redeem_link_code(
+        self, code_hash: str, now_ts: float, token_hash: str
+    ) -> dict[str, Any] | None:
+        """Use a code once: delete it and give its user a new token, all or nothing.
+
+        None for an unknown, expired or used code, or a removed user. The
+        caller holds ``write_lock``.
+        """
+        try:
+            rows = await self._all(
+                "DELETE FROM link_codes WHERE code_hash = ? AND expires_ts > ? RETURNING user_id",
+                (code_hash, now_ts),
+            )
+            user = None
+            if rows:
+                found = await self._all(
+                    "SELECT id, name FROM users WHERE id = ? AND removed_at IS NULL",
+                    (rows[0]["user_id"],),
+                )
+                if found:
+                    user = {"id": found[0]["id"], "name": found[0]["name"]}
+                    await self.conn.execute(
+                        "INSERT INTO tokens (token_hash, user_id, created_at) VALUES (?, ?, ?)",
+                        (token_hash, user["id"], utc_now()),
+                    )
+            await self.conn.commit()
+        except BaseException:
+            await self.conn.rollback()
+            raise
+        return user
 
     # -- channels -----------------------------------------------------------
 
@@ -240,8 +379,10 @@ class Database:
                 [(message_id, pos, att_id) for pos, att_id in enumerate(attachment_ids)],
             )
             await self.conn.commit()
-        except BaseException:
+        except BaseException as exc:
             await self.conn.rollback()
+            if is_disk_full(exc):
+                raise StorageFullError from exc
             raise
         return {
             "id": message_id,
@@ -303,12 +444,18 @@ class Database:
         created_ts: float,
     ) -> dict[str, Any]:
         """The caller holds ``write_lock``."""
-        await self.conn.execute(
-            "INSERT INTO attachments (id, uploader_id, filename, content_type, size, "
-            "created_at, created_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (attachment_id, uploader_id, filename, content_type, size, utc_now(), created_ts),
-        )
-        await self.conn.commit()
+        try:
+            await self.conn.execute(
+                "INSERT INTO attachments (id, uploader_id, filename, content_type, size, "
+                "created_at, created_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (attachment_id, uploader_id, filename, content_type, size, utc_now(), created_ts),
+            )
+            await self.conn.commit()
+        except BaseException as exc:
+            await self.conn.rollback()
+            if is_disk_full(exc):
+                raise StorageFullError from exc
+            raise
         return {
             "id": attachment_id,
             "filename": filename,
@@ -316,6 +463,14 @@ class Database:
             "size": size,
             "url": attachment_url(attachment_id, filename),
         }
+
+    async def stored_bytes(self, uploader_id: int) -> int:
+        """Everything ``uploader_id`` has stored, on a message or not."""
+        (row,) = await self._all(
+            "SELECT coalesce(sum(size), 0) AS n FROM attachments WHERE uploader_id = ?",
+            (uploader_id,),
+        )
+        return int(row["n"])
 
     async def get_attachment(self, attachment_id: str) -> dict[str, Any] | None:
         rows = await self._all("SELECT * FROM attachments WHERE id = ?", (attachment_id,))

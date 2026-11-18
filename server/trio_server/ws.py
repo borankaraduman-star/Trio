@@ -10,18 +10,37 @@ from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from trio_server.db import Database, InvalidAttachmentError
-from trio_server.hub import Connection, Hub
+from trio_server.db import Database, InvalidAttachmentError, StorageFullError, hash_token
+from trio_server.hub import (
+    CLOSE_TOO_MANY,
+    CLOSE_UNAUTHORIZED,
+    MAX_CONNECTIONS_PER_USER,
+    Connection,
+    Hub,
+)
 from trio_server.uploads import ATTACHMENT_ID, MAX_ATTACHMENTS, ORPHAN_SECONDS
 from trio_server.validation import CONTENT_MAX, is_int
 
 logger = logging.getLogger("trio.ws")
 
-CLOSE_UNAUTHORIZED = 4401
 SIGNAL_DATA_MAX_BYTES = 64 * 1024
 # A whole frame: the largest signal payload plus its small envelope.
 FRAME_MAX_BYTES = SIGNAL_DATA_MAX_BYTES + 1024
 NONCE_MAX = 128
+# What uvicorn may buffer for ONE incoming message before the app sees it
+# (its default is 16 MiB). Twice the app's own cap: a frame a little too big
+# still gets the friendly TOO_LARGE error frame; anything larger closes the
+# socket with 1009 before it is held in memory. See trio_server.__main__.
+WS_MAX_SIZE = 2 * FRAME_MAX_BYTES
+
+
+def encodable(value: Any) -> bool:
+    """True when every string in a parsed JSON value is valid Unicode text."""
+    try:
+        json.dumps(value, ensure_ascii=False).encode("utf-8")
+    except (UnicodeEncodeError, RecursionError, ValueError):
+        return False
+    return True
 
 
 class FrameError(Exception):
@@ -74,6 +93,10 @@ class Session:
                 raise FrameError("BAD_REQUEST", "frame is not valid JSON") from None
             if not isinstance(frame, dict) or not isinstance(frame.get("type"), str):
                 raise FrameError("BAD_REQUEST", "frame must be an object with a string 'type'")
+            if not encodable(frame):
+                # JSON may spell a lone surrogate ("\ud800"); it is not text and
+                # can be neither stored nor relayed as UTF-8.
+                raise FrameError("BAD_REQUEST", "frame contains invalid text")
             handler = self.handlers.get(frame["type"])
             if handler is None:
                 raise FrameError("UNKNOWN_TYPE", "unknown frame type")
@@ -126,6 +149,8 @@ class Session:
                     ids,
                     not_before_ts=self.now() - ORPHAN_SECONDS,
                 )
+            except StorageFullError:
+                raise FrameError("STORAGE_FULL", "the server's disk is full") from None
             except InvalidAttachmentError:
                 raise FrameError(
                     "INVALID_ATTACHMENT",
@@ -195,12 +220,20 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     # as 1006, and the client needs to see 4401.
     await ws.accept()
     token = ws.query_params.get("token") or ""
-    user = await db.user_for_token(token) if token else None
+    token_hash = hash_token(token)
+    user = await db.user_for_token_hash(token_hash) if token else None
     if user is None:
         await ws.close(code=CLOSE_UNAUTHORIZED, reason="unauthorized")
         return
+    if hub.connection_count(user["id"]) >= MAX_CONNECTIONS_PER_USER:
+        await ws.close(code=CLOSE_TOO_MANY, reason="too many connections")
+        return
+    if user["id"] not in hub.users:
+        # Removed and re-checked while we awaited: not a member any more.
+        await ws.close(code=CLOSE_UNAUTHORIZED, reason="unauthorized")
+        return
 
-    conn = Connection(user_id=user["id"], ws=ws)
+    conn = Connection(user_id=user["id"], ws=ws, token_hash=token_hash)
     conn.start()
     hub.connect(conn)
     session = Session(conn, user, hub, db, ws.app.state.now)

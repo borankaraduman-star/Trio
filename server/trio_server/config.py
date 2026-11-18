@@ -17,7 +17,9 @@ class ConfigError(RuntimeError):
 class Settings:
     invite_code: str
     db_path: str = "./trio.db"
-    max_users: int = 10
+    # Lowered from 10: set it to the real head count, so that a leaked invite
+    # code cannot create accounts beyond the people you actually know.
+    max_users: int = 5
     static_dir: str | None = None
     turn_host: str | None = None
     turn_secret: str | None = None
@@ -26,6 +28,15 @@ class Settings:
     max_upload_mb: int = 25
     cf_turn_key_id: str | None = None
     cf_turn_api_token: str | None = None
+    # Stored bytes per user (all their uploads, on a message or not).
+    user_quota_mb: int = 1024
+    # Free space the uploads volume must keep; an upload that would eat into
+    # it is refused with 507 instead of filling the disk for everybody.
+    disk_reserve_mb: int = 200
+    # How many reverse proxies append to X-Forwarded-For in front of the app:
+    # the client address is the N-th entry from the right. 0 = ignore the
+    # header and use the socket peer.
+    trusted_proxy_hops: int = 1
 
     def __post_init__(self) -> None:
         if not self.invite_code:
@@ -34,10 +45,24 @@ class Settings:
             raise ConfigError("TRIO_MAX_USERS must be at least 1")
         if self.max_upload_mb < 1:
             raise ConfigError("TRIO_MAX_UPLOAD_MB must be at least 1")
+        if self.user_quota_mb < 1:
+            raise ConfigError("TRIO_USER_QUOTA_MB must be at least 1")
+        if self.disk_reserve_mb < 0:
+            raise ConfigError("TRIO_DISK_RESERVE_MB must not be negative")
+        if not 0 <= self.trusted_proxy_hops <= 10:
+            raise ConfigError("TRIO_TRUSTED_PROXY_HOPS must be between 0 and 10")
 
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def user_quota_bytes(self) -> int:
+        return self.user_quota_mb * 1024 * 1024
+
+    @property
+    def disk_reserve_bytes(self) -> int:
+        return self.disk_reserve_mb * 1024 * 1024
 
     @property
     def cloudflare_turn(self) -> bool:
@@ -49,7 +74,9 @@ class Settings:
             f"Settings(db_path={self.db_path!r}, max_users={self.max_users}, "
             f"static_dir={self.static_dir!r}, turn_host={self.turn_host!r}, "
             f"stun_urls={self.stun_urls!r}, upload_dir={self.upload_dir!r}, "
-            f"max_upload_mb={self.max_upload_mb}, cloudflare_turn={self.cloudflare_turn})"
+            f"max_upload_mb={self.max_upload_mb}, user_quota_mb={self.user_quota_mb}, "
+            f"disk_reserve_mb={self.disk_reserve_mb}, "
+            f"trusted_proxy_hops={self.trusted_proxy_hops}, cloudflare_turn={self.cloudflare_turn})"
         )
 
     @classmethod
@@ -67,7 +94,7 @@ class Settings:
             except ValueError as exc:
                 raise ConfigError(f"{name} must be an integer") from exc
 
-        max_users = integer("TRIO_MAX_USERS", 10)
+        max_users = integer("TRIO_MAX_USERS", 5)
         max_upload_mb = integer("TRIO_MAX_UPLOAD_MB", 25)
 
         if "TRIO_STUN_URLS" in env:
@@ -87,4 +114,7 @@ class Settings:
             max_upload_mb=max_upload_mb,
             cf_turn_key_id=optional("TRIO_CF_TURN_KEY_ID"),
             cf_turn_api_token=optional("TRIO_CF_TURN_API_TOKEN"),
+            user_quota_mb=integer("TRIO_USER_QUOTA_MB", 1024),
+            disk_reserve_mb=integer("TRIO_DISK_RESERVE_MB", 200),
+            trusted_proxy_hops=integer("TRIO_TRUSTED_PROXY_HOPS", 1),
         )
