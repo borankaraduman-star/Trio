@@ -32,6 +32,7 @@ import type { Attachment } from '../types'
 import { MemberList } from './MemberList'
 import { MessageList } from './MessageList'
 import { SendTimers } from '../lib/sendTimers'
+import { isViewing, onViewingChange } from '../lib/viewing'
 import { Sidebar } from './Sidebar'
 
 const PAGE_SIZE = 50
@@ -39,9 +40,6 @@ const TYPING_SEND_INTERVAL_MS = 3000
 const SEND_TIMEOUT_MS = 10000
 const LOAD_RETRY_COOLDOWN_MS = 3000
 
-function isViewing(): boolean {
-  return document.visibilityState === 'visible'
-}
 
 function newNonce(): string {
   // randomUUID exists only in secure contexts; plain http on a LAN is not one.
@@ -216,7 +214,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         const { message } = event
         if (
           message.author.id !== before.me.id &&
-          document.hidden &&
+          !isViewing() &&
           typeof Notification !== 'undefined' &&
           Notification.permission === 'granted'
         ) {
@@ -287,12 +285,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
     const onVisibility = () => {
       if (isViewing()) dispatch({ type: 'viewing' })
     }
-    document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('focus', onVisibility)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('focus', onVisibility)
-    }
+    return onViewingChange(onVisibility)
   }, [])
 
   // Typing lines expire on their own; tick only while one is showing.
