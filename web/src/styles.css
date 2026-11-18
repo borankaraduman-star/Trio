@@ -492,6 +492,24 @@ textarea:focus {
   background: #232428;
 }
 
+/* v2 added the settings button: four (with notifications five) buttons left a
+   six-letter name cut to "Zeyn…" in the 260 px sidebar. The buttons sit edge to
+   edge (each has its own hover area), and are a little smaller where the pointer
+   is fine; touch keeps 34 px targets. */
+.user-panel {
+  gap: 0;
+}
+
+.user-panel .avatar {
+  margin-right: 2px;
+}
+
+@media (pointer: fine) {
+  .user-panel .icon-button {
+    width: 30px;
+  }
+}
+
 .user-panel-name {
   flex: 1;
   min-width: 0;
