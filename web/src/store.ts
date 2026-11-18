@@ -1,4 +1,5 @@
 import type { Channel, Member, Message, ServerEvent, User, VoiceParticipant } from './types'
+import { claimEchoes } from './lib/reconcile'
 
 export type MessageStatus = 'sent' | 'pending' | 'failed'
 
@@ -7,6 +8,8 @@ export interface UiMessage extends Message {
   key: string
   status: MessageStatus
   nonce?: string
+  /** Client time (ms) of the latest retry of an unconfirmed row; see lib/reconcile.ts. */
+  sentAt?: number
 }
 
 export interface ChannelMessages {
@@ -57,7 +60,7 @@ export type Action =
   | { type: 'messages.load-failed'; channelId: number }
   | { type: 'message.optimistic'; message: UiMessage }
   | { type: 'message.failed'; channelId: number; nonce: string }
-  | { type: 'message.retry'; channelId: number; nonce: string }
+  | { type: 'message.retry'; channelId: number; nonce: string; at?: number }
   | { type: 'latest.loaded'; channelId: number; latestId: number }
   | { type: 'typing.prune'; now: number }
 
@@ -253,6 +256,11 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         if (channel.items.some((item) => item.status === 'sent' && item.id === message.id)) {
           return channel
         }
+        if (nonce === undefined) {
+          // My message without a nonce (its echo was lost): pair it with the local row.
+          const paired = claimEchoes(channel.items, [toUi(message)], state.me.id)
+          return { ...channel, items: mergeMessages(paired.items, paired.incoming) }
+        }
         return { ...channel, items: mergeMessages(channel.items, [toUi(message)]) }
       })
 
@@ -393,9 +401,10 @@ export function reducer(state: AppState, action: Action): AppState {
       const page = action.messages
       let next = withChannel(state, action.channelId, (channel) => {
         if (action.mode === 'prepend') {
+          const paired = claimEchoes(channel.items, page.map((message) => toUi(message)), state.me.id)
           return {
             ...channel,
-            items: mergeMessages(channel.items, page.map((message) => toUi(message))),
+            items: mergeMessages(paired.items, paired.incoming),
             hasMore: action.hasMore,
             loadingOlder: false,
             error: false,
@@ -408,11 +417,13 @@ export function reducer(state: AppState, action: Action): AppState {
           (item) => item.status !== 'sent' || item.id > newestInPage,
         )
         const keys = new Map(channel.items.map((item) => [item.id, item.key]))
+        const paired = claimEchoes(
+          kept,
+          page.map((message) => toUi(message, keys.get(message.id))),
+          state.me.id,
+        )
         return {
-          items: mergeMessages(
-            kept,
-            page.map((message) => toUi(message, keys.get(message.id))),
-          ),
+          items: mergeMessages(paired.items, paired.incoming),
           hasMore: action.hasMore,
           loaded: true,
           loadingOlder: false,
@@ -453,7 +464,9 @@ export function reducer(state: AppState, action: Action): AppState {
       return withChannel(state, action.channelId, (current) => ({
         ...current,
         items: current.items.map((item) =>
-          item.nonce === action.nonce && item.status === from ? { ...item, status: to } : item,
+          item.nonce === action.nonce && item.status === from
+            ? { ...item, status: to, ...(action.type === 'message.retry' && action.at !== undefined ? { sentAt: action.at } : {}) }
+            : item,
         ),
       }))
     }

@@ -358,7 +358,8 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   const retryMessage = useCallback(
     (message: UiMessage) => {
       if (!message.nonce) return
-      dispatch({ type: 'message.retry', channelId: message.channel_id, nonce: message.nonce })
+      // The same nonce: a server that de-duplicates answers with the original message.
+      dispatch({ type: 'message.retry', channelId: message.channel_id, nonce: message.nonce, at: Date.now() })
       transmit(message.channel_id, message.content, message.nonce, message.attachments ?? [])
     },
     [transmit],
