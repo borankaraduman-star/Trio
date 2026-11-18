@@ -1,6 +1,6 @@
-import { expectEnergy, fakeAudioArgs, inboundEnergy, localDescriptions, sentAudioTrackIds, wavFile, whiteNoise } from '../lib/media'
+import { fakeAudioArgs, inboundEnergy, localDescriptions, sentAudioTrackIds, wavFile, whiteNoise } from '../lib/media'
 import { baseUrl, freshServer } from '../lib/server'
-import { apiJoin, expect, expectHearing, joinVoice, personViaApi, personWithSession, test, type Person } from '../lib/trio'
+import { apiJoin, expect, expectHearing, joinVoice, personViaApi, personWithSession, remoteAudioProbe, test, type Person } from '../lib/trio'
 
 // Every microphone in this browser hears steady white noise: what RNNoise is
 // for, and very different on the receiving side with it on and off.
@@ -9,6 +9,12 @@ test.use({ launchOptions: { args: fakeAudioArgs(wavFile('white-noise.wav', 10, w
 test.beforeEach(async () => {
   await freshServer()
 })
+
+/** RTP from `speaker` keeps arriving at `listener` (the call is up; the content may be silence). */
+async function expectPacketsFlowing(listener: Person, speaker: Person): Promise<void> {
+  const first = await remoteAudioProbe(listener.page, speaker.user.id)
+  await expect.poll(async () => (await remoteAudioProbe(listener.page, speaker.user.id)).packets).toBeGreaterThan(first.packets + 20)
+}
 
 /** The lowest of a few readings: a single window can catch the suppressor adapting. */
 async function steadyEnergy(listener: Person, speaker: Person): Promise<number> {
@@ -64,22 +70,32 @@ test('noise suppression: RNNoise runs in the built client; toggling keeps the ca
   const tracksBefore = await sentAudioTrackIds(ayse.page)
   const sdpBefore = await localDescriptions(ayse.page)
   expect(tracksBefore).toHaveLength(1)
-  const on = await steadyEnergy(mehmet, ayse)
+  // What RNNoise does to this input, measured at Mehmet (energy per second):
+  // with it off the loud white noise arrives at ~1.6e-1 whatever the time
+  // (the browser's own suppressor leaves most of it); with it on the level
+  // falls over 5-15 s, usually to far below 1e-3, but in one run of nine here
+  // it was still at 2.6e-2 after 30 s (RNNoise is adaptive, and this is not
+  // the kind of noise it was trained on). So the reference is the noise as sent with
+  // RNNoise OFF, and "on" has to bring it down to a quarter of that.
+  const level = (what: string) => ({ timeout: 30_000, message: what })
 
-  // Off in the settings dialog: the noise comes through (the browser's own
-  // filter is on again, and it leaves far more of it).
   await ayse.page.getByTestId('btn-settings').click()
   await expect(ayse.page.getByTestId('settings-noise-state')).toHaveAttribute('data-state', 'active')
   await ayse.page.getByTestId('settings-noise').uncheck()
   await expect(ayse.page.getByTestId('btn-settings')).toHaveAttribute('data-noise', 'off')
   await expect(ayse.page.getByTestId('settings-noise-state')).toHaveAttribute('data-state', 'off')
-  let off = 0
-  await expect.poll(async () => (off = await steadyEnergy(mehmet, ayse)), { timeout: 20_000 }).toBeGreaterThan(on * 5)
+  let reference = 0
+  await expect.poll(async () => (reference = await steadyEnergy(mehmet, ayse)), level('off: the noise is sent')).toBeGreaterThan(1e-2)
 
-  // On again: suppressed again.
-  await ayse.page.getByTestId('settings-noise').check()
-  await expect(ayse.page.getByTestId('btn-settings')).toHaveAttribute('data-noise', 'active')
-  await expect.poll(() => steadyEnergy(mehmet, ayse), { timeout: 20_000 }).toBeLessThan(off / 5)
+  for (let round = 1; round <= 2; round++) {
+    await ayse.page.getByTestId('settings-noise').check()
+    await expect(ayse.page.getByTestId('btn-settings')).toHaveAttribute('data-noise', 'active')
+    await expect.poll(() => steadyEnergy(mehmet, ayse), level(`on (${round}): suppressed`)).toBeLessThan(reference / 4)
+    if (round === 2) break
+    await ayse.page.getByTestId('settings-noise').uncheck()
+    await expect(ayse.page.getByTestId('btn-settings')).toHaveAttribute('data-noise', 'off')
+    await expect.poll(() => steadyEnergy(mehmet, ayse), level('off again: the noise is back')).toBeGreaterThan(reference / 2)
+  }
   await ayse.page.getByTestId('settings-close').click()
 
   // Neither toggle renegotiated or swapped the sent track, and the call is still up.
@@ -87,7 +103,7 @@ test('noise suppression: RNNoise runs in the built client; toggling keeps the ca
   expect(await localDescriptions(ayse.page)).toEqual(sdpBefore)
   expect(sdpBefore.every((sdp) => sdp.startsWith('connected '))).toBe(true)
   await expect(ayse.page.locator('.voice-status strong')).toHaveText('Ses bağlı')
-  await expectEnergy(mehmet, ayse, true, 'still sending after the toggles')
+  await expectPacketsFlowing(mehmet, ayse)
 
   // Zeynep's browser cannot load the wasm: she falls back to the raw
   // microphone with a console warning only, and is heard.
