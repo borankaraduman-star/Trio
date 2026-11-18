@@ -29,6 +29,8 @@ export interface ContextOptions {
   deviceScaleFactor?: number
   isMobile?: boolean
   hasTouch?: boolean
+  /** Runs on the new context before the first page is opened. */
+  prepare?: (context: BrowserContext) => Promise<void>
 }
 
 /**
@@ -144,6 +146,7 @@ export async function personWithSession(
     },
     [token, JSON.stringify(user)] as const,
   )
+  await options.prepare?.(context)
   const page = await context.newPage()
   await page.goto('/')
   await expectConnected(page)
@@ -256,13 +259,30 @@ export async function expectHearing(listener: Person, speaker: Person): Promise<
         ice: pc.iceConnectionState,
         signaling: pc.signalingState,
         receivers: pc.getReceivers().map((r) => `${r.track.kind}:${r.track.readyState}:${r.track.muted}`),
+        transceivers: pc.getTransceivers().map((t) => `${t.mid}:${t.direction}:${t.currentDirection}:${t.receiver.track.kind}:${t.receiver.track.id.slice(0, 6)}`),
       })),
+    )
+    const elements = await listener.page.evaluate(() =>
+      [...document.querySelectorAll('audio, video')].map((e) => {
+        const stream = (e as HTMLMediaElement).srcObject as MediaStream | null
+        return `${e.getAttribute('data-testid')}=${stream?.id.slice(0, 6)}[${stream?.getTracks().map((t) => t.kind + ':' + t.id.slice(0, 6)).join(',')}]`
+      }),
     )
     throw new Error(
       `${listener.name} should hear ${speaker.name}; last probe ${JSON.stringify(last)}; ` +
-        `peer connections ${JSON.stringify(pcs)}\n${String(error)}`,
+        `peer connections ${JSON.stringify(pcs)}; elements ${JSON.stringify(elements)}\n${String(error)}`,
     )
   }
+}
+
+/** Assert that what `listener` gets from `speaker` is silence (a muted microphone). */
+export async function expectSilence(listener: Person, speaker: Person): Promise<void> {
+  await expect
+    .poll(async () => (await remoteAudioProbe(listener.page, speaker.user.id)).level, {
+      timeout: 15_000,
+      message: `${listener.name} should hear nothing from ${speaker.name}`,
+    })
+    .toBeLessThan(0.001)
 }
 
 /** Assert that the page shows `count` remote screens and every one is decoding frames. */

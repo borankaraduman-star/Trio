@@ -70,6 +70,12 @@ button {
   padding: 0;
 }
 
+/* Buttons have their own pressed/hover states; the browser's grey-blue tap
+   flash on a phone stayed painted over the mute button after a tap. */
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -583,7 +589,14 @@ textarea:focus {
 
 .stage-tile figcaption {
   position: absolute;
-  left: 8px;
+  /* The video is centred in its tile and may be narrower than it (letterbox):
+     centring the caption keeps it on the picture instead of straddling its edge. */
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 16px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   bottom: 8px;
   padding: 2px 8px;
   border-radius: 4px;

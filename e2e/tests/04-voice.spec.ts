@@ -1,5 +1,5 @@
 import { freshServer } from '../lib/server'
-import { expect, expectHearing, joinVoice, SOHBET, test, threePeople, type Person } from '../lib/trio'
+import { expect, expectHearing, expectSilence, joinVoice, SOHBET, test, threePeople, type Person } from '../lib/trio'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -35,8 +35,11 @@ test('voice: three people hear each other; mute, deafen and hang-up propagate', 
     await expect(row(viewer, mehmet)).toHaveAttribute('data-muted', 'true')
     await expect(row(viewer, mehmet)).toHaveAttribute('data-deafened', 'false')
   }
+  await expectSilence(ayse, mehmet)
+  await expectSilence(zeynep, mehmet)
   await mehmet.page.getByTestId('btn-mute').click()
   for (const viewer of people) await expect(row(viewer, mehmet)).toHaveAttribute('data-muted', 'false')
+  await expectHearing(ayse, mehmet)
 
   // Deafen implies muted, and silences the remote audio elements.
   await zeynep.page.getByTestId('btn-deafen').click()

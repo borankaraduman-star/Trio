@@ -45,11 +45,21 @@ interface Peer {
    * Signals from this peer, handled one at a time in arrival order. Handled
    * concurrently, a candidate's addIceCandidate can land between an implicit
    * rollback and our answer, and Chrome then never gathers a candidate for
-   * the answer (reproduced in a single page).
+   * the answer.
    */
   signals: Promise<void>
-  /** Fallback for a polite peer's deferred first offer (see onnegotiationneeded). */
-  firstOfferTimer: ReturnType<typeof setTimeout> | null
+  // Turn-taking, so that the two sides never offer at once (see `negotiate`).
+  /** Polite side: a `request` is out and no `grant` has come back yet. */
+  awaitingGrant: boolean
+  /** Polite side: the grant came while we were busy; offer once stable. */
+  offerWhenStable: boolean
+  /** Impolite side: the peer asked for a turn we could not give yet. */
+  requestPending: boolean
+  /** Impolite side: we granted a turn and offer nothing until the peer's offer is answered. */
+  holding: boolean
+  /** Impolite side: a negotiation we put off while holding. */
+  deferredOffer: boolean
+  turnTimer: ReturnType<typeof setTimeout> | null
   screenSenders: RTCRtpSender[]
   /** Every remote stream seen on this connection, by id. */
   streams: Map<string, MediaStream>
@@ -64,8 +74,12 @@ interface Monitor {
   lastLoudAt: number
 }
 
-/** How long a polite peer waits for the impolite peer's first offer before offering itself. */
-const FIRST_OFFER_GRACE_MS = 3000
+/**
+ * How long either side of a turn waits for the other before going ahead
+ * anyway (a peer that does not take turns, or a lost frame). The fallback is
+ * plain perfect negotiation.
+ */
+const TURN_TIMEOUT_MS = 4000
 
 const SPEAKING_THRESHOLD = 0.02
 const SPEAKING_HOLD_MS = 300
@@ -99,6 +113,9 @@ function parseSignal(data: unknown): SignalData | null {
     const description = record.description as { type?: unknown }
     if (typeof description.type !== 'string') return null
     return { description: record.description as RTCSessionDescriptionInit }
+  }
+  if (record.negotiate === 'request' || record.negotiate === 'grant') {
+    return { negotiate: record.negotiate }
   }
   if ('candidate' in record) {
     const candidate = record.candidate
@@ -540,7 +557,12 @@ export class VoiceEngine {
       ignoreOffer: false,
       settingRemoteAnswer: false,
       signals: Promise.resolve(),
-      firstOfferTimer: null,
+      awaitingGrant: false,
+      offerWhenStable: false,
+      requestPending: false,
+      holding: false,
+      deferredOffer: false,
+      turnTimer: null,
       screenSenders: [],
       streams: new Map(),
       audio: null,
@@ -549,40 +571,12 @@ export class VoiceEngine {
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
 
-    const negotiate = async () => {
-      try {
-        peer.makingOffer = true
-        await pc.setLocalDescription()
-        if (alive() && pc.localDescription) {
-          this.signal(peerId, { description: pc.localDescription.toJSON() })
-        }
-      } catch (error) {
-        if (alive()) console.warn('trio: negotiation failed', error)
-      } finally {
-        peer.makingOffer = false
-      }
+    pc.onnegotiationneeded = () => {
+      if (alive()) this.negotiationNeeded(peer)
     }
 
-    pc.onnegotiationneeded = () => {
-      // Both sides add their microphone at once, so the FIRST negotiation is
-      // always a glare that the polite side would resolve by rolling its own
-      // offer back. In Chrome a connection whose very first offer was rolled
-      // back while ICE gathering had started often never gathers again (the
-      // polite side stays "gathering" with no candidate, the connection
-      // "new", even after restartIce). So the polite side lets the impolite
-      // side's offer, which always comes, open the connection, and only
-      // offers itself if none has arrived after a grace period. Every later
-      // negotiation (screen share) is ordinary perfect negotiation.
-      if (peer.polite && !pc.remoteDescription && !pc.localDescription) {
-        if (peer.firstOfferTimer === null) {
-          peer.firstOfferTimer = setTimeout(() => {
-            peer.firstOfferTimer = null
-            if (alive() && !pc.remoteDescription && pc.signalingState === 'stable') void negotiate()
-          }, FIRST_OFFER_GRACE_MS)
-        }
-        return
-      }
-      void negotiate()
+    pc.onsignalingstatechange = () => {
+      if (alive() && pc.signalingState === 'stable') this.onStable(peer)
     }
 
     pc.onicecandidate = ({ candidate }) => {
@@ -641,11 +635,130 @@ export class VoiceEngine {
     this.emit()
   }
 
+  // --- turn-taking --------------------------------------------------------
+  //
+  // Perfect negotiation resolves two simultaneous offers by having the polite
+  // side roll its own back. In Chrome (seen in 153) a rollback on a
+  // connection that is already receiving audio leaves that audio track
+  // silent for good: RTP keeps arriving and is decoded (getStats shows the
+  // energy), but the MediaStreamTrack delivers only zeros, to an <audio>
+  // element and WebAudio alike. Two people starting a screen share at the
+  // same moment hit it, and so did every join (both sides add their
+  // microphone at once). So offers take turns: the impolite side offers when
+  // it likes; the polite side asks first (`request`), and the impolite side
+  // answers `grant` when it is stable and then holds its own offers until the
+  // polite side's offer has been answered. Signal data stays opaque to the
+  // server; a peer that does not answer a request is waited for TURN_TIMEOUT_MS,
+  // after which plain perfect negotiation (with its rollback) takes over.
+
+  private negotiationNeeded(peer: Peer): void {
+    if (peer.polite) {
+      this.requestTurn(peer)
+    } else if (peer.holding) {
+      peer.deferredOffer = true
+    } else {
+      void this.makeOffer(peer)
+    }
+  }
+
+  private async makeOffer(peer: Peer): Promise<void> {
+    const { pc } = peer
+    try {
+      peer.makingOffer = true
+      await pc.setLocalDescription()
+      if (this.peers.get(peer.id) === peer && pc.localDescription) {
+        this.signal(peer.id, { description: pc.localDescription.toJSON() })
+      }
+    } catch (error) {
+      if (this.peers.get(peer.id) === peer) console.warn('trio: negotiation failed', error)
+    } finally {
+      peer.makingOffer = false
+    }
+  }
+
+  private setTurnTimer(peer: Peer, action: (() => void) | null): void {
+    if (peer.turnTimer !== null) clearTimeout(peer.turnTimer)
+    peer.turnTimer = null
+    if (!action) return
+    peer.turnTimer = setTimeout(() => {
+      peer.turnTimer = null
+      if (this.peers.get(peer.id) === peer) action()
+    }, TURN_TIMEOUT_MS)
+  }
+
+  /** Polite side: ask the peer for a turn to offer. */
+  private requestTurn(peer: Peer): void {
+    if (peer.awaitingGrant || peer.offerWhenStable) return
+    peer.awaitingGrant = true
+    this.signal(peer.id, { negotiate: 'request' })
+    this.setTurnTimer(peer, () => {
+      if (!peer.awaitingGrant) return
+      peer.awaitingGrant = false
+      void this.makeOffer(peer)
+    })
+  }
+
+  /** Polite side: the turn is ours. */
+  private onGrant(peer: Peer): void {
+    if (!peer.awaitingGrant) return
+    peer.awaitingGrant = false
+    this.setTurnTimer(peer, null)
+    // The offer covers every change made so far, including any made after the request.
+    if (peer.pc.signalingState === 'stable' && !peer.makingOffer) void this.makeOffer(peer)
+    else peer.offerWhenStable = true
+  }
+
+  /** Impolite side: give the peer its turn as soon as we are not negotiating ourselves. */
+  private grantIfPossible(peer: Peer): void {
+    if (!peer.requestPending || peer.holding) return
+    if (peer.makingOffer || peer.pc.signalingState !== 'stable') return
+    peer.requestPending = false
+    peer.holding = true
+    this.signal(peer.id, { negotiate: 'grant' })
+    this.setTurnTimer(peer, () => this.releaseHold(peer))
+  }
+
+  /** Impolite side: the peer's turn is over (its offer is answered, or it never came). */
+  private releaseHold(peer: Peer): void {
+    if (!peer.holding) return
+    peer.holding = false
+    this.setTurnTimer(peer, null)
+    if (peer.deferredOffer) {
+      peer.deferredOffer = false
+      void this.makeOffer(peer)
+    } else {
+      this.grantIfPossible(peer)
+    }
+  }
+
+  private onStable(peer: Peer): void {
+    if (peer.polite) {
+      if (peer.offerWhenStable && !peer.makingOffer) {
+        peer.offerWhenStable = false
+        void this.makeOffer(peer)
+      }
+    } else {
+      this.grantIfPossible(peer)
+    }
+  }
+
   private async handleSignal(peer: Peer, data: SignalData): Promise<void> {
     const { pc } = peer
     const alive = () => this.peers.get(peer.id) === peer
     try {
-      if ('description' in data) {
+      if ('negotiate' in data) {
+        if (data.negotiate === 'grant' && peer.polite) {
+          this.onGrant(peer)
+        } else if (data.negotiate === 'request' && !peer.polite) {
+          if (peer.holding) {
+            // The peer asked again (its first request or our grant was lost): grant again.
+            this.signal(peer.id, { negotiate: 'grant' })
+          } else {
+            peer.requestPending = true
+            this.grantIfPossible(peer)
+          }
+        }
+      } else if ('description' in data) {
         const description = data.description
         const readyForOffer =
           !peer.makingOffer && (pc.signalingState === 'stable' || peer.settingRemoteAnswer)
@@ -662,6 +775,8 @@ export class VoiceEngine {
           if (alive() && pc.localDescription) {
             this.signal(peer.id, { description: pc.localDescription.toJSON() })
           }
+          // The offer we held for is answered: our own changes may go now.
+          if (alive() && !peer.polite) this.releaseHold(peer)
         }
       } else {
         try {
@@ -698,11 +813,11 @@ export class VoiceEngine {
 
   private disposePeer(peer: Peer): void {
     const { pc } = peer
-    if (peer.firstOfferTimer !== null) clearTimeout(peer.firstOfferTimer)
-    peer.firstOfferTimer = null
+    this.setTurnTimer(peer, null)
     pc.onnegotiationneeded = null
     pc.onicecandidate = null
     pc.onconnectionstatechange = null
+    pc.onsignalingstatechange = null
     pc.ontrack = null
     for (const stream of peer.streams.values()) {
       stream.onremovetrack = null

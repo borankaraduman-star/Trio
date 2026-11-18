@@ -33,6 +33,8 @@ export interface VoiceParticipant {
 export type SignalData =
   | { description: RTCSessionDescriptionInit }
   | { candidate: RTCIceCandidateInit | null }
+  /** Client-to-client turn-taking for offers (see voice.ts); the server relays it unread. */
+  | { negotiate: 'request' | 'grant' }
 
 export type ServerEvent =
   | {
