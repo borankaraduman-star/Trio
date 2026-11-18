@@ -572,5 +572,7 @@ def test_signal_shape_and_size_limits(trio, three):
         a.send_json({"type": "signal", "to": berk["id"], "data": {"sdp": blob}})
         assert expect(b, "signal")["data"] == {"sdp": blob}
         a.send_json({"type": "signal", "to": berk["id"], "data": {"sdp": blob + "x"}})
-        expect_error(a, "TOO_LARGE")
+        # The refusal names the peer, so the sender knows which negotiation was lost.
+        refused = expect(a, "error")
+        assert refused == {**refused, "code": "TOO_LARGE", "to": berk["id"]}
         quiet(b)

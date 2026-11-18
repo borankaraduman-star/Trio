@@ -160,6 +160,12 @@ as a file row, not a player or an image.
   drop (reconnect with backoff); stale sockets are reaped by the server's
   20 s ping within ~40 s, after which a reconnect succeeds.
 - Revoked tokens close with 4401 (§2, §3).
+- A refused `signal` (its `data` over 64 KiB, or the whole frame over the
+  frame cap) answers `error TOO_LARGE` with an extra **`to`: the user id the
+  signal was for**, so the sender knows which negotiation was lost. Other
+  `TOO_LARGE` errors carry no `to`. **client:** a lost description leaves that
+  peer connection unable to negotiate again; start that pair on a fresh
+  connection (`web/src/voice.ts`, "fresh connections").
 
 ## 7. Validation
 

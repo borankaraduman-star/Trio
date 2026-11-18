@@ -44,10 +44,26 @@ def encodable(value: Any) -> bool:
 
 
 class FrameError(Exception):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, **extra: Any) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        # Additive fields of the error frame (e.g. ``to`` of a refused signal).
+        self.extra = extra
+
+
+def _signal_target(text: str) -> int | None:
+    """The ``to`` of an over-sized ``signal`` frame, so the sender knows which
+    negotiation was lost (CONTRACT-V3 §6). The text is at most ``WS_MAX_SIZE``
+    (uvicorn closes anything larger), so parsing it is bounded."""
+    try:
+        frame = json.loads(text)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(frame, dict) or frame.get("type") != "signal":
+        return None
+    to = frame.get("to")
+    return to if is_int(to) else None
 
 
 def _bool(frame: dict[str, Any], key: str, *, default: bool | None = None) -> bool:
@@ -86,6 +102,9 @@ class Session:
     async def handle_text(self, text: str) -> None:
         try:
             if len(text) > FRAME_MAX_BYTES or len(text.encode("utf-8")) > FRAME_MAX_BYTES:
+                to = _signal_target(text)
+                if to is not None:
+                    raise FrameError("TOO_LARGE", "frame is too large", to=to)
                 raise FrameError("TOO_LARGE", "frame is too large")
             try:
                 frame = json.loads(text)
@@ -102,10 +121,10 @@ class Session:
                 raise FrameError("UNKNOWN_TYPE", "unknown frame type")
             await handler(frame)
         except FrameError as exc:
-            self.error(exc.code, exc.message)
+            self.error(exc.code, exc.message, **exc.extra)
 
-    def error(self, code: str, message: str) -> None:
-        self.conn.send({"type": "error", "code": code, "message": message})
+    def error(self, code: str, message: str, **extra: Any) -> None:
+        self.conn.send({"type": "error", "code": code, "message": message, **extra})
 
     def _text_channel(self, frame: dict[str, Any]) -> int:
         channel_id = frame.get("channel_id")
@@ -215,7 +234,7 @@ class Session:
         data = frame["data"]
         encoded = json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(encoded) > SIGNAL_DATA_MAX_BYTES:
-            raise FrameError("TOO_LARGE", "signal data is too large")
+            raise FrameError("TOO_LARGE", "signal data is too large", to=to)
         channel_id = self._own_voice_channel()
         target = self.hub.voice_member(to)
         if to == self.user["id"] or target is None or target[0] != channel_id:
