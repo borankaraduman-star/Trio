@@ -70,7 +70,7 @@ def quiet(sock: Any) -> None:
 def make_trio(tmp_path) -> Iterator[Callable[..., Trio]]:
     opened: list[TestClient] = []
 
-    def factory(*, http_transport: Any = None, **overrides: Any) -> Trio:
+    def factory(*, http_transport: Any = None, disk_free: Any = None, **overrides: Any) -> Trio:
         clock = Clock()
         values: dict[str, Any] = {
             "invite_code": INVITE,
@@ -78,7 +78,9 @@ def make_trio(tmp_path) -> Iterator[Callable[..., Trio]]:
             "upload_dir": str(tmp_path / f"uploads-{len(opened)}"),
         }
         values.update(overrides)
-        app = create_app(Settings(**values), now=clock, http_transport=http_transport)
+        app = create_app(
+            Settings(**values), now=clock, http_transport=http_transport, disk_free=disk_free
+        )
         client = TestClient(app)
         client.__enter__()
         opened.append(client)

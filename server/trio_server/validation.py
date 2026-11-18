@@ -10,8 +10,13 @@ CONTENT_MAX = 4000
 CHANNEL_KINDS = ("text", "voice")
 
 
+# Ids are SQLite INTEGERs: signed 64-bit. A larger value can be neither stored
+# nor looked up (sqlite3 raises OverflowError), so it is no id at all.
+ID_MAX = 2**63 - 1
+
+
 def is_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, int) and not isinstance(value, bool) and -ID_MAX <= value <= ID_MAX
 
 
 def clean_name(value: Any) -> str | None:

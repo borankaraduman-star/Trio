@@ -23,12 +23,22 @@ from starlette.websockets import WebSocket
 # Frames waiting for one slow client. Past it the connection is dropped rather
 # than letting one stalled tab hold memory or delay everybody else.
 SEND_QUEUE_SIZE = 512
+# Open sockets per user (tabs, devices). A new one past this is refused with
+# CLOSE_TOO_MANY rather than closing an old one: kicking the oldest would make
+# two tabs past the cap evict each other forever as each one reconnects, and
+# could cut the tab that is in voice.
+MAX_CONNECTIONS_PER_USER = 10
+CLOSE_UNAUTHORIZED = 4401
+CLOSE_TOO_MANY = 4429
 
 
 @dataclass(eq=False)
 class Connection:
     user_id: int
     ws: WebSocket
+    # SHA-256 of the token this socket signed in with: what logout and the
+    # periodic token re-check close it by.
+    token_hash: str = ""
     queue: asyncio.Queue[str] = field(default_factory=lambda: asyncio.Queue(SEND_QUEUE_SIZE))
     closed: bool = False
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
@@ -53,9 +63,16 @@ class Connection:
             self.closed = True
             self._tasks.append(asyncio.create_task(self._drop()))
 
-    async def _drop(self) -> None:
+    async def _drop(self, code: int = 1013, reason: str = "") -> None:
         with contextlib.suppress(Exception):
-            await self.ws.close(code=1013)
+            await self.ws.close(code=code, reason=reason)
+
+    def kick(self, code: int, reason: str = "") -> None:
+        """Close from the server side; nothing more is sent to it."""
+        if self.closed:
+            return
+        self.closed = True
+        self._tasks.append(asyncio.create_task(self._drop(code, reason)))
 
     def stop(self) -> None:
         self.closed = True
@@ -153,6 +170,38 @@ class Hub:
             self.voice_leave(conn.user_id)
         if conn.user_id not in self.conns:
             self.broadcast({"type": "presence", "user_id": conn.user_id, "online": False})
+
+    def connection_count(self, user_id: int) -> int:
+        return len(self.conns.get(user_id, ()))
+
+    def kick(self, conn: Connection, code: int, reason: str = "") -> None:
+        """Forget ``conn`` now (presence, voice) and close it with ``code``."""
+        self.disconnect(conn)
+        conn.kick(code, reason)
+
+    def kick_token(self, token_hash: str, code: int = CLOSE_UNAUTHORIZED) -> int:
+        """Close every socket that signed in with this token; how many."""
+        doomed = [c for conns in self.conns.values() for c in conns if c.token_hash == token_hash]
+        for conn in doomed:
+            self.kick(conn, code, "signed out")
+        return len(doomed)
+
+    def token_hashes(self) -> set[str]:
+        return {c.token_hash for conns in self.conns.values() for c in conns}
+
+    def sync_users(self, users: list[dict[str, Any]]) -> None:
+        """Mirror the database's list of (not removed) users.
+
+        A user who is gone (removed with the admin tool while the server ran)
+        leaves ``users`` and everybody gets ``user.removed``.
+        """
+        current = {u["id"]: u for u in users}
+        for user_id in [uid for uid in self.users if uid not in current]:
+            del self.users[user_id]
+            self.broadcast({"type": "user.removed", "user_id": user_id})
+        for user in users:
+            if user["id"] not in self.users:
+                self.add_user(user)
 
     def add_user(self, user: dict[str, Any]) -> None:
         self.users[user["id"]] = user

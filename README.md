@@ -26,7 +26,7 @@ tarayıcı <──── WebRTC (ses / kamera / ekran), doğrudan ya da Cloudfla
 - Sesli oda **tam ağ (mesh)**: herkes herkese doğrudan bağlanır, sunucu medyaya dokunmaz. 3 kişi için idealdir; seste 5–6 kişiye kadar rahat, kamera/ekran açıkken sınır daha erken gelir.
 - Uygulama **tek süreç** çalışır (durum bellekte). Birden fazla worker ya da replika çalıştırma.
 
-Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md).
+Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md), [`CONTRACT-V3.md`](CONTRACT-V3.md) (güvenlik sertleştirmesi, cihaz bağlama, yönetim aracı).
 
 ## Railway'e kurulum (önerilen)
 
@@ -34,13 +34,14 @@ Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md).
 
 **2. Volume.** Servisin üzerinde sağ tık (ya da `Ctrl/⌘+K` → *Add Volume*) → **Volume ekle**, bağlama yolu (mount path) **`/data`**. Veritabanı `/data/trio.db`, yüklenen dosyalar `/data/uploads` altında durur; imaj bu yolları zaten varsayılan olarak kullanır. Volume olmazsa her deploy'da tüm veri silinir.
 
-> Railway volume'u root kullanıcısına ait bağlar. İmaj bu yüzden **root olarak çalışır**; `RAILWAY_RUN_UID=0` ayarlamana gerek yoktur.
+> Railway volume'u root kullanıcısına ait bağlar. Konteyner root olarak başlar, giriş betiği (`trio-entrypoint`) `/data`'yı yetkisiz `trio` kullanıcısına devreder ve sunucuyu o kullanıcıyla çalıştırır (kod ve web istemcisi sunucu tarafından değiştirilemez). `RAILWAY_RUN_UID` ayarlamana gerek yoktur; ayarlarsan betik hiçbir şeyi değiştirmeden o kullanıcıyla çalışır.
 
 **3. Değişkenler.** Servis → **Variables**:
 
 - `TRIO_INVITE_CODE` (zorunlu): arkadaşlarına vereceğin kod, ör. `openssl rand -hex 8`
 - `TRIO_CF_TURN_KEY_ID` ve `TRIO_CF_TURN_API_TOKEN`: Cloudflare TURN (aşağıya bak). Olmadan da çalışır, ama farklı ağlardaki kişiler birbirini duyamayabilir.
-- İsteğe bağlı: `TRIO_MAX_USERS`, `TRIO_MAX_UPLOAD_MB` (tablo aşağıda)
+- `TRIO_MAX_USERS`: **gerçek kişi sayısına ayarla** (ör. üç arkadaşsanız `3`). Varsayılan 5; davet kodu sızarsa yabancılar ancak boş kalan yerleri doldurabilir.
+- İsteğe bağlı: `TRIO_MAX_UPLOAD_MB`, `TRIO_USER_QUOTA_MB`, `TRIO_DISK_RESERVE_MB`, `TRIO_TRUSTED_PROXY_HOPS` (tablo aşağıda)
 
 `PORT`'u Railway kendisi verir, sunucu onu dinler; elle ayarlama.
 
@@ -59,15 +60,20 @@ Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md).
 - **Tarayıcı:** Railway adresini açarlar, bir **ad** ve **davet kodunu** yazarlar. Oturum tarayıcıda saklanır. Telefonda da çalışır.
 - **Masaüstü uygulaması:** `desktop/` içindeki uygulamayı kurarlar (GitHub Releases'teki Windows/macOS/Linux paketleri). İlk açılışta sunucu adresi sorulur: `https://<ad>.up.railway.app`. Sonra aynı giriş ekranı gelir. Paketler imzasız olduğu için Windows SmartScreen ve macOS Gatekeeper uyarı verir (ayrıntı `desktop/` içinde).
 
-Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar); mevcut oturumlar etkilenmez, yeni katılımlar yeni kodu ister. `TRIO_MAX_USERS` hesap sayısını sınırlar.
+Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar); mevcut oturumlar etkilenmez, yeni katılımlar yeni kodu ister. `TRIO_MAX_USERS` hesap sayısını sınırlar. İçeri girmiş bir yabancıyı ya da kaybolan bir telefonu aşağıdaki **Yönetim** aracıyla çıkarırsın.
+
+**İkinci cihaz.** Aynı hesapla telefondan ve bilgisayardan girmek için davet koduyla ikinci kez katılma (bu yeni bir hesap açar ve bir yer harcar). Bunun yerine giriş yapılmış cihazda bir **bağlama kodu** alınır (10 dakika geçerli, tek kullanımlık) ve yeni cihazda girilir. Web arayüzündeki düğmesi ayrıca eklenecek; şimdilik kod yönetim aracıyla da üretilebilir (`new-link-code`, aşağıda).
 
 ## Ortam değişkenleri
 
 | değişken | varsayılan | anlamı |
 |---|---|---|
 | `TRIO_INVITE_CODE` | (zorunlu) | ortak davet kodu; yoksa sunucu başlamaz |
-| `TRIO_MAX_USERS` | `10` | bu sayıdan sonra yeni katılım reddedilir |
+| `TRIO_MAX_USERS` | `5` | bu sayıdan sonra yeni katılım reddedilir; gerçek kişi sayısına ayarla. Kaldırılan kullanıcılar sayılmaz |
 | `TRIO_MAX_UPLOAD_MB` | `25` | dosya başına en büyük boyut (MB) |
+| `TRIO_USER_QUOTA_MB` | `1024` | bir kullanıcının toplam yükleyebileceği (mesajda olsun olmasın) MB |
+| `TRIO_DISK_RESERVE_MB` | `200` | diskte hep boş kalacak MB; bunun altına inecek yükleme `507` ile reddedilir |
+| `TRIO_TRUSTED_PROXY_HOPS` | `1` | önündeki ters vekil (proxy) sayısı: istemci adresi `X-Forwarded-For`'un sağdan N'inci girdisi. Railway ve Caddy için `1`; uygulamaya doğrudan erişiliyorsa `0` |
 | `TRIO_CF_TURN_KEY_ID` | boş | Cloudflare TURN anahtarının "Turn Token ID"si |
 | `TRIO_CF_TURN_API_TOKEN` | boş | Cloudflare TURN anahtarının API token'ı (gizli) |
 | `TRIO_TURN_HOST` | boş | kendi coturn sunucunun adı (VPS kurulumu; Cloudflare ayarlıysa kullanılmaz) |
@@ -79,6 +85,39 @@ Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar)
 | `PORT` | `8000` | dinlenen port; Railway kendisi verir |
 
 TURN önceliği: Cloudflare (iki değişken de doluysa) → coturn (`TRIO_TURN_HOST` + `TRIO_TURN_SECRET`) → yalnızca STUN. Cloudflare'e ulaşılamazsa `/api/ice` hata vermez, yalnızca STUN döner ve sunucu günlüğüne bir uyarı yazar (token asla yazılmaz). Cloudflare'in yanıtı 1 saat önbellekte tutulur.
+
+## Yönetim
+
+Kullanıcıları listelemek, birini çıkarmak, oturumları kapatmak ve bağlama kodu üretmek için sunucuyla birlikte gelen araç:
+
+```bash
+python -m trio_server.admin list-users              # herkes: durum, oturum sayısı, kullandığı alan
+python -m trio_server.admin revoke-tokens Ayşe      # Ayşe'nin bütün cihazlarındaki oturumu kapat (hesap kalır)
+python -m trio_server.admin new-link-code Ayşe      # Ayşe için tek kullanımlık bağlama kodu (10 dk)
+python -m trio_server.admin remove-user Yabancı     # hesabı kaldır
+```
+
+- Ad, katılırken olduğu gibi büyük/küçük harf duyarsız eşleşir; `#3` gibi bir kimlik numarası da yazılabilir (`list-users` gösterir).
+- **`remove-user`**: kişinin oturumları kapanır ve bir daha giremez, yeri ve adı boşalır. **Mesajları silinmez**, eski adıyla görünmeye devam eder. Aynı adla sonradan biri katılırsa o yeni (başka kimlikli) bir hesaptır; eski mesajlarla aynı adı taşır. Kaldırma geri alınamaz.
+- Telefonunu kaybeden biri: önce `revoke-tokens` (kaybolan cihaz dahil her yerden çıkış), sonra `new-link-code` ile yeni cihaza kod.
+- Araç doğrudan SQLite dosyasıyla (`TRIO_DB_PATH`) çalışır; çalışan sunucuyu durdurmak gerekmez. Sunucu değişikliği yeni isteklerde ve bağlantılarda **hemen**, açık bağlantılarda **en geç 30 saniye** içinde fark eder (açık soketlerin belirteçlerini 30 saniyede bir yeniden denetler ve iptal edilenleri kapatır).
+- Root olarak çalıştırılırsa veritabanı dosyasının sahibine (`trio`) geçer; böylece sunucunun yazamayacağı dosyalar bırakmaz.
+
+**Railway'de:** araç, volume'un bağlı olduğu konteynerin **içinde** çalışmalı. Railway CLI ile servise bağlan ve komutu orada çalıştır:
+
+```bash
+railway ssh                                  # servisin konteynerine kabuk açar
+python -m trio_server.admin list-users       # konteynerin içinde
+```
+
+Bu komutun tam biçimi (ör. proje/servis seçimi, `railway ssh -- python -m trio_server.admin list-users` gibi tek satırlık kullanım) burada **denenmedi**; Railway CLI belgelerine bak. `railway run` **işe yaramaz**: komutu senin bilgisayarında, servisin değişkenleriyle çalıştırır ve volume'daki veritabanına ulaşamaz.
+
+**Docker / VPS'te:**
+
+```bash
+sudo docker compose exec app python -m trio_server.admin list-users        # deploy/ içinde
+docker exec <konteyner> python -m trio_server.admin remove-user Yabancı     # tek docker run ile
+```
 
 ## Yedekleme
 
@@ -114,11 +153,13 @@ Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 22.
 
 ```bash
 cd server && uv venv && uv pip install -e '.[dev]'
-TRIO_INVITE_CODE=gizli .venv/bin/uvicorn trio_server.main:app --reload --port 8000
+TRIO_INVITE_CODE=gizli .venv/bin/python -m trio_server --reload --port 8000
 .venv/bin/python -m pytest -q && .venv/bin/ruff check .
 
 cd web && npm install && npm run dev      # http://localhost:5173, /api ve /ws :8000'e gider
 ```
+
+`python -m trio_server` imajın kullandığı uvicorn ayarlarını (tek worker, websocket ileti sınırı, vekil başlıklarını uvicorn'a bırakmama) tek yerden uygular; doğrudan `uvicorn` çalıştırmak yerine onu kullan. `server/requirements.lock` imajın kurduğu sabitlenmiş (hash'li) bağımlılıklardır; `pyproject.toml`'daki bağımlılıkları değiştirince dosyanın başındaki komutla yeniden üret.
 
 `localhost` güvenli bağlam sayıldığı için mikrofon HTTPS olmadan çalışır; ağdaki başka bir cihazdan IP ile açarsan çalışmaz. İmajı yerelde denemek: `docker build -t trio . && docker run -p 8000:8000 -e TRIO_INVITE_CODE=gizli -v trio_data:/data trio`.
 
@@ -141,17 +182,28 @@ cd web && npm install && npm run dev      # http://localhost:5173, /api ve /ws :
      Listede `turn:turn.cloudflare.com...` adresleri ve `username`/`credential` olmalı. Bu değerleri <https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/> sayfasında dene; **`relay`** türünde aday görmelisin.
 6. `chrome://webrtc-internals` (Firefox: `about:webrtc`) seçilen aday çiftini ve paket sayaçlarını gösterir.
 
-**Dosya yüklenmiyor.** "çok büyük" hatası `TRIO_MAX_UPLOAD_MB` sınırıdır. Railway'de volume `/data`'ya bağlı değilse dosyalar bir sonraki deploy'da kaybolur. 24 saat içinde bir mesaja eklenmeyen yüklemeler otomatik silinir.
+**Dosya yüklenmiyor.**
+
+- "çok büyük" (`413 FILE_TOO_LARGE`) `TRIO_MAX_UPLOAD_MB` sınırıdır.
+- `413 QUOTA_EXCEEDED`: kişinin toplam alanı (`TRIO_USER_QUOTA_MB`) doldu; `list-users` kimin ne kadar kullandığını gösterir. Dosya silme özelliği yok; gerekirse kotayı yükselt.
+- `507 STORAGE_FULL`: volume dolmak üzere (`TRIO_DISK_RESERVE_MB` kadar boş yer korunur). Railway'de volume'u büyüt. Diğer her şey çalışmaya devam eder.
+- `429 UPLOAD_IN_PROGRESS`: aynı kişi aynı anda yalnızca bir dosya yükleyebilir; dosyalar sırayla gönderilir.
+- Railway'de volume `/data`'ya bağlı değilse dosyalar bir sonraki deploy'da kaybolur. 24 saat içinde bir mesaja eklenmeyen yüklemeler otomatik silinir (sunucu açılışında da).
 
 **Sayfa açılıyor ama "bağlantı koptu".** Railway → Deployments → günlükler. `TRIO_INVITE_CODE` boşsa sunucu başlamaz. Sağlık kontrolü yolu `/api/health` olmalı.
 
-**"Çok fazla deneme" (429).** Katılma denemeleri adres başına 10 dakikada 10 ile sınırlı; bekle.
+**"Çok fazla deneme" (429).** Katılma denemeleri adres başına 10 dakikada 10 ile sınırlı. Ayrıca bütün istemciler için 10 dakikada toplam 30 **hatalı** deneme (yanlış davet ya da bağlama kodu) sınırı var; aşılırsa (biri kod deniyorsa) doğru kodla gelen kişi yine de en geç ~10 saniye içinde girebilir, `Retry-After` kaç saniye bekleneceğini söyler. Sürekli oluyorsa davet kodunu değiştir.
+
+**Birçok sekme açıkken bağlantı kopuyor.** Bir kişi aynı anda en fazla 10 bağlantı (sekme/cihaz) açabilir; 11'inci `4429` koduyla kapatılır ve istemci yeniden dener. Fazla sekmeleri kapat; ölü bağlantılar ~40 saniyede düşer.
+
+**Herkes çıkış yaptı / "oturum kapandı".** Biri `revoke-tokens` ya da `remove-user` çalıştırdıysa ilgili oturumlar 30 saniye içinde kapanır (`4401`); kişi yeniden katılır ya da bağlama kodu alır.
 
 ## Bilinen sınırlar
 
 - Mesh nedeniyle sesli odada pratik sınır 5–6 kişi; kamera ve ekran paylaşımı açıkken daha az.
 - Tek süreç, tek kopya; yatay ölçekleme yok. Deploy ya da yeniden başlatmada herkes kısa süre düşer ve yeniden bağlanır.
 - Roller, moderasyon, mesaj düzenleme/silme, özel mesaj yok. Davet kodunu bilen herkes eşit üyedir.
-- Oturum belirteçlerinin süresi dolmaz; uzaktan çıkış yaptırma arayüzü yok.
+- Oturum belirteçlerinin süresi dolmaz. Uzaktan çıkış yaptırma ve kullanıcı kaldırma yalnızca yönetim aracıyla (komut satırı) yapılır; web arayüzünde henüz yok.
+- Dosya silme yok; kullanıcı kotası ömür boyu toplamdır.
 - Mesajlar ve dosyalar sunucuda şifresiz durur. Dosya bağlantıları gizli kimlik içerir; bağlantıyı bilen herkes dosyayı açabilir, bu yüzden bağlantıları dışarı paylaşma. Ses, kamera ve ekran tarayıcılar arasında uçtan uca şifrelidir.
 - iOS Safari'de ekran paylaşımı yok (tarayıcı desteklemiyor); izlemek mümkün.

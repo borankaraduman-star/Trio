@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hmac
 import json
 import logging
+import re
 import secrets
+import shutil
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -19,28 +22,46 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from trio_server import logsafe
+from trio_server import linkcodes, logsafe
 from trio_server.config import Settings
-from trio_server.db import Database, NameTakenError, ServerFullError, hash_token
+from trio_server.db import (
+    SQL_INT_MAX,
+    Database,
+    NameTakenError,
+    ServerFullError,
+    StorageFullError,
+    TooManyLinkCodesError,
+    hash_token,
+    utc_iso,
+)
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
-from trio_server.ratelimit import AttemptLimiter, client_address
+from trio_server.ratelimit import JoinGuard, client_address
 from trio_server.uploads import (
     ATTACHMENT_ID,
+    FRAMING_ALLOWANCE,
     ORPHAN_SECONDS,
     new_attachment_id,
     receive_upload,
     serving_headers,
     sniff_content_type,
+    storage_full,
 )
 from trio_server.validation import CHANNEL_KINDS, clean_name, name_key
-from trio_server.ws import websocket_endpoint
+from trio_server.ws import encodable, websocket_endpoint
 
 logger = logging.getLogger("trio")
 
 JOIN_ATTEMPTS = 10
 JOIN_WINDOW_SECONDS = 600
+# Failed joins (wrong invite code or link code) across ALL clients per window;
+# see ratelimit.JoinGuard for the trickle that keeps it from locking anybody out.
+JOIN_GLOBAL_FAILURES = 30
+JOIN_TRICKLE_SECONDS = 10
+# How often open websockets are checked against the database, so that a token
+# revoked or a user removed by the admin tool (another process) is noticed.
+TOKEN_RECHECK_SECONDS = 30
 BODY_MAX_BYTES = 16 * 1024
 MAX_CHANNELS = 200
 
@@ -70,6 +91,10 @@ async def read_json_object(request: Request) -> dict[str, Any]:
         data = None
     if not isinstance(data, dict):
         raise ApiError(422, "INVALID_REQUEST", "body must be a JSON object")
+    if not encodable(data):
+        # "\ud800" is valid JSON and not valid text: it cannot be compared,
+        # stored or hashed as UTF-8.
+        raise ApiError(422, "INVALID_REQUEST", "body contains invalid text")
     return data
 
 
@@ -78,7 +103,9 @@ async def current_user(request: Request) -> dict[str, Any]:
     token = token.strip()
     user = None
     if scheme.lower() == "bearer" and token:
-        user = await request.app.state.db.user_for_token(token)
+        token_hash = hash_token(token)
+        user = await request.app.state.db.user_for_token_hash(token_hash)
+        request.state.token_hash = token_hash
     if user is None:
         raise ApiError(401, "UNAUTHORIZED", "missing or invalid token")
     return user
@@ -92,35 +119,100 @@ def create_app(
     *,
     now: Callable[[], float] = time.time,
     http_transport: httpx.AsyncBaseTransport | None = None,
+    disk_free: Callable[[Path], int] | None = None,
 ) -> FastAPI:
     """Build the app.
 
-    ``now`` is the clock (seconds since the epoch) and ``http_transport`` the
-    transport for outgoing HTTP (Cloudflare TURN); tests replace both.
+    ``now`` is the clock (seconds since the epoch), ``http_transport`` the
+    transport for outgoing HTTP (Cloudflare TURN) and ``disk_free`` the free
+    bytes on the uploads volume; tests replace all three.
     """
     logsafe.install()
     db = Database(settings.db_path)
     hub = Hub()
-    join_limiter = AttemptLimiter(JOIN_ATTEMPTS, JOIN_WINDOW_SECONDS, now)
+    join_guard = JoinGuard(
+        now,
+        per_address=JOIN_ATTEMPTS,
+        window_seconds=JOIN_WINDOW_SECONDS,
+        global_failures=JOIN_GLOBAL_FAILURES,
+        trickle_seconds=JOIN_TRICKLE_SECONDS,
+    )
     invite_code = settings.invite_code.encode("utf-8")
     ice_provider = IceProvider(settings, now, http_transport)
     upload_dir = Path(settings.upload_dir)
+    free_bytes = disk_free or (lambda path: shutil.disk_usage(path).free)
+    # Users with an upload being received right now (one at a time each).
+    uploading: set[int] = set()
+
+    async def sweep_orphans() -> None:
+        """Delete uploads never attached to a message within 24 hours."""
+        async with db.write_lock:
+            stale = await db.orphan_attachment_ids(now() - ORPHAN_SECONDS)
+            if not stale:
+                return
+            await db.delete_attachments(stale)
+        _remove(*(upload_dir / attachment_id for attachment_id in stale))
+        logger.info("uploads.swept count=%s", len(stale))
+
+    async def recheck_tokens() -> None:
+        """Close sockets whose token is gone; mirror removed users.
+
+        Token lookups for REST requests and new sockets read the database
+        every time, so the admin tool's changes apply to them at once. An
+        OPEN socket authenticated once, at connect; this closes it (4401)
+        within TOKEN_RECHECK_SECONDS of its token being revoked.
+        """
+        hashes = hub.token_hashes()
+        live = await db.live_token_hashes(sorted(hashes)) if hashes else set()
+        for token_hash in hashes - live:
+            hub.kick_token(token_hash)
+        # Under the write lock: a join adds its user to the hub while holding
+        # it, so a list read here cannot miss a user that the hub already has.
+        async with db.write_lock:
+            hub.sync_users(await db.list_users())
+
+    async def watch_tokens() -> None:
+        while True:
+            await asyncio.sleep(TOKEN_RECHECK_SECONDS)
+            try:
+                await recheck_tokens()
+            except Exception:  # noqa: BLE001 - try again next round
+                logger.exception("tokens.recheck.failed")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _prepare_upload_dir(upload_dir)
         await db.open()
         hub.load(await db.list_users(), await db.list_channels())
+        # Not only on upload: a server nobody uploads to never swept at all.
+        await sweep_orphans()
+        watcher = asyncio.create_task(watch_tokens())
         try:
             yield
         finally:
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
             await db.close()
 
-    app = FastAPI(title="Trio", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    # redirect_slashes off: behind a TLS edge the app sees http://, and a
+    # trailing-slash redirect would point the browser at a plain-http URL.
+    app = FastAPI(
+        title="Trio",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        redirect_slashes=False,
+    )
     app.state.settings = settings
     app.state.db = db
     app.state.hub = hub
     app.state.now = now
+    app.state.join_guard = join_guard
+    app.state.recheck_tokens = recheck_tokens
+    app.state.sweep_orphans = sweep_orphans
+    app.state.uploading = uploading
 
     # -- errors: always the contract's envelope ------------------------------
 
@@ -156,19 +248,23 @@ def create_app(
 
     @app.post("/api/join", status_code=201)
     async def join(request: Request) -> Any:
-        address = client_address(request)
+        address = client_address(request, settings.trusted_proxy_hops)
         # Every attempt counts, right or wrong, before anything is compared.
-        if not join_limiter.allow(address):
+        retry_after = join_guard.admit(address)
+        if retry_after is not None:
             return error_response(
                 429,
                 "RATE_LIMITED",
                 "too many join attempts, try again later",
-                headers={"Retry-After": str(join_limiter.retry_after(address))},
+                headers={"Retry-After": str(retry_after)},
             )
         body = await read_json_object(request)
+        if body.get("link_code") is not None:
+            return await join_with_link_code(body["link_code"], address)
         supplied = body.get("invite_code")
         supplied_bytes = supplied.encode("utf-8") if isinstance(supplied, str) else b""
         if not hmac.compare_digest(supplied_bytes, invite_code):
+            join_guard.failed(address)
             raise ApiError(403, "INVALID_INVITE", "invalid invite code")
         name = clean_name(body.get("name"))
         if name is None:
@@ -186,6 +282,50 @@ def create_app(
             hub.add_user(user)
         logger.info("user.joined id=%s", user["id"])
         return {"token": token, "user": user}
+
+    async def join_with_link_code(raw: Any, address: str) -> JSONResponse:
+        """Another device for an existing user: a new token, the same account."""
+        code = linkcodes.normalize(raw)
+        user = None
+        token = secrets.token_urlsafe(32)
+        if code is not None:
+            async with db.write_lock:
+                user = await db.redeem_link_code(
+                    linkcodes.hash_code(code), now(), hash_token(token)
+                )
+        if user is None:
+            join_guard.failed(address)
+            raise ApiError(403, "INVALID_LINK_CODE", "invalid or expired link code")
+        logger.info("user.linked id=%s", user["id"])
+        return JSONResponse({"token": token, "user": user}, status_code=200)
+
+    @app.post("/api/link-codes", status_code=201)
+    async def create_link_code(user: CurrentUser) -> dict[str, Any]:
+        code = linkcodes.new_code()
+        async with db.write_lock:
+            try:
+                expires = await db.create_link_code(
+                    user["id"],
+                    linkcodes.hash_code(code),
+                    now(),
+                    linkcodes.TTL_SECONDS,
+                    linkcodes.MAX_LIVE_PER_USER,
+                )
+            except TooManyLinkCodesError:
+                raise ApiError(
+                    429, "TOO_MANY_LINK_CODES", "too many unused link codes, try again later"
+                ) from None
+        return {"code": code, "expires_at": utc_iso(expires)}
+
+    @app.delete("/api/session", status_code=204)
+    async def logout(request: Request, user: CurrentUser) -> Response:
+        """Sign THIS token out: it stops working and its sockets close with 4401."""
+        token_hash = request.state.token_hash
+        async with db.write_lock:
+            await db.delete_token(token_hash)
+        closed = hub.kick_token(token_hash)
+        logger.info("session.ended user=%s sockets=%s", user["id"], closed)
+        return Response(status_code=204)
 
     @app.get("/api/me")
     async def me(user: CurrentUser) -> dict[str, Any]:
@@ -215,7 +355,7 @@ def create_app(
     async def list_messages(
         channel_id: int,
         user: CurrentUser,
-        before: Annotated[int | None, Query(ge=1)] = None,
+        before: Annotated[int | None, Query(ge=1, le=SQL_INT_MAX)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> dict[str, Any]:
         channel = hub.channels.get(channel_id)
@@ -231,22 +371,47 @@ def create_app(
 
     # -- attachments --------------------------------------------------------
 
-    async def sweep_orphans() -> None:
-        """Delete uploads never attached to a message within 24 hours."""
-        async with db.write_lock:
-            stale = await db.orphan_attachment_ids(now() - ORPHAN_SECONDS)
-            if not stale:
-                return
-            await db.delete_attachments(stale)
-        _remove(*(upload_dir / attachment_id for attachment_id in stale))
-        logger.info("uploads.swept count=%s", len(stale))
+    def space_left() -> bool:
+        return free_bytes(upload_dir) >= settings.disk_reserve_bytes
 
     @app.post("/api/uploads", status_code=201)
     async def upload(request: Request, user: CurrentUser) -> dict[str, Any]:
+        # One at a time per user: a burst of parallel uploads cannot race past
+        # the quota (each would see the same "used" figure).
+        if user["id"] in uploading:
+            raise ApiError(429, "UPLOAD_IN_PROGRESS", "wait for your other upload to finish")
+        uploading.add(user["id"])
+        try:
+            return await store_upload(request, user)
+        finally:
+            uploading.discard(user["id"])
+
+    async def store_upload(request: Request, user: dict[str, Any]) -> dict[str, Any]:
         await sweep_orphans()
+        remaining = settings.user_quota_bytes - await db.stored_bytes(user["id"])
+        if remaining <= 0:
+            raise ApiError(413, "QUOTA_EXCEEDED", "you have used all of your storage")
+        declared = request.headers.get("content-length", "")
+        expected = settings.max_upload_bytes + FRAMING_ALLOWANCE
+        if declared.isdigit():
+            expected = min(int(declared), expected)
+        if free_bytes(upload_dir) - expected < settings.disk_reserve_bytes:
+            logger.warning("upload.refused.disk_full user=%s", user["id"])
+            raise storage_full()
         attachment_id = new_attachment_id()
         partial = upload_dir / f"{attachment_id}.part"
-        received = await receive_upload(request, partial, settings.max_upload_bytes)
+        try:
+            received = await receive_upload(
+                request,
+                partial,
+                settings.max_upload_bytes,
+                quota_bytes=remaining,
+                space_left=space_left,
+            )
+        except ApiError as exc:
+            if exc.status == 507:
+                logger.warning("upload.refused.disk_full_while_writing user=%s", user["id"])
+            raise
         final = upload_dir / attachment_id
         try:
             partial.replace(final)
@@ -260,6 +425,9 @@ def create_app(
                     received.size,
                     now(),
                 )
+        except StorageFullError:
+            _remove(partial, final)
+            raise storage_full() from None
         except BaseException:
             _remove(partial, final)
             raise
@@ -309,6 +477,47 @@ def _remove(*paths: Path) -> None:
             path.unlink()
 
 
+_HOST = re.compile(r"^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$")
+
+
+def shell_headers(host: str) -> dict[str, str]:
+    """Headers for the app shell (index.html): what the page may load and who may frame it.
+
+    connect-src: CSP Level 3 lets 'self' match ws:/wss: on the same host, but
+    browsers that predate that rule (Safari before 15.4) would block the
+    websocket, so the page's own host is also named explicitly, for both
+    schemes. That is tighter than "ws: wss:" (any host) and works everywhere.
+    The Host header comes from the request; it is only used when it is a
+    plain host[:port], so it cannot add a directive.
+    """
+    connect = "'self'"
+    if _HOST.match(host):
+        connect += f" ws://{host} wss://{host}"
+    policy = "; ".join(
+        (
+            "default-src 'self'",
+            # wasm-unsafe-eval + blob: for the RNNoise AudioWorklet and its wasm.
+            "script-src 'self' 'wasm-unsafe-eval' blob:",
+            "worker-src 'self' blob:",
+            f"connect-src {connect}",
+            "img-src 'self' blob: data:",
+            "media-src 'self' blob:",
+            "style-src 'self' 'unsafe-inline'",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "frame-ancestors 'none'",
+        )
+    )
+    return {
+        "Content-Security-Policy": policy,
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Permissions-Policy": "camera=(self), microphone=(self), display-capture=(self)",
+        "Cache-Control": "no-cache",
+    }
+
+
 def _mount_static(app: FastAPI, directory: Path) -> None:
     """Serve the built client, falling back to index.html for client-side routes."""
     root = directory.resolve()
@@ -316,12 +525,16 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
         logger.warning("static.missing index.html not found in TRIO_STATIC_DIR")
 
     @app.api_route("/{path:path}", methods=["GET", "HEAD"])
-    async def static_files(path: str) -> Response:
+    async def static_files(path: str, request: Request) -> Response:
         if path in ("api", "ws") or path.startswith(("api/", "ws/")):
             return error_response(404, "NOT_FOUND", "no such endpoint")
         if path and "\x00" not in path:
             candidate = (root / path).resolve()
             # resolve() follows ".." and symlinks; anything outside the root is not ours.
+            if candidate == root / "index.html":
+                return FileResponse(
+                    candidate, headers=shell_headers(request.headers.get("host", ""))
+                )
             if candidate.is_relative_to(root) and candidate.is_file():
                 headers = {"X-Content-Type-Options": "nosniff"}
                 if path.startswith("assets/"):
@@ -334,6 +547,4 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
         index = root / "index.html"
         if path.startswith("assets/") or "." in last or not index.is_file():
             return error_response(404, "NOT_FOUND", "not found")
-        return FileResponse(
-            index, headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"}
-        )
+        return FileResponse(index, headers=shell_headers(request.headers.get("host", "")))
