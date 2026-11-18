@@ -214,6 +214,35 @@ function stopStream(stream: MediaStream | null): void {
 }
 
 /**
+ * Ends what these senders send, for good, by STOPPING their transceivers.
+ *
+ * Not `removeTrack`: that only turns a transceiver to `recvonly`, it stays in
+ * the description, and the next `addTrack` never reuses it (its receiving
+ * direction is still in use by the other side's view). Every camera or
+ * screen cycle then added m-lines; the offer grew ~5.4 KB per camera cycle
+ * and on the 12th it passed the server's 64 KiB signal cap (review finding
+ * 1). A stopped transceiver's m-line is rejected (port 0) in the next offer,
+ * and once that is negotiated Chromium recycles the m-line for the next new
+ * transceiver, so the description stays the size of what is live
+ * (`e2e/tests/16-renegotiation-growth.spec.ts` measures it). Stopping goes
+ * through `onnegotiationneeded`, so through the turn-taking, as removeTrack did.
+ */
+function stopSenders(pc: RTCPeerConnection, senders: readonly RTCRtpSender[]): void {
+  if (senders.length === 0) return
+  for (const transceiver of pc.getTransceivers()) {
+    if (!senders.includes(transceiver.sender)) continue
+    try {
+      // removeTrack first: it lets go of the track at once (`sender.track`
+      // is null now), while a stop alone keeps it until negotiated.
+      pc.removeTrack(transceiver.sender)
+      transceiver.stop()
+    } catch {
+      // The connection is already closed.
+    }
+  }
+}
+
+/**
  * Owns everything about voice in this tab: the microphone, one
  * RTCPeerConnection per other member of the channel (full mesh, perfect
  * negotiation), the shared screen, and speaking detection. Framework-free:
@@ -564,13 +593,7 @@ export class VoiceEngine {
     if (!stream) return
     this.screenStream = null
     for (const peer of this.peers.values()) {
-      for (const sender of peer.screenSenders) {
-        try {
-          peer.pc.removeTrack(sender)
-        } catch {
-          // The connection is already closed.
-        }
-      }
+      stopSenders(peer.pc, peer.screenSenders)
       peer.screenSenders = []
     }
     stopStream(stream)
@@ -640,13 +663,7 @@ export class VoiceEngine {
     if (!stream) return
     this.cameraStream = null
     for (const peer of this.peers.values()) {
-      for (const sender of peer.cameraSenders) {
-        try {
-          peer.pc.removeTrack(sender)
-        } catch {
-          // The connection is already closed.
-        }
-      }
+      stopSenders(peer.pc, peer.cameraSenders)
       peer.cameraSenders = []
     }
     stopStream(stream)
