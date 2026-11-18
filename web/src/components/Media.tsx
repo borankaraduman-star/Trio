@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useSinkId } from '../useSinkId'
 import type { RemoteMedia } from '../voice'
 
 function attach(element: HTMLMediaElement, stream: MediaStream): () => void {
@@ -15,6 +16,7 @@ function attach(element: HTMLMediaElement, stream: MediaStream): () => void {
 /** One remote microphone. Deafen mutes the element, not the track. */
 export function RemoteAudio({ media, muted }: { media: RemoteMedia; muted: boolean }) {
   const ref = useRef<HTMLAudioElement>(null)
+  useSinkId(ref)
 
   useEffect(() => {
     const element = ref.current
