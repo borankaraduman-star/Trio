@@ -35,7 +35,9 @@ export interface ContextOptions {
 
 /**
  * Wraps RTCPeerConnection so a test can reach every connection the app made
- * (for getStats). It changes nothing about how the app uses them.
+ * (for getStats), and remembers every camera and microphone track the page
+ * opened (to check that one is really released). It changes nothing about
+ * how the app uses them: the same objects are handed back.
  */
 const PEER_CONNECTION_PROBE = `
 (() => {
@@ -49,6 +51,18 @@ const PEER_CONNECTION_PROBE = `
     }
   }
   window.RTCPeerConnection = Probed
+  window.__trioCameraTracks = []
+  window.__trioMicTracks = []
+  const media = navigator.mediaDevices
+  if (media && media.getUserMedia) {
+    const getUserMedia = media.getUserMedia.bind(media)
+    media.getUserMedia = async (constraints) => {
+      const stream = await getUserMedia(constraints)
+      window.__trioCameraTracks.push(...stream.getVideoTracks())
+      window.__trioMicTracks.push(...stream.getAudioTracks())
+      return stream
+    }
+  }
 })()
 `
 
@@ -308,4 +322,33 @@ export async function expectScreensDecoding(page: Page, count: number): Promise<
       { timeout: 20_000, message: 'every remote screen should be decoding' },
     )
     .toBe(true)
+}
+
+// --- text ------------------------------------------------------------------------
+
+/**
+ * `count` messages `${prefix} 1..count` from `person` into `channelId`, through
+ * a socket of their own (as the UI would send them, but without typing each).
+ */
+export async function bulkSend(person: Person, channelId: number, count: number, prefix: string): Promise<void> {
+  await person.page.evaluate(
+    async ([channel, total, text]) => {
+      const token = localStorage.getItem('trio.token')!
+      const ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(token)}`)
+      await new Promise((resolve) => ws.addEventListener('message', resolve, { once: true }))
+      let confirmed = 0
+      const done = new Promise<void>((resolve) =>
+        ws.addEventListener('message', (event) => {
+          const frame = JSON.parse(String(event.data))
+          if (frame.type === 'message.new' && frame.nonce?.startsWith('bulk-') && ++confirmed === total) resolve()
+        }),
+      )
+      for (let i = 1; i <= total; i++) {
+        ws.send(JSON.stringify({ type: 'message.send', channel_id: channel, content: `${text} ${i}`, nonce: `bulk-${i}` }))
+      }
+      await done
+      ws.close()
+    },
+    [channelId, count, prefix] as const,
+  )
 }

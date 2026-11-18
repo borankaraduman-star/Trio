@@ -6,6 +6,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { sql } from '../lib/db'
 import { E2E_DIR, freshServer } from '../lib/server'
+import { expectTileDecoding } from '../lib/media'
 import { expect, expectConnected, expectScreensDecoding, joinVoice, newContext, personViaApi, test, threePeople, type Person } from '../lib/trio'
 
 const OUT = path.join(E2E_DIR, 'screenshots')
@@ -136,4 +137,118 @@ test('screenshot 05: phone width with the drawer open', async ({ browser, trio }
   await expect(phone.page.getByTestId(`voice-user-${phone.user.id}`)).toHaveAttribute('data-muted', 'true')
   await expect(phone.page.locator('nav.sidebar')).toBeInViewport({ ratio: 0.99 })
   await shot(phone.page, '05-mobile.png')
+})
+
+/** A photo-like picture for the attachment shot: drawn in the page, a real PNG. */
+async function drawPhoto(page: Page): Promise<Buffer> {
+  const base64 = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 800
+    canvas.height = 533
+    const g = canvas.getContext('2d')!
+    const sky = g.createLinearGradient(0, 0, 0, 533)
+    sky.addColorStop(0, '#f6b36b')
+    sky.addColorStop(0.55, '#f4d6a0')
+    sky.addColorStop(1, '#c98b5a')
+    g.fillStyle = sky
+    g.fillRect(0, 0, 800, 533)
+    // Balloons over the valley.
+    const balloons: [number, number, number, string][] = [
+      [180, 150, 46, '#e4572e'],
+      [420, 110, 58, '#2a9d8f'],
+      [620, 190, 38, '#e9c46a'],
+      [300, 250, 28, '#6a4c93'],
+    ]
+    for (const [x, y, r, color] of balloons) {
+      g.fillStyle = color
+      g.beginPath()
+      g.ellipse(x, y, r, r * 1.15, 0, 0, Math.PI * 2)
+      g.fill()
+      g.fillStyle = '#5b3a29'
+      g.fillRect(x - r * 0.18, y + r * 1.3, r * 0.36, r * 0.3)
+    }
+    g.fillStyle = '#8c5a3c'
+    g.beginPath()
+    g.moveTo(0, 533)
+    for (let x = 0; x <= 800; x += 40) g.lineTo(x, 420 + 40 * Math.sin(x / 70) + (x % 120 === 0 ? -30 : 0))
+    g.lineTo(800, 533)
+    g.fill()
+    return canvas.toDataURL('image/png').split(',')[1]
+  })
+  return Buffer.from(base64, 'base64')
+}
+
+test('screenshot 06: an image and a file in the conversation', async ({ browser, trio }) => {
+  const people = await threePeople(browser, trio, DESKTOP)
+  const [ayse, mehmet] = people
+  await seedConversation(people)
+  const photo = await drawPhoto(mehmet.page)
+  await mehmet.page.getByTestId('file-input').setInputFiles([
+    { name: 'kapadokya-balonlar.png', mimeType: 'image/png', buffer: photo },
+    { name: 'oyun-kurallari.pdf', mimeType: 'application/pdf', buffer: Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(184_000, 32)]) },
+  ])
+  await expect(mehmet.page.locator('[data-testid="pending-attachment"][data-status="done"]')).toHaveCount(2)
+  await send(mehmet, 'Geçen haftadan bir kare, bir de kuralların özeti 📎')
+  await send(ayse, 'Harika görünüyor, akşam bakarım!')
+
+  const page = ayse.page
+  const image = page.getByTestId('attachment-image')
+  await expect.poll(() => image.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(800)
+  await expect(page.getByTestId('attachment-file')).toContainText('oyun-kurallari.pdf')
+  // A chip of her own reply-in-progress, above the composer.
+  await page.getByTestId('file-input').setInputFiles({ name: 'pizza-menusu.jpg', mimeType: 'image/jpeg', buffer: await jpeg(page) })
+  await expect(page.locator('[data-testid="pending-attachment"][data-status="done"]')).toHaveCount(1)
+  await page.getByTestId('message-list').evaluate((el) => (el.scrollTop = el.scrollHeight))
+  await shot(page, '06-attachments.png')
+})
+
+async function jpeg(page: Page): Promise<Buffer> {
+  const base64 = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 320
+    canvas.height = 240
+    const g = canvas.getContext('2d')!
+    g.fillStyle = '#d62828'
+    g.fillRect(0, 0, 320, 240)
+    g.fillStyle = '#fcbf49'
+    g.beginPath()
+    g.arc(160, 120, 90, 0, Math.PI * 2)
+    g.fill()
+    return canvas.toDataURL('image/jpeg', 0.9).split(',')[1]
+  })
+  return Buffer.from(base64, 'base64')
+}
+
+test('screenshot 07: two cameras and a shared screen', async ({ browser, trio }) => {
+  test.setTimeout(150_000)
+  const people = await threePeople(browser, trio, DESKTOP)
+  const [ayse, mehmet, zeynep] = people
+  await seedConversation(people)
+  for (const person of people) await joinVoice(person)
+  await ayse.page.getByTestId('btn-camera').click()
+  await mehmet.page.getByTestId('btn-camera').click()
+  await mehmet.page.getByTestId('btn-screen').click()
+  const page = zeynep.page
+  await expectTileDecoding(page, `remote-camera-${ayse.user.id}`, 'camera', 'Ayşe')
+  await expectTileDecoding(page, `remote-camera-${mehmet.user.id}`, 'camera', 'Mehmet')
+  await expectTileDecoding(page, 'remote-video', 'screen', 'Mehmet · ekran')
+  await expect(page.locator('[data-testid="stage"] figure')).toHaveCount(3)
+  await shot(page, '07-cameras.png')
+})
+
+test('screenshot 08: the settings dialog', async ({ browser, trio }) => {
+  const people = await threePeople(browser, trio, DESKTOP)
+  await seedConversation(people)
+  const [ayse, mehmet] = people
+  await joinVoice(ayse)
+  await joinVoice(mehmet)
+  const page = ayse.page
+  await page.getByTestId('btn-settings').click()
+  await expect(page.getByTestId('settings-dialog')).toBeVisible()
+  await expect(page.getByTestId('settings-noise-state')).toHaveAttribute('data-state', 'active')
+  await page.getByTestId('settings-mode-ptt').check()
+  await expect(page.getByTestId('settings-ptt-key')).toHaveText('` (Backquote)')
+  await page.getByTestId('settings-mic').selectOption({ label: 'Fake Audio Input 1' })
+  await page.getByTestId('settings-mic').blur()
+  await shot(page, '08-settings.png')
 })

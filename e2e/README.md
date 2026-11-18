@@ -60,10 +60,46 @@ silence). A shared screen must have `videoWidth > 0` and an advancing
 `RTCPeerConnection` (added with `addInitScript`) only records the
 connections so the tests can call `getStats()`.
 
+The v2 features are asserted the same way (`lib/media.ts`):
+
+- a camera or screen tile must exist once, carry the right `data-kind` and
+  caption, have `videoWidth > 0` and advancing frames;
+- push-to-talk and noise suppression read the RECEIVING side: the growth of
+  inbound-rtp `totalAudioEnergy` per second on the receiver of that speaker's
+  track (silence below 1e-6). Those two specs replace the beep with a WAV
+  file (`--use-file-for-fake-audio-capture`, written to `.state/`): a
+  continuous voice-like signal for PTT, white noise for RNNoise;
+- the page probe also records every camera and microphone track the page
+  opened (`__trioCameraTracks`, `__trioMicTracks`), to check that turning
+  the camera off really releases it and which device is live.
+
+Chromium 153 facts the specs depend on, measured here:
+
+- `--use-fake-device-for-media-stream=device-count=N` gives N fake cameras,
+  but the second one (`fake_device_1`) shows in a `<video>` and gives a
+  WebRTC encoder no frames at all (0 frames encoded, in a bare loopback too);
+  the settings spec therefore uses three and switches to `fake_device_2`.
+- device ids change on every page load (with permissions granted through
+  Playwright, persistent context or not), as Chrome does after a one-time
+  permission: the client finds a chosen device again by its name.
+- Concurrent Playwright clicks on ONE page share its mouse and can land on the
+  same element; "two things at the same instant on one page" is clicked from
+  inside the page in one task.
+
+| spec | covers |
+|---|---|
+| `09-attachments` | image + file for the others, the reserved 400×300 box, oversize refused client-side, paste, drag-and-drop, attachment-only message, lightbox, download as `attachment`, after reload and from an older page |
+| `10-camera` | two cameras + a screen (one peer sending both), late joiner, camera off releases the device while the screen goes on, the glare case with audio checked on every pair |
+| `11-push-to-talk` | silent unless held, the 150 ms tail, typing, blur, mute wins, `voice.state.muted` untouched |
+| `12-noise-suppression` | RNNoise `active` in the built client with local assets, toggling keeps the call and the sent track, blocked wasm → `unavailable` and still heard |
+| `13-settings` | live microphone/camera switch, output device, PTT key binding, persistence across a reload |
+| `14-resilience-media` | server killed with cameras and a screen share on: everything comes back as it was left; a camera turned off meanwhile stays off |
+| `15-mobile-media` | attachments, lightbox and the settings dialog at 390 px |
+
 ## Screenshots
 
 `tests/08-screenshots.spec.ts` writes the release screenshots to
-`e2e/screenshots/` (`01-join.png` … `05-mobile.png`, device scale factor 2).
+`e2e/screenshots/` (`01-join.png` … `08-settings.png`, device scale factor 2).
 The chat history is typed through the UI and then re-dated in the SQLite
 file (yesterday evening / the last minutes, Europe/Istanbul) so that a day
 separator appears.

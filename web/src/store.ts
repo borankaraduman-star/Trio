@@ -174,6 +174,11 @@ function removeFromVoice(
   return changed ? next : voice
 }
 
+/** v2 camera flag: carried when the server sends it (a v1 frame has none). */
+function cameraFlag(event: { camera?: unknown }): { camera?: boolean } {
+  return typeof event.camera === 'boolean' ? { camera: event.camera } : {}
+}
+
 function reduceServer(state: AppState, event: ServerEvent, now: number, viewing: boolean): AppState {
   switch (event.type) {
     case 'ready': {
@@ -294,6 +299,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           muted: event.muted,
           deafened: event.deafened,
           screensharing: event.screensharing,
+          ...cameraFlag(event),
         },
       ]
       return { ...state, voice }
@@ -325,6 +331,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
                   muted: event.muted,
                   deafened: event.deafened,
                   screensharing: event.screensharing,
+                  ...cameraFlag(event),
                 }
               : participant,
           ),

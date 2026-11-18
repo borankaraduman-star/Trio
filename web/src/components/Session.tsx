@@ -18,7 +18,17 @@ import type { ChannelKind, ServerEvent } from '../types'
 import { VoiceEngine } from '../voice'
 import { Composer } from './Composer'
 import { HashIcon, MenuIcon } from './icons'
-import { RemoteAudio, Stage } from './Media'
+import { RemoteAudio } from './Media'
+import { CallStage } from './CallStage'
+import { SettingsDialog } from './SettingsDialog'
+import { UploadIcon } from './icons2'
+import { settingsStore } from '../settings'
+import { desktopBridge } from '../ptt'
+import { usePtt } from '../usePtt'
+import { useDeviceFallback } from '../useDevices'
+import { useAttachments } from '../useAttachments'
+import { useFileDrop } from '../useFileDrop'
+import type { Attachment } from '../types'
 import { MemberList } from './MemberList'
 import { MessageList } from './MessageList'
 import { Sidebar } from './Sidebar'
@@ -60,9 +70,38 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         myId: auth.user.id,
         send: (event) => socket.send(event),
         fetchIce: () => api.ice(token),
+        prefs: () => settingsStore.getSnapshot(),
       }),
   )
   const voice = useSyncExternalStore(engine.subscribe, engine.getSnapshot)
+  useDeviceFallback(voice.status)
+
+  // --- v2: settings, push-to-talk, devices, attachments ------------------------
+  const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const setPttOpen = useCallback((open: boolean) => engine.setPttOpen(open), [engine])
+  usePtt(settings.inputMode, settings.pttKey, setPttOpen)
+  const applied = useRef({
+    mic: settings.micDeviceId,
+    camera: settings.cameraDeviceId,
+    noise: settings.noiseSuppression,
+  })
+  useEffect(() => {
+    // Live changes, including while in voice; the first values are read at join.
+    const last = applied.current
+    if (settings.micDeviceId !== last.mic) void engine.setMicDevice(settings.micDeviceId)
+    if (settings.cameraDeviceId !== last.camera) void engine.setCameraDevice(settings.cameraDeviceId)
+    if (settings.noiseSuppression !== last.noise) void engine.setNoiseSuppression(settings.noiseSuppression)
+    applied.current = {
+      mic: settings.micDeviceId,
+      camera: settings.cameraDeviceId,
+      noise: settings.noiseSuppression,
+    }
+  }, [engine, settings.micDeviceId, settings.cameraDeviceId, settings.noiseSuppression])
+  const attachments = useAttachments(token, onLogout)
+  /** The nonce last handed to the socket, for an `error` frame that names none. */
+  const lastSent = useRef<{ channelId: number; nonce: string; at: number } | null>(null)
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [canAskNotifications, setCanAskNotifications] = useState(notificationsAskable)
@@ -147,6 +186,18 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       const before = stateRef.current
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
       engine.handleEvent(event)
+
+      if (
+        event.type === 'error' &&
+        (event.code === 'INVALID_ATTACHMENT' || event.code === 'INVALID_MESSAGE' || event.code === 'BAD_REQUEST')
+      ) {
+        // v2: a refused send answers with a bare error frame; fail the message just sent.
+        const last = lastSent.current
+        if (last && Date.now() - last.at < SEND_TIMEOUT_MS) {
+          lastSent.current = null
+          dispatch({ type: 'message.failed', channelId: last.channelId, nonce: last.nonce })
+        }
+      }
 
       if (event.type === 'ready') {
         const textIds = event.channels.filter((c) => c.kind === 'text').map((c) => c.id)
@@ -254,11 +305,21 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   // --- actions -------------------------------------------------------------------
 
   const transmit = useCallback(
-    (channelId: number, content: string, nonce: string) => {
-      if (!socket.send({ type: 'message.send', channel_id: channelId, content, nonce })) {
+    (channelId: number, content: string, nonce: string, sentAttachments: readonly Attachment[] = []) => {
+      const ids = sentAttachments.map((attachment) => attachment.id)
+      if (
+        !socket.send({
+          type: 'message.send',
+          channel_id: channelId,
+          content,
+          nonce,
+          ...(ids.length > 0 ? { attachment_ids: ids } : {}),
+        })
+      ) {
         dispatch({ type: 'message.failed', channelId, nonce })
         return
       }
+      lastSent.current = { channelId, nonce, at: Date.now() }
       // The server answers a refused message with a bare `error` frame that
       // names no nonce, so an unconfirmed row is given up on after a while.
       setTimeout(() => dispatch({ type: 'message.failed', channelId, nonce }), SEND_TIMEOUT_MS)
@@ -271,6 +332,8 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       const current = stateRef.current
       const channelId = current.activeChannelId
       if (channelId === null) return
+      const sentAttachments = attachments.take(channelId)
+      if (content === '' && sentAttachments.length === 0) return
       const nonce = newNonce()
       dispatch({
         type: 'message.optimistic',
@@ -280,22 +343,23 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
           author: current.me,
           content,
           created_at: new Date().toISOString(),
+          attachments: sentAttachments,
           key: nonce,
           nonce,
           status: 'pending',
         },
       })
       delete lastTypingSent.current[channelId]
-      transmit(channelId, content, nonce)
+      transmit(channelId, content, nonce, sentAttachments)
     },
-    [transmit],
+    [transmit, attachments],
   )
 
   const retryMessage = useCallback(
     (message: UiMessage) => {
       if (!message.nonce) return
       dispatch({ type: 'message.retry', channelId: message.channel_id, nonce: message.nonce })
-      transmit(message.channel_id, message.content, message.nonce)
+      transmit(message.channel_id, message.content, message.nonce, message.attachments ?? [])
     },
     [transmit],
   )
@@ -360,6 +424,11 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
 
   const activeChannel = state.channels.find((channel) => channel.id === activeChannelId)
   const nameOf = (userId: number) => state.users[userId]?.name ?? `#${userId}`
+  const pendingHere = attachments.pending(activeChannelId)
+  const addFiles = (files: File[]) => {
+    if (activeChannelId !== null) attachments.add(activeChannelId, files)
+  }
+  const drop = useFileDrop(activeChannel ? addFiles : null)
 
   return (
     <div className="app">
@@ -380,6 +449,8 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         onToggleMute={() => engine.toggleMute()}
         onToggleDeafen={() => engine.toggleDeafen()}
         onToggleScreen={() => void engine.toggleScreen()}
+        onToggleCamera={() => void engine.toggleCamera()}
+        onOpenSettings={() => setSettingsOpen(true)}
         onHangup={() => engine.leave()}
         onDismissVoiceError={() => engine.clearError()}
         onAskNotifications={askNotifications}
@@ -394,7 +465,16 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         />
       )}
 
-      <main className="main">
+      <main className="main" {...drop.handlers}>
+        {drop.dragging && (
+          <div className="drop-overlay" data-testid="drop-overlay" aria-hidden="true">
+            <div>
+              <UploadIcon size={40} />
+              <strong>Dosyaları buraya bırak</strong>
+              <span>#{activeChannel?.name ?? ''} kanalına eklenecek</span>
+            </div>
+          </div>
+        )}
         <header className="main-header">
           <button
             type="button"
@@ -416,9 +496,11 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
           </div>
         )}
 
-        <Stage
-          remote={voice.remoteVideo}
-          local={voice.localScreen}
+        <CallStage
+          remoteScreens={voice.remoteVideo}
+          remoteCameras={voice.remoteCamera}
+          localScreen={voice.localScreen}
+          localCamera={voice.localCamera}
           deafened={voice.deafened}
           nameOf={nameOf}
         />
@@ -441,6 +523,16 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
               channelName={activeChannel.name}
               onSend={sendMessage}
               onTyping={sendTyping}
+              attachments={{
+                items: pendingHere,
+                files: attachments.files,
+                ready: pendingHere.some((item) => item.status === 'done'),
+                uploading: attachments.uploading(activeChannelId),
+                notice: attachments.notice,
+                onAdd: addFiles,
+                onRemove: attachments.remove,
+                onDismissNotice: attachments.dismissNotice,
+              }}
             />
           </>
         ) : (
@@ -451,6 +543,18 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       </main>
 
       <MemberList users={state.users} />
+
+      {settingsOpen && (
+        <SettingsDialog
+          settings={settings}
+          onChange={(patch) => settingsStore.update(patch)}
+          onClose={closeSettings}
+          inVoice={voice.status !== 'idle'}
+          noiseState={voice.noiseState}
+          transmitting={voice.transmitting}
+          isDesktop={desktopBridge() !== null}
+        />
+      )}
 
       <div hidden>
         {voice.remoteAudio.map((media) => (

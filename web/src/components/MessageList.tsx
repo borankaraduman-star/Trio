@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useMemo, useRef } from 'react'
 import { buildRows, dayLabel, timeLabel } from '../lib/grouping'
 import { linkify } from '../lib/linkify'
 import type { ChannelMessages, UiMessage } from '../store'
+import { MessageAttachments } from './Attachments'
 import { Avatar } from './Avatar'
 
 const NEAR_EDGE_PX = 120
@@ -55,7 +56,8 @@ const MessageRow = memo(function MessageRow({
             <time dateTime={message.created_at}>{time}</time>
           </div>
         )}
-        <Content text={message.content} />
+        {message.content !== '' && <Content text={message.content} />}
+        <MessageAttachments attachments={message.attachments} />
         {message.status === 'failed' && (
           <div className="message-failed">
             Gönderilemedi.{' '}

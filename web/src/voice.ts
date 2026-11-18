@@ -1,4 +1,6 @@
-import type { ClientEvent, ServerEvent, SignalData } from './types'
+import { MicPipeline, type NoiseState } from './audio/pipeline'
+import { classifyStreams, EMPTY_META, parseMeta, sameMeta } from './lib/streamMeta'
+import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
 
 export interface RemoteMedia {
   userId: number
@@ -24,6 +26,23 @@ export interface VoiceSnapshot {
   remoteVideo: readonly RemoteMedia[]
   /** The screen this tab is sharing, for a local preview. */
   localScreen: MediaStream | null
+  /** v2: this tab's camera is on. */
+  camera: boolean
+  /** v2: this tab's camera, for a local preview. */
+  localCamera: MediaStream | null
+  /** v2: cameras of remote peers. */
+  remoteCamera: readonly RemoteMedia[]
+  /** v2: RNNoise on the outgoing microphone. */
+  noiseState: NoiseState
+  /** v2: the microphone is actually being sent (not muted, PTT open). */
+  transmitting: boolean
+}
+
+/** v2: what the engine needs to know about the user's settings, read when needed. */
+export interface VoiceMediaPrefs {
+  micDeviceId: string
+  cameraDeviceId: string
+  noiseSuppression: boolean
 }
 
 export interface VoiceDeps {
@@ -31,6 +50,10 @@ export interface VoiceDeps {
   /** Sends a frame on the WebSocket; false when it could not be sent. */
   send: (event: ClientEvent) => boolean
   fetchIce: () => Promise<RTCIceServer[]>
+  /** v2: current device and noise-suppression choices. */
+  prefs?: () => VoiceMediaPrefs
+  /** v2: creates the RNNoise node (lazy import by default; tests may stub it). */
+  createNoiseNode?: (context: AudioContext) => Promise<AudioNode>
 }
 
 interface Peer {
@@ -48,7 +71,7 @@ interface Peer {
    * the answer.
    */
   signals: Promise<void>
-  // Turn-taking, so that the two sides never offer at once (see `negotiate`).
+  // Turn-taking, so that the two sides never offer at once (see "turn-taking").
   /** Polite side: a `request` is out and no `grant` has come back yet. */
   awaitingGrant: boolean
   /** Polite side: the grant came while we were busy; offer once stable. */
@@ -61,10 +84,24 @@ interface Peer {
   deferredOffer: boolean
   turnTimer: ReturnType<typeof setTimeout> | null
   screenSenders: RTCRtpSender[]
+  /** v2: senders of our camera and microphone tracks on this connection. */
+  cameraSenders: RTCRtpSender[]
+  micSenders: RTCRtpSender[]
   /** Every remote stream seen on this connection, by id. */
   streams: Map<string, MediaStream>
   audio: MediaStream | null
   video: MediaStream | null
+  /** v2: the remote camera stream, and the remote's last `meta` signal. */
+  camera: MediaStream | null
+  meta: StreamMeta
+  /**
+   * Stream ids an earlier `meta` named and a later one no longer does: that
+   * camera or screen was stopped. Ignored from then on, so that its track,
+   * still present until the removal offer is applied (or even re-announced by
+   * an offer created just before the stop), is never shown, nor taken for a
+   * screen by the "named by neither" fallback. Stream ids are never reused.
+   */
+  retired: Set<string>
 }
 
 interface Monitor {
@@ -85,8 +122,48 @@ const SPEAKING_THRESHOLD = 0.02
 const SPEAKING_HOLD_MS = 300
 const SPEAKING_POLL_MS = 100
 
-const MIC_CONSTRAINTS: MediaStreamConstraints = {
-  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+/** v2 camera constraints (CONTRACT-V2 §4). */
+function cameraConstraints(deviceId: string): MediaStreamConstraints {
+  return {
+    video: {
+      ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    },
+  }
+}
+
+export function cameraErrorMessage(error: unknown): string {
+  const name = error instanceof Error ? error.name : ''
+  switch (name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Kamera izni verilmedi. Tarayıcı ayarlarından kameraya izin ver.'
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'Kamera bulunamadı.'
+    case 'NotReadableError':
+    case 'AbortError':
+      return 'Kamera açılamadı. Başka bir uygulama kullanıyor olabilir.'
+    default:
+      return 'Kameraya erişilemedi.'
+  }
+}
+
+const DEFAULT_PREFS: VoiceMediaPrefs = { micDeviceId: '', cameraDeviceId: '', noiseSuppression: true }
+
+function createAudioContext(): AudioContext | null {
+  const Context =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!Context) return null
+  // RNNoise works on 48 kHz frames; the browser resamples the microphone to it.
+  return new Context({ sampleRate: 48000, latencyHint: 'interactive' })
+}
+
+async function defaultNoiseNode(context: AudioContext): Promise<AudioNode> {
+  const { createRnnoiseNode } = await import('./audio/rnnoise')
+  return createRnnoiseNode(context)
 }
 
 export function micErrorMessage(error: unknown): string {
@@ -158,6 +235,12 @@ export class VoiceEngine {
 
   private micStream: MediaStream | null = null
   private screenStream: MediaStream | null = null
+  /** v2: the microphone graph; `micStream` is its sent stream. */
+  private pipeline: MicPipeline | null = null
+  private cameraStream: MediaStream | null = null
+  private cameraStarting = false
+  /** v2: push-to-talk gate (true in activity mode). */
+  private pttOpen = true
   private readonly peers = new Map<number, Peer>()
 
   private audioContext: AudioContext | null = null
@@ -199,6 +282,13 @@ export class VoiceEngine {
       remoteAudio,
       remoteVideo,
       localScreen: this.screenStream,
+      camera: this.cameraStream !== null,
+      localCamera: this.cameraStream,
+      remoteCamera: peers
+        .filter((peer) => peer.camera !== null)
+        .map((peer) => ({ userId: peer.id, stream: peer.camera as MediaStream })),
+      noiseState: this.pipeline?.noiseState ?? 'off',
+      transmitting: this.pipeline?.transmitting ?? false,
     }
   }
 
@@ -224,17 +314,36 @@ export class VoiceEngine {
       return
     }
 
-    let stream: MediaStream
+    let pipeline: MicPipeline
+    const prefs = this.prefs()
     try {
-      stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS)
+      pipeline = await MicPipeline.create(
+        {
+          getUserMedia: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
+          createContext: createAudioContext,
+          createNoiseNode: this.deps.createNoiseNode ?? defaultNoiseNode,
+        },
+        { deviceId: prefs.micDeviceId, noiseSuppression: prefs.noiseSuppression },
+      )
     } catch (error) {
       if (generation === this.generation) this.fail(micErrorMessage(error))
       return
     }
     if (generation !== this.generation) {
-      stopStream(stream)
+      pipeline.stop()
       return
     }
+    this.pipeline = pipeline
+    pipeline.onChange = () => {
+      if (this.pipeline === pipeline) this.emit()
+    }
+    pipeline.onTrackReplaced = (track) => {
+      if (this.pipeline !== pipeline) return
+      for (const peer of this.peers.values()) {
+        for (const sender of peer.micSenders) void sender.replaceTrack(track).catch(() => undefined)
+      }
+    }
+    const stream = pipeline.stream
     this.micStream = stream
     this.applyMute()
     this.startSpeakingDetection()
@@ -299,6 +408,7 @@ export class VoiceEngine {
       channel_id: this.channelId,
       muted: this.muted,
       deafened: this.deafened,
+      camera: this.cameraStream !== null,
     })
     this.joinSent = sent
     return sent
@@ -324,10 +434,14 @@ export class VoiceEngine {
 
   private reset(): void {
     this.closeAllPeers()
+    this.pipeline?.stop()
+    this.pipeline = null
     stopStream(this.micStream)
     stopStream(this.screenStream)
+    stopStream(this.cameraStream)
     this.micStream = null
     this.screenStream = null
+    this.cameraStream = null
     this.stopSpeakingDetection()
     this.channelId = null
     this.status = 'idle'
@@ -368,6 +482,12 @@ export class VoiceEngine {
   }
 
   private applyMute(): void {
+    // The pipeline owns the sent track's gate (mute and PTT together).
+    if (this.pipeline) {
+      this.pipeline.setMuted(this.muted)
+      this.pipeline.setPttOpen(this.pttOpen)
+      return
+    }
     for (const track of this.micStream?.getAudioTracks() ?? []) track.enabled = !this.muted
   }
 
@@ -378,6 +498,7 @@ export class VoiceEngine {
       muted: this.muted,
       deafened: this.deafened,
       screensharing: this.screenStream !== null,
+      camera: this.cameraStream !== null,
     })
   }
 
@@ -401,10 +522,11 @@ export class VoiceEngine {
       stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
     } catch (error) {
       const name = error instanceof Error ? error.name : ''
-      // Closing the picker is a decision, not a failure: say nothing.
+      // Closing the picker is a decision, not a failure: say nothing. The
+      // desktop app's picker rejects with AbortError, others differ, so ANY
+      // rejection is treated as cancelled; unexpected ones are only logged.
       if (name !== 'NotAllowedError' && name !== 'AbortError') {
-        this.error = 'Ekran paylaşımı başlatılamadı.'
-        this.emit()
+        console.warn('trio: screen share did not start', error)
       }
       return
     }
@@ -421,6 +543,8 @@ export class VoiceEngine {
         if (this.screenStream === stream) this.stopScreen()
       }
     }
+    // v2: tell every peer which stream is the screen BEFORE its tracks arrive.
+    this.sendMetaToAll()
     for (const peer of this.peers.values()) this.addScreenTracks(peer)
     this.sendState()
     this.emit()
@@ -445,6 +569,7 @@ export class VoiceEngine {
       peer.screenSenders = []
     }
     stopStream(stream)
+    this.sendMetaToAll()
     this.sendState()
     this.emit()
   }
@@ -461,6 +586,174 @@ export class VoiceEngine {
         console.warn('trio: could not add screen track', error)
       }
     }
+  }
+
+  // --- v2: camera ------------------------------------------------------------
+
+  async toggleCamera(): Promise<void> {
+    if (this.cameraStream) this.stopCamera()
+    else await this.startCamera()
+  }
+
+  async startCamera(): Promise<void> {
+    if (this.status === 'idle' || this.cameraStream || this.cameraStarting) return
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.error = 'Bu tarayıcı kameraya erişemiyor.'
+      this.emit()
+      return
+    }
+    const generation = this.generation
+    this.cameraStarting = true
+    let stream: MediaStream
+    try {
+      stream = await this.openCamera(this.prefs().cameraDeviceId)
+    } catch (error) {
+      if (generation === this.generation) {
+        this.error = cameraErrorMessage(error)
+        this.emit()
+      }
+      return
+    } finally {
+      this.cameraStarting = false
+    }
+    if (generation !== this.generation || this.isIdle() || this.cameraStream) {
+      stopStream(stream)
+      return
+    }
+    this.cameraStream = stream
+    this.watchCameraTracks(stream)
+    // Which stream is the camera goes out BEFORE its track does (CONTRACT-V2 §4).
+    this.sendMetaToAll()
+    for (const peer of this.peers.values()) this.addCameraTracks(peer)
+    this.sendState()
+    this.emit()
+  }
+
+  /** Stops the camera and releases the device (its light goes off). */
+  stopCamera(): void {
+    const stream = this.cameraStream
+    if (!stream) return
+    this.cameraStream = null
+    for (const peer of this.peers.values()) {
+      for (const sender of peer.cameraSenders) {
+        try {
+          peer.pc.removeTrack(sender)
+        } catch {
+          // The connection is already closed.
+        }
+      }
+      peer.cameraSenders = []
+    }
+    stopStream(stream)
+    this.sendMetaToAll()
+    this.sendState()
+    this.emit()
+  }
+
+  /** Switches the camera device while it is on, with replaceTrack: no renegotiation. */
+  async setCameraDevice(deviceId: string): Promise<void> {
+    const stream = this.cameraStream
+    if (!stream) return
+    let next: MediaStream
+    try {
+      next = await this.openCamera(deviceId)
+    } catch (error) {
+      console.warn('trio: could not switch the camera', error)
+      return
+    }
+    const track = next.getVideoTracks()[0]
+    if (this.cameraStream !== stream || !track) {
+      stopStream(next)
+      return
+    }
+    // The stream keeps its id (the peers know it from `meta`); only its track changes.
+    const old = stream.getVideoTracks()
+    for (const oldTrack of old) stream.removeTrack(oldTrack)
+    stream.addTrack(track)
+    this.watchCameraTracks(stream)
+    for (const peer of this.peers.values()) {
+      for (const sender of peer.cameraSenders) {
+        if (sender.track?.kind === 'video' || sender.track === null) {
+          void sender.replaceTrack(track).catch(() => undefined)
+        }
+      }
+    }
+    for (const oldTrack of old) {
+      oldTrack.onended = null
+      oldTrack.stop()
+    }
+    this.emit()
+  }
+
+  private async openCamera(deviceId: string): Promise<MediaStream> {
+    try {
+      return await navigator.mediaDevices.getUserMedia(cameraConstraints(deviceId))
+    } catch (error) {
+      const name = error instanceof Error ? error.name : ''
+      // A remembered camera that is unplugged: the default one instead.
+      if (deviceId && (name === 'OverconstrainedError' || name === 'NotFoundError')) {
+        return navigator.mediaDevices.getUserMedia(cameraConstraints(''))
+      }
+      throw error
+    }
+  }
+
+  private watchCameraTracks(stream: MediaStream): void {
+    for (const track of stream.getVideoTracks()) {
+      // Unplugged, or revoked by the system: the camera is off.
+      track.onended = () => {
+        if (this.cameraStream === stream) this.stopCamera()
+      }
+    }
+  }
+
+  private addCameraTracks(peer: Peer): void {
+    const stream = this.cameraStream
+    if (!stream) return
+    for (const track of stream.getVideoTracks()) {
+      if (track.readyState !== 'live') continue
+      try {
+        peer.cameraSenders.push(peer.pc.addTrack(track, stream))
+      } catch (error) {
+        console.warn('trio: could not add camera track', error)
+      }
+    }
+  }
+
+  // --- v2: stream identity -----------------------------------------------------
+
+  private currentMeta(): StreamMeta {
+    return { camera: this.cameraStream?.id ?? null, screen: this.screenStream?.id ?? null }
+  }
+
+  private sendMeta(peer: Peer): void {
+    if (this.joinSent) this.deps.send({ type: 'signal', to: peer.id, data: { meta: this.currentMeta() } })
+  }
+
+  private sendMetaToAll(): void {
+    for (const peer of this.peers.values()) this.sendMeta(peer)
+  }
+
+  // --- v2: microphone settings and push-to-talk ----------------------------------
+
+  private prefs(): VoiceMediaPrefs {
+    return this.deps.prefs?.() ?? DEFAULT_PREFS
+  }
+
+  /** Push-to-talk gate: local only, `voice.state.muted` does not change. */
+  setPttOpen(open: boolean): void {
+    if (open === this.pttOpen) return
+    this.pttOpen = open
+    this.pipeline?.setPttOpen(open)
+    this.emit()
+  }
+
+  async setMicDevice(deviceId: string): Promise<void> {
+    await this.pipeline?.setDevice(deviceId)
+  }
+
+  async setNoiseSuppression(on: boolean): Promise<void> {
+    await this.pipeline?.setNoiseSuppression(on)
   }
 
   // --- server events -------------------------------------------------------
@@ -502,8 +795,16 @@ export class VoiceEngine {
         return
 
       case 'voice.state': {
-        if (event.channel_id !== this.channelId || event.screensharing) return
+        if (event.channel_id !== this.channelId) return
         const peer = this.peers.get(event.user_id)
+        // v2: a camera turned off goes away now, as a stopped screen does.
+        if (peer?.camera && event.camera === false) {
+          peer.retired.add(peer.camera.id)
+          peer.streams.delete(peer.camera.id)
+          peer.camera = null
+          this.emit()
+        }
+        if (event.screensharing) return
         if (peer?.video) {
           peer.streams.delete(peer.video.id)
           peer.video = null
@@ -514,12 +815,22 @@ export class VoiceEngine {
 
       case 'signal': {
         if (!this.joinSent || event.from === this.deps.myId) return
-        const data = parseSignal(event.data)
-        if (!data) return
+        const meta = parseMeta(event.data)
+        const data = meta ? null : parseSignal(event.data)
+        if (!meta && !data) return
         // Normally the peer exists already (voice.peers / voice.joined come
         // first); creating it here keeps a reordered frame from being lost.
         const peer = this.ensurePeer(event.from)
-        if (peer) peer.signals = peer.signals.then(() => this.handleSignal(peer, data))
+        if (!peer) return
+        // ONE queue per peer for everything it signals, `meta` included. The
+        // peer sends a `meta` before it adds the tracks it describes, so it
+        // is ahead of the offer carrying them on the socket; queued with the
+        // descriptions it is also APPLIED before that offer, and a later
+        // `meta` (the camera turned off again) cannot overtake an offer
+        // still waiting in the queue.
+        peer.signals = peer.signals.then(() =>
+          meta ? this.applyMeta(peer, meta) : data ? this.handleSignal(peer, data) : undefined,
+        )
         return
       }
 
@@ -564,9 +875,14 @@ export class VoiceEngine {
       deferredOffer: false,
       turnTimer: null,
       screenSenders: [],
+      cameraSenders: [],
+      micSenders: [],
       streams: new Map(),
       audio: null,
       video: null,
+      camera: null,
+      meta: EMPTY_META,
+      retired: new Set(),
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
@@ -585,11 +901,14 @@ export class VoiceEngine {
 
     pc.onconnectionstatechange = () => {
       if (alive() && pc.connectionState === 'failed') pc.restartIce()
+      // v2: (re)connected — repeat which stream is which; cheap and idempotent.
+      if (alive() && pc.connectionState === 'connected') this.sendMeta(peer)
     }
 
     pc.ontrack = ({ streams }) => {
       if (!alive()) return
       for (const stream of streams) {
+        if (peer.retired.has(stream.id)) continue
         peer.streams.set(stream.id, stream)
         stream.onremovetrack = () => {
           if (alive()) this.classifyStreams(peer)
@@ -601,38 +920,55 @@ export class VoiceEngine {
       this.classifyStreams(peer)
     }
 
-    // Adding tracks is what triggers the first offer. Both sides do it; the
-    // resulting glare is what perfect negotiation resolves.
+    // v2: which stream is which, BEFORE any track reaches the peer.
+    this.sendMeta(peer)
+
+    // Adding tracks is what triggers the first offer. Both sides do it at
+    // once; turn-taking (below) keeps that from becoming a glare.
     if (this.micStream) {
-      for (const track of this.micStream.getAudioTracks()) pc.addTrack(track, this.micStream)
+      for (const track of this.micStream.getAudioTracks()) {
+        peer.micSenders.push(pc.addTrack(track, this.micStream))
+      }
     }
     this.addScreenTracks(peer)
+    this.addCameraTracks(peer)
     return peer
   }
 
-  /** A remote stream with a video track is a shared screen; audio-only is the microphone. */
+  /**
+   * v2: the peer's `meta` signal says which stream is the camera and which the
+   * screen; a stream in neither is the screen when it has video (the v1 guess,
+   * kept as the fallback) and the microphone when audio-only.
+   */
   private classifyStreams(peer: Peer): void {
-    let audio: MediaStream | null = null
-    let video: MediaStream | null = null
     for (const [id, stream] of peer.streams) {
-      if (stream.getTracks().length === 0) {
+      if (stream.getTracks().length === 0 || peer.retired.has(id)) {
         stream.onremovetrack = null
         stream.onaddtrack = null
         peer.streams.delete(id)
-      } else if (stream.getVideoTracks().length > 0) {
-        video = stream
-      } else {
-        audio = stream
       }
     }
-    if (audio === peer.audio && video === peer.video) return
+    const { audio, screen: video, camera } = classifyStreams(peer.streams.values(), peer.meta)
+    if (audio === peer.audio && video === peer.video && camera === peer.camera) return
     if (audio !== peer.audio) {
       if (audio) this.watch(peer.id, audio)
       else this.unwatch(peer.id)
     }
     peer.audio = audio
     peer.video = video
+    peer.camera = camera
     this.emit()
+  }
+
+  /** A `meta` signal, applied in its place in the peer's signal queue. */
+  private applyMeta(peer: Peer, meta: StreamMeta): void {
+    if (this.peers.get(peer.id) !== peer || sameMeta(peer.meta, meta)) return
+    const named = new Set([meta.camera, meta.screen])
+    for (const id of [peer.meta.camera, peer.meta.screen]) {
+      if (id !== null && !named.has(id)) peer.retired.add(id)
+    }
+    peer.meta = meta
+    this.classifyStreams(peer)
   }
 
   // --- turn-taking --------------------------------------------------------
@@ -647,7 +983,13 @@ export class VoiceEngine {
   // microphone at once). So offers take turns: the impolite side offers when
   // it likes; the polite side asks first (`request`), and the impolite side
   // answers `grant` when it is stable and then holds its own offers until the
-  // polite side's offer has been answered. Signal data stays opaque to the
+  // polite side's offer has been answered. Every negotiation goes through
+  // `onnegotiationneeded` and so through this: the microphone at connection
+  // time, a screen share, the camera on or off (also both at once), an ICE
+  // restart. Device and noise-suppression changes never renegotiate
+  // (`replaceTrack`). A `meta` signal is sent before the tracks it describes
+  // are added, so it always leaves before the offer that carries them, however
+  // long that offer waits for its turn. Signal data stays opaque to the
   // server; a peer that does not answer a request is waited for TURN_TIMEOUT_MS,
   // after which plain perfect negotiation (with its rollback) takes over.
 
@@ -826,7 +1168,10 @@ export class VoiceEngine {
     peer.streams.clear()
     peer.audio = null
     peer.video = null
+    peer.camera = null
     peer.screenSenders = []
+    peer.cameraSenders = []
+    peer.micSenders = []
     this.unwatch(peer.id)
     try {
       pc.close()
