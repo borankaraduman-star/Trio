@@ -1,4 +1,7 @@
-/** The store across connection drops: lost echoes (finding 2), unsent rows in other channels (3). */
+/**
+ * The store across connection drops: lost echoes (finding 2), unsent rows in
+ * other channels (3), merging the catch-up page instead of replacing (5).
+ */
 import { describe, expect, it } from 'vitest'
 import { claimEchoes, isEchoOf, RECONCILE_WINDOW_MS } from '../lib/reconcile'
 import { channelMessages, createInitialState, reducer, type Action, type AppState, type UiMessage } from '../store'
@@ -30,7 +33,7 @@ function stored(id: number, over: Partial<Message> = {}): Message {
 }
 
 const server = (state: AppState, event: ServerEvent) => reducer(state, { type: 'server', event, now: T0, viewing: true })
-const page = (channelId: number, messages: Message[], hasMore = false, mode: 'replace' | 'prepend' = 'replace'): Action => ({
+const page = (channelId: number, messages: Message[], hasMore = false, mode: 'replace' | 'prepend' | 'behind' = 'replace'): Action => ({
   type: 'messages.loaded',
   channelId,
   messages,
@@ -221,5 +224,56 @@ describe('unsent rows in other channels (finding 3)', () => {
     state = reducer(state, { type: 'channel.select', channelId: 10 })
     state = drop(state)
     expect(state.messages[11]).toBeUndefined()
+  })
+})
+
+describe('the catch-up page after a reconnect (finding 5)', () => {
+  const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
+  const ids = (state: AppState) => channelMessages(state, 10).items.map((item) => item.id)
+
+  it('meets what is held: merged, nothing loaded is thrown away, keys kept', () => {
+    let state = readyWith(10, range(251, 300), true)
+    for (const before of [251, 201, 151, 101, 51]) {
+      state = reducer(state, page(10, range(before - 50, before - 1).map((id) => stored(id)), before - 50 > 1, 'prepend'))
+    }
+    expect(ids(state)).toEqual(range(1, 300))
+    const keysBefore = channelMessages(state, 10).items.map((item) => item.key)
+    state = drop(state)
+    state = reducer(state, page(10, range(254, 303).map((id) => stored(id)), true))
+    expect(ids(state)).toEqual(range(1, 303))
+    expect(channelMessages(state, 10).hasMore).toBe(false)
+    expect(channelMessages(state, 10).items.slice(0, 300).map((item) => item.key)).toEqual(keysBefore)
+  })
+
+  it('a page reaching further back than what is held takes its hasMore', () => {
+    let state = readyWith(10, range(290, 300), true)
+    state = reducer(state, page(10, range(260, 305).map((id) => stored(id)), true))
+    expect(ids(state)).toEqual(range(260, 305))
+    expect(channelMessages(state, 10).hasMore).toBe(true)
+  })
+
+  it('a gap is replaced, as before', () => {
+    let state = readyWith(10, range(1, 50))
+    state = reducer(state, page(10, range(500, 549).map((id) => stored(id)), true))
+    expect(ids(state)).toEqual(range(500, 549))
+    expect(channelMessages(state, 10).hasMore).toBe(true)
+  })
+
+  it('behind: the reader keeps their messages, live ones wait, the jump replaces', () => {
+    let state = readyWith(10, range(1, 50))
+    state = reducer(state, page(10, range(900, 949).map((id) => stored(id)), true, 'behind'))
+    expect(ids(state)).toEqual(range(1, 50))
+    expect(channelMessages(state, 10).behind).toBe(true)
+    expect(state.latest[10]).toBe(949)
+    state = server(state, { type: 'message.new', message: stored(950) })
+    expect(ids(state)).toEqual(range(1, 50))
+    expect(state.latest[10]).toBe(950)
+    // My own message still reconciles while behind.
+    state = reducer(state, { type: 'message.optimistic', message: local('n1', 'selam') })
+    state = server(state, { type: 'message.new', message: stored(951, { author: ME, content: 'selam' }), nonce: 'n1' })
+    expect(rows(state).slice(-1)).toEqual(['951:sent:selam'])
+    state = reducer(state, page(10, range(902, 951).map((id) => stored(id)), true))
+    expect(ids(state)).toEqual(range(902, 951))
+    expect(channelMessages(state, 10).behind).toBeFalsy()
   })
 })

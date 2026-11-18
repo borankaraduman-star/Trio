@@ -19,6 +19,12 @@ export interface ChannelMessages {
   loaded: boolean
   loadingOlder: boolean
   error: boolean
+  /**
+   * More was missed during a drop than a catch-up fetches, and the reader is
+   * up in history: their messages stay as they are, live ones are not added
+   * below them (there is a gap), and the list offers a jump to the newest.
+   */
+  behind?: boolean
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting'
@@ -54,7 +60,8 @@ export type Action =
       channelId: number
       messages: Message[]
       hasMore: boolean
-      mode: 'replace' | 'prepend'
+      /** `behind`: the page does not meet what is held and is not shown yet (see `behind`). */
+      mode: 'replace' | 'prepend' | 'behind'
       viewing: boolean
     }
   | { type: 'messages.load-failed'; channelId: number }
@@ -263,6 +270,8 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         if (channel.items.some((item) => item.status === 'sent' && item.id === message.id)) {
           return channel
         }
+        // Not below a gap; the jump to the newest loads it.
+        if (channel.behind) return channel
         if (nonce === undefined) {
           // My message without a nonce (its echo was lost): pair it with the local row.
           const paired = claimEchoes(channel.items, [toUi(message)], state.me.id)
@@ -417,9 +426,31 @@ export function reducer(state: AppState, action: Action): AppState {
             error: false,
           }
         }
+        if (action.mode === 'behind') return { ...channel, behind: true, error: false }
+        // A page that meets what is held (its oldest id is at or before the
+        // newest held) is merged: nothing loaded is thrown away, and a reader
+        // up in history keeps their place. Only after a gap is it replaced.
+        const newestInPage = page.length > 0 ? page[page.length - 1].id : -Infinity
+        const held = channel.items.filter((item) => item.status === 'sent')
+        // Behind a gap, the newest page is the jump and always replaces.
+        if (channel.loaded && !channel.behind && held.length > 0 && page.length > 0 && page[0].id <= held[held.length - 1].id) {
+          // Within the page's range the page is the truth; outside it, what is held stays.
+          const inPage = new Set(page.map((message) => message.id))
+          const outside = channel.items.filter(
+            (item) =>
+              item.status !== 'sent' || item.id < page[0].id || item.id > newestInPage || inPage.has(item.id),
+          )
+          const paired = claimEchoes(outside, page.map((message) => toUi(message)), state.me.id)
+          return {
+            ...channel,
+            items: mergeMessages(paired.items, paired.incoming),
+            hasMore: page[0].id < held[0].id ? action.hasMore : channel.hasMore,
+            error: false,
+            behind: false,
+          }
+        }
         // Replace with the latest page, but keep what the page cannot know:
         // unconfirmed rows, and live messages newer than the page.
-        const newestInPage = page.length > 0 ? page[page.length - 1].id : -Infinity
         const kept = channel.items.filter(
           (item) => item.status !== 'sent' || item.id > newestInPage,
         )

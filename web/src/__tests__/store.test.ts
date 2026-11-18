@@ -223,8 +223,8 @@ describe('message pages', () => {
   })
 
   it('a refetch drops confirmed rows the server no longer returns in range', () => {
-    const state = loaded(loaded(ready(), 10, [1, 2, 3]), 10, [2, 3, 4])
-    expect(ids(state)).toEqual([2, 3, 4])
+    const state = loaded(loaded(ready(), 10, [1, 2, 3, 4]), 10, [2, 4])
+    expect(ids(state)).toEqual([1, 2, 4])
   })
 
   it('a failed first load is an error; a failed older page is not', () => {

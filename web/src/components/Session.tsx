@@ -33,6 +33,7 @@ import { MemberList } from './MemberList'
 import { MessageList } from './MessageList'
 import { SendTimers } from '../lib/sendTimers'
 import { isViewing, onViewingChange } from '../lib/viewing'
+import { fetchCovering, newestConfirmedId } from '../lib/catchUp'
 import { Sidebar } from './Sidebar'
 
 const PAGE_SIZE = 50
@@ -110,21 +111,31 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   const loading = useRef(new Set<number>())
   const lastLoadFailure = useRef(0)
   const lastTypingSent = useRef<Record<number, number>>({})
+  /** The open channel's list is scrolled to its newest message (reported by MessageList). */
+  const atBottom = useRef(true)
 
   // --- loading messages ------------------------------------------------------
 
   const loadLatest = useCallback(
-    async (channelId: number) => {
+    async (channelId: number, options: { jump?: boolean } = {}) => {
       if (loading.current.has(channelId)) return
       loading.current.add(channelId)
       try {
-        const page = await api.messages(token, channelId, { limit: PAGE_SIZE })
+        // Far enough back to meet what is held, so it merges (lib/catchUp.ts).
+        const held = channelMessages(stateRef.current, channelId)
+        const newestHeld = held.loaded && !options.jump ? newestConfirmedId(held.items) : null
+        const page = await fetchCovering(
+          (before) => api.messages(token, channelId, before === undefined ? { limit: PAGE_SIZE } : { before, limit: PAGE_SIZE }),
+          newestHeld,
+        )
+        const reading = stateRef.current.activeChannelId === channelId && !atBottom.current
         dispatch({
           type: 'messages.loaded',
           channelId,
           messages: page.messages,
-          hasMore: page.has_more,
-          mode: 'replace',
+          hasMore: page.hasMore,
+          // A gap under a reader up in history: leave them where they are.
+          mode: !page.covers && reading ? 'behind' : 'replace',
           viewing: isViewing(),
         })
       } catch (error) {
@@ -267,6 +278,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
 
   useEffect(() => {
     if (activeChannelId !== null) saveActiveChannel(activeChannelId)
+    atBottom.current = true
   }, [activeChannelId])
 
   useEffect(() => {
@@ -332,6 +344,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       const current = stateRef.current
       const channelId = current.activeChannelId
       if (channelId === null) return
+      if (channelMessages(current, channelId).behind) void loadLatest(channelId, { jump: true })
       const sentAttachments = attachments.take(channelId)
       if (content === '' && sentAttachments.length === 0) return
       const nonce = newNonce()
@@ -352,7 +365,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       delete lastTypingSent.current[channelId]
       transmit(channelId, content, nonce, sentAttachments)
     },
-    [transmit, attachments],
+    [transmit, attachments, loadLatest],
   )
 
   const retryMessage = useCallback(
@@ -514,6 +527,8 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
               myId={state.me.id}
               onLoadOlder={loadOlder}
               onRetryLoad={() => void loadLatest(activeChannel.id)}
+              onJumpToLatest={() => void loadLatest(activeChannel.id, { jump: true })}
+              onAtBottomChange={(value) => (atBottom.current = value)}
               onRetry={retryMessage}
             />
             <div className="typing-line" data-testid="typing" aria-live="polite">
