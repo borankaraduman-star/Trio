@@ -31,6 +31,7 @@ import { useFileDrop } from '../useFileDrop'
 import type { Attachment } from '../types'
 import { MemberList } from './MemberList'
 import { MessageList } from './MessageList'
+import { SendTimers } from '../lib/sendTimers'
 import { Sidebar } from './Sidebar'
 
 const PAGE_SIZE = 50
@@ -102,6 +103,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   const attachments = useAttachments(token, onLogout)
   /** The nonce last handed to the socket, for an `error` frame that names none. */
   const lastSent = useRef<{ channelId: number; nonce: string; at: number } | null>(null)
+  const [sendTimers] = useState(() => new SendTimers())
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [canAskNotifications, setCanAskNotifications] = useState(notificationsAskable)
@@ -186,6 +188,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       const before = stateRef.current
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
       engine.handleEvent(event)
+      if (event.type === 'message.new' && event.nonce !== undefined) sendTimers.clear(event.nonce)
 
       if (
         event.type === 'error' &&
@@ -234,6 +237,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       onEvent,
       onDown: () => {
         dispatch({ type: 'connection.down' })
+        sendTimers.clearAll()
         engine.handleDisconnected()
       },
       onUnauthorized: onLogout,
@@ -248,8 +252,9 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       socket.handlers = {}
       socket.close()
       engine.destroy()
+      sendTimers.clearAll()
     }
-  }, [socket, engine, token, onLogout, loadLatest, probeUnread])
+  }, [socket, engine, sendTimers, token, onLogout, loadLatest, probeUnread])
 
   // --- effects that follow the state ---------------------------------------------
 
@@ -316,15 +321,17 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
           ...(ids.length > 0 ? { attachment_ids: ids } : {}),
         })
       ) {
+        sendTimers.clear(nonce)
         dispatch({ type: 'message.failed', channelId, nonce })
         return
       }
       lastSent.current = { channelId, nonce, at: Date.now() }
       // The server answers a refused message with a bare `error` frame that
       // names no nonce, so an unconfirmed row is given up on after a while.
-      setTimeout(() => dispatch({ type: 'message.failed', channelId, nonce }), SEND_TIMEOUT_MS)
+      // One timer per nonce: a retry restarts it (lib/sendTimers.ts).
+      sendTimers.start(nonce, SEND_TIMEOUT_MS, () => dispatch({ type: 'message.failed', channelId, nonce }))
     },
-    [socket],
+    [socket, sendTimers],
   )
 
   const sendMessage = useCallback(
