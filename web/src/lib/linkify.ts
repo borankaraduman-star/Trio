@@ -3,23 +3,38 @@ export type TextPart =
   | { type: 'link'; value: string; href: string }
 
 const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/gi
-const TRAILING = /[.,;:!?'"»”’\])}]$/
+/** Punctuation that, at the very end of a candidate, belongs to the sentence. */
+const TRAILING = new Set(['.', ',', ';', ':', '!', '?', "'", '"', '»', '”', '’', ']', ')', '}'])
+const OPENER: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
 
-/** Cut punctuation that belongs to the sentence, not to the address. */
-function trimTrailing(candidate: string): string {
-  let url = candidate
-  while (url.length > 0 && TRAILING.test(url)) {
-    const last = url[url.length - 1]
-    if (last === ')' || last === ']' || last === '}') {
-      const open = last === ')' ? '(' : last === ']' ? '[' : '{'
-      const opens = url.split(open).length - 1
-      const closes = url.split(last).length - 1
-      // A balanced bracket is part of the address (Wikipedia-style links).
-      if (closes <= opens) break
-    }
-    url = url.slice(0, -1)
+/**
+ * Cut punctuation that belongs to the sentence, not to the address.
+ *
+ * Linear: the brackets are counted once, and each character cut from the end
+ * updates the counts instead of recounting the whole candidate (that was
+ * O(n²): one 4000-character message of `http://a.b/))))…` took ~90 ms).
+ * A closing bracket stays when it is balanced by an opening one before it
+ * (Wikipedia-style addresses).
+ */
+export function trimTrailing(candidate: string): string {
+  const length = candidate.length
+  const counts: Record<string, number> = { '(': 0, ')': 0, '[': 0, ']': 0, '{': 0, '}': 0 }
+  for (let i = 0; i < length; i += 1) {
+    const char = candidate[i]
+    if (char in counts) counts[char] += 1
   }
-  return url
+  let end = length
+  while (end > 0) {
+    const last = candidate[end - 1]
+    if (!TRAILING.has(last)) break
+    const open = OPENER[last]
+    if (open !== undefined) {
+      if (counts[last] <= counts[open]) break
+      counts[last] -= 1
+    }
+    end -= 1
+  }
+  return end === length ? candidate : candidate.slice(0, end)
 }
 
 function safeHref(candidate: string): string | null {
