@@ -110,7 +110,8 @@ test('noise suppression: RNNoise runs in the built client; toggling keeps the ca
   await expect(zeynep.page.getByTestId('settings-noise-state')).toHaveAttribute('data-state', 'unavailable')
   await expect(zeynep.page.getByTestId('settings-noise-state')).toHaveText('Gürültü engelleme yüklenemedi; ham mikrofon kullanılıyor.')
   await zeynep.page.getByTestId('settings-close').click()
+  // (Not the other way round: Ayşe's only input is noise and her RNNoise
+  // takes nearly all of it out, so from her Zeynep rightly hears silence.)
   await expectHearing(mehmet, zeynep)
   await expectHearing(ayse, zeynep)
-  await expectHearing(zeynep, ayse)
 })
