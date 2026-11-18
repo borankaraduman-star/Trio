@@ -15,12 +15,23 @@ export interface Channel {
   kind: ChannelKind
 }
 
+export interface Attachment {
+  id: string
+  filename: string
+  content_type: string
+  size: number
+  /** Relative: `/api/files/<id>/<name>`. */
+  url: string
+}
+
 export interface Message {
   id: number
   channel_id: number
   author: User
   content: string
   created_at: string
+  /** Always sent by a v2 server (possibly empty); optional for v1 data. */
+  attachments?: Attachment[]
 }
 
 export interface VoiceParticipant {
@@ -28,6 +39,14 @@ export interface VoiceParticipant {
   muted: boolean
   deafened: boolean
   screensharing: boolean
+  /** v2: always sent by the server; missing = false. */
+  camera?: boolean
+}
+
+/** v2: which of a peer's outgoing streams is the camera and which the screen. */
+export interface StreamMeta {
+  camera: string | null
+  screen: string | null
 }
 
 export type SignalData =
@@ -56,10 +75,28 @@ export type ServerEvent =
   | { type: 'error'; code: string; message: string }
 
 export type ClientEvent =
-  | { type: 'message.send'; channel_id: number; content: string; nonce: string }
+  | {
+      type: 'message.send'
+      channel_id: number
+      content: string
+      nonce: string
+      attachment_ids?: string[]
+    }
   | { type: 'typing'; channel_id: number }
-  | { type: 'voice.join'; channel_id: number; muted?: boolean; deafened?: boolean }
+  | {
+      type: 'voice.join'
+      channel_id: number
+      muted?: boolean
+      deafened?: boolean
+      camera?: boolean
+    }
   | { type: 'voice.leave' }
-  | { type: 'voice.state'; muted: boolean; deafened: boolean; screensharing: boolean }
-  | { type: 'signal'; to: number; data: SignalData }
+  | {
+      type: 'voice.state'
+      muted: boolean
+      deafened: boolean
+      screensharing: boolean
+      camera?: boolean
+    }
+  | { type: 'signal'; to: number; data: SignalData | { meta: StreamMeta } }
   | { type: 'ping' }
