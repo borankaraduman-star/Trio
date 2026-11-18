@@ -14,6 +14,7 @@ import {
   ScreenIcon,
   SpeakerIcon,
 } from './icons'
+import { CameraIcon, SettingsIcon } from './icons2'
 
 export interface SidebarProps {
   open: boolean
@@ -32,6 +33,10 @@ export interface SidebarProps {
   onToggleMute: () => void
   onToggleDeafen: () => void
   onToggleScreen: () => void
+  /** v2 */
+  onToggleCamera?: () => void
+  /** v2 */
+  onOpenSettings?: () => void
   onHangup: () => void
   onDismissVoiceError: () => void
   onAskNotifications: () => void
@@ -191,6 +196,7 @@ export function Sidebar(props: SidebarProps) {
                           data-muted={participant.muted}
                           data-deafened={participant.deafened}
                           data-screensharing={participant.screensharing}
+                          data-camera={participant.camera ?? false}
                           data-speaking={speaking.has(participant.user_id)}
                         >
                           <Avatar
@@ -201,6 +207,11 @@ export function Sidebar(props: SidebarProps) {
                           />
                           <span className="voice-user-name">{name}</span>
                           <span className="voice-user-icons">
+                            {participant.camera && (
+                              <span className="badge-live" title="Kamerası açık">
+                                <CameraIcon size={13} />
+                              </span>
+                            )}
                             {participant.screensharing && (
                               <span className="badge-live" title="Ekran paylaşıyor">
                                 <ScreenIcon size={13} />
@@ -245,6 +256,19 @@ export function Sidebar(props: SidebarProps) {
             </strong>
             <span>{voiceChannel?.name ?? ''}</span>
           </div>
+          {props.onToggleCamera && (
+            <button
+              type="button"
+              className={voice.camera ? 'icon-button on' : 'icon-button'}
+              data-testid="btn-camera"
+              aria-pressed={voice.camera}
+              title={voice.camera ? 'Kamerayı kapat' : 'Kamerayı aç'}
+              aria-label={voice.camera ? 'Kamerayı kapat' : 'Kamerayı aç'}
+              onClick={props.onToggleCamera}
+            >
+              <CameraIcon off={!voice.camera} />
+            </button>
+          )}
           <button
             type="button"
             className={voice.screensharing ? 'icon-button on' : 'icon-button'}
@@ -279,6 +303,7 @@ export function Sidebar(props: SidebarProps) {
           type="button"
           className={voice.muted ? 'icon-button off' : 'icon-button'}
           data-testid="btn-mute"
+          data-transmitting={voice.transmitting}
           aria-pressed={voice.muted}
           title={voice.muted ? 'Sesi aç' : 'Sessize al'}
           aria-label={voice.muted ? 'Sesi aç' : 'Sessize al'}
@@ -307,6 +332,19 @@ export function Sidebar(props: SidebarProps) {
             onClick={props.onAskNotifications}
           >
             <BellIcon />
+          </button>
+        )}
+        {props.onOpenSettings && (
+          <button
+            type="button"
+            className="icon-button"
+            data-testid="btn-settings"
+            data-noise={voice.noiseState}
+            title="Ayarlar"
+            aria-label="Ayarlar"
+            onClick={props.onOpenSettings}
+          >
+            <SettingsIcon />
           </button>
         )}
         <button
