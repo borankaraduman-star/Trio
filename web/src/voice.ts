@@ -1,4 +1,5 @@
 import { MicPipeline, type NoiseState } from './audio/pipeline'
+import { displayMediaOptions } from './audio/screenAudio'
 import { classifyStreams, EMPTY_META, parseMeta, sameMeta } from './lib/streamMeta'
 import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
 
@@ -43,6 +44,8 @@ export interface VoiceMediaPrefs {
   micDeviceId: string
   cameraDeviceId: string
   noiseSuppression: boolean
+  /** Share the screen's sound too (off by default: it can echo the call back, finding 9). */
+  shareScreenAudio?: boolean
 }
 
 export interface VoiceDeps {
@@ -519,7 +522,9 @@ export class VoiceEngine {
     const generation = this.generation
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+      stream = await navigator.mediaDevices.getDisplayMedia(
+        displayMediaOptions(this.prefs().shareScreenAudio === true, navigator.mediaDevices.getSupportedConstraints?.() ?? {}),
+      )
     } catch (error) {
       const name = error instanceof Error ? error.name : ''
       // Closing the picker is a decision, not a failure: say nothing. The

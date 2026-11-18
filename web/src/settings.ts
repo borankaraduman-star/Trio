@@ -26,6 +26,8 @@ export interface Settings {
   inputMode: InputMode
   /** A `KeyboardEvent.code`, or one of the mouse buttons (desktop app). */
   pttKey: string
+  /** Share the screen's sound with it. Off by default: it can echo the call back (voice.ts). */
+  shareScreenAudio: boolean
 }
 
 export const SETTINGS_KEY = 'trio.settings'
@@ -41,6 +43,7 @@ export const DEFAULT_SETTINGS: Settings = {
   noiseSuppression: true,
   inputMode: 'activity',
   pttKey: 'Backquote',
+  shareScreenAudio: false,
 }
 
 export const MOUSE_PTT_KEYS = ['MouseMiddle', 'MouseBack', 'MouseForward'] as const
@@ -78,6 +81,7 @@ export function validateSettings(raw: unknown): Settings {
   else if (typeof record.ptt === 'boolean') result.inputMode = record.ptt ? 'ptt' : 'activity'
 
   if (isValidPttKey(record.pttKey)) result.pttKey = record.pttKey
+  if (typeof record.shareScreenAudio === 'boolean') result.shareScreenAudio = record.shareScreenAudio
 
   return result
 }

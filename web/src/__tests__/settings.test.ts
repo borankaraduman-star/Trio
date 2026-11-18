@@ -42,8 +42,15 @@ describe('validateSettings', () => {
       noiseSuppression: false,
       inputMode: 'ptt',
       pttKey: 'KeyV',
+      shareScreenAudio: true,
     }
     expect(validateSettings(full)).toEqual(full)
+  })
+
+  it('shares the screen without its sound unless asked to (an echo risk)', () => {
+    expect(validateSettings({}).shareScreenAudio).toBe(false)
+    expect(validateSettings({ shareScreenAudio: 'yes' }).shareScreenAudio).toBe(false)
+    expect(validateSettings({ shareScreenAudio: true }).shareScreenAudio).toBe(true)
   })
 
   it('a device name is kept only beside its device id', () => {

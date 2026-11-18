@@ -4,6 +4,7 @@ import { isBindableKey, keyLabel, MOUSE_PTT_KEYS, type Settings } from '../setti
 import { mouseButtonCode } from '../ptt'
 import { useDevices } from '../useDevices'
 import type { NoiseState } from '../audio/pipeline'
+import { SCREEN_AUDIO_WARNING } from '../audio/screenAudio'
 import { CloseIcon } from './icons2'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
@@ -248,6 +249,18 @@ export function SettingsDialog({
                   {NOISE_TEXT[noiseState]}
                 </small>
               )}
+            </span>
+          </label>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              data-testid="settings-screen-audio"
+              checked={settings.shareScreenAudio}
+              onChange={(event) => onChange({ shareScreenAudio: event.target.checked })}
+            />
+            <span>
+              Ekran sesini de paylaş
+              <small className="settings-hint">{SCREEN_AUDIO_WARNING}</small>
             </span>
           </label>
 
