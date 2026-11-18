@@ -226,6 +226,22 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
       }
     }
 
+    case 'user.removed': {
+      // Their messages stay: a message carries its author's name itself.
+      const id = event.user_id
+      if (id === state.me.id) return state
+      let next = state
+      if (id in state.users) {
+        const users = { ...state.users }
+        delete users[id]
+        next = { ...next, users }
+      }
+      const voice = removeFromVoice(next.voice, id)
+      if (voice !== next.voice) next = { ...next, voice }
+      for (const channelId of Object.keys(next.typing)) next = removeTyping(next, Number(channelId), id)
+      return next
+    }
+
     case 'channel.new': {
       if (state.channels.some((channel) => channel.id === event.channel.id)) return state
       const channels = [...state.channels, event.channel]
@@ -488,6 +504,14 @@ export function reducer(state: AppState, action: Action): AppState {
     default:
       return state
   }
+}
+
+/** The voice channel a user is in, by the server's last word, else null. */
+export function voiceChannelOf(state: AppState, userId: number): number | null {
+  for (const [key, list] of Object.entries(state.voice)) {
+    if (list.some((participant) => participant.user_id === userId)) return Number(key)
+  }
+  return null
 }
 
 export function typingNames(state: AppState, channelId: number | null, now: number): string[] {

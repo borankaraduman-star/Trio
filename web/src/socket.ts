@@ -4,7 +4,20 @@ export const BACKOFF_BASE_MS = 1000
 export const BACKOFF_CAP_MS = 15000
 export const PING_INTERVAL_MS = 25000
 const PONG_TIMEOUT_MS = 10000
-const CLOSE_UNAUTHORIZED = 4401
+export const CLOSE_UNAUTHORIZED = 4401
+/** CONTRACT-V3 §6: more than 10 sockets for one user; the newest is closed at once. */
+export const CLOSE_TOO_MANY = 4429
+/** This many 4429s in a row (no `ready` between them) and the person is told why. */
+export const TOO_MANY_NOTICE_AFTER = 2
+
+export type CloseKind = 'unauthorized' | 'too-many' | 'drop'
+
+/** What a close code means for the client. */
+export function closeKind(code: number): CloseKind {
+  if (code === CLOSE_UNAUTHORIZED) return 'unauthorized'
+  if (code === CLOSE_TOO_MANY) return 'too-many'
+  return 'drop'
+}
 
 /** Delay before reconnect attempt `attempt` (0-based): 1 s, 2 s, 4 s, 8 s, then 15 s. */
 export function backoffDelay(attempt: number): number {
@@ -24,8 +37,14 @@ export interface SocketHandlers {
   onOpen?: () => void
   /** The connection was lost; a reconnect is scheduled. */
   onDown?: () => void
-  /** The server closed with 4401: the token is not valid. No reconnect. */
+  /** The server closed with 4401 (at connect or later): the token is not valid. No reconnect. */
   onUnauthorized?: () => void
+  /**
+   * The server keeps refusing this socket with 4429 (too many tabs/devices
+   * open): called with the number of refusals in a row once it reaches
+   * TOO_MANY_NOTICE_AFTER, and with 0 when a connection gets through again.
+   */
+  onTooMany?: (streak: number) => void
 }
 
 /** A WebSocket that reconnects with backoff and keeps itself alive with pings. */
@@ -39,6 +58,7 @@ export class TrioSocket {
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private pongTimer: ReturnType<typeof setTimeout> | null = null
   private lastFrameAt = 0
+  private tooManyStreak = 0
 
   constructor(private readonly token: string) {}
 
@@ -85,9 +105,9 @@ export class TrioSocket {
     }
     this.ws = ws
 
+    let greeted = false
     ws.onopen = () => {
       if (this.ws !== ws) return
-      this.attempt = 0
       this.lastFrameAt = Date.now()
       this.startPing(ws)
       this.handlers.onOpen?.()
@@ -95,6 +115,17 @@ export class TrioSocket {
     ws.onmessage = (message) => {
       if (this.ws !== ws) return
       this.lastFrameAt = Date.now()
+      if (!greeted) {
+        // The backoff starts over only once the server has really taken the
+        // socket: a 4429 is accepted and closed at once, so `open` proves nothing.
+        greeted = true
+        this.attempt = 0
+        if (this.tooManyStreak > 0) {
+          const notified = this.tooManyStreak >= TOO_MANY_NOTICE_AFTER
+          this.tooManyStreak = 0
+          if (notified) this.handlers.onTooMany?.(0)
+        }
+      }
       let event: ServerEvent
       try {
         const parsed: unknown = JSON.parse(String(message.data))
@@ -117,12 +148,17 @@ export class TrioSocket {
     if (this.ws !== ws) return
     this.ws = null
     this.clearTimers()
-    if (code === CLOSE_UNAUTHORIZED) {
+    const kind = closeKind(code)
+    if (kind === 'unauthorized') {
       this.stopped = true
       this.handlers.onUnauthorized?.()
       return
     }
     if (this.stopped) return
+    if (kind === 'too-many') {
+      this.tooManyStreak += 1
+      if (this.tooManyStreak >= TOO_MANY_NOTICE_AFTER) this.handlers.onTooMany?.(this.tooManyStreak)
+    }
     this.handlers.onDown?.()
     this.scheduleRetry()
   }

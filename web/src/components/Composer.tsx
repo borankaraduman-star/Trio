@@ -11,6 +11,8 @@ export interface ComposerAttachments {
   /** At least one uploaded attachment would go with the message. */
   ready: boolean
   uploading: boolean
+  /** A chip failed: the message is held until it is removed, so no file is silently left out. */
+  failed?: boolean
   notice: string | null
   onAdd: (files: File[]) => void
   onRemove: (localId: string) => void
@@ -47,7 +49,8 @@ export function Composer({
   // v2: content may be empty when an uploaded attachment goes with it; nothing
   // is sent while an upload is still running (it would be left behind).
   const uploading = attachments?.uploading ?? false
-  const canSend = !uploading && (text.trim() !== '' || (attachments?.ready ?? false))
+  const failed = attachments?.failed ?? false
+  const canSend = !uploading && !failed && (text.trim() !== '' || (attachments?.ready ?? false))
 
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {
@@ -144,7 +147,9 @@ export function Composer({
         className="primary"
         data-testid="composer-send"
         disabled={!canSend}
-        title={uploading ? 'Dosyalar yükleniyor…' : undefined}
+        title={
+          uploading ? 'Dosyalar yükleniyor…' : failed ? 'Önce yüklenemeyen dosyayı kaldır' : undefined
+        }
         onClick={send}
       >
         Gönder

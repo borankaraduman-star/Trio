@@ -1,4 +1,4 @@
-import { freshServer } from '../lib/server'
+import { baseUrl, freshServer } from '../lib/server'
 import { expect, expectConnected, joinThroughUi, NAMES, newContext, personViaUi, test } from '../lib/trio'
 
 test.beforeEach(async () => {
@@ -57,7 +57,21 @@ test('join: a token the server does not know clears the session', async ({ brows
   })
   const page = await context.newPage()
   await page.goto('/')
-  await expect(page.getByTestId('join-name')).toBeVisible()
+  // The server ended (or never knew) this session: said so, and the screen leads with the device code.
+  await expect(page.getByTestId('join-notice')).toContainText('Bu cihazdaki oturum kapatıldı')
+  await expect(page.getByTestId('join-form')).toHaveAttribute('data-mode', 'link')
   expect(await page.evaluate(() => localStorage.getItem('trio.token'))).toBeNull()
+  await page.getByTestId('join-mode-invite').click()
+  await expect(page.getByTestId('join-name')).toBeVisible()
   await context.close()
+})
+
+test('the app shell carries the CSP every page of this suite is checked against', async () => {
+  // Every test fails on any CSP violation (lib/trio.ts `cspGuard`); that only
+  // means something while the shell really sends the policy (CONTRACT-V3 §8).
+  const response = await fetch(baseUrl())
+  const csp = response.headers.get('content-security-policy') ?? ''
+  expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval' blob:")
+  expect(csp).toContain("connect-src 'self' ws://")
+  expect(response.headers.get('x-frame-options')).toBe('DENY')
 })
