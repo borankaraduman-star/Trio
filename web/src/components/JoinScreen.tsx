@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, ApiError, joinErrorMessage, type Auth } from '../api'
+import { api, ApiError, joinErrorMessage, loadLastName, type Auth } from '../api'
 import { linkCodeProblem, normalizeLinkCode, tidyLinkCodeInput } from '../lib/linkCode'
 import { rateLimitMessage } from '../lib/retryAfter'
 import { desktopBridge } from '../ptt'
@@ -11,22 +11,32 @@ export type JoinMode = 'invite' | 'link'
  * has an account; so, almost always, does somebody opening the desktop app
  * (they found it from the browser, where they are signed in).
  */
-export function initialJoinMode(options: { desktop: boolean; sessionEnded: boolean }): JoinMode {
+export function initialJoinMode(options: { desktop: boolean; sessionEnded: boolean; inviteLink?: boolean }): JoinMode {
+  // An invite link says plainly what the person came for.
+  if (options.inviteLink) return 'invite'
   return options.desktop || options.sessionEnded ? 'link' : 'invite'
 }
 
 export function JoinScreen({
   onJoined,
   notice,
+  linkInvite = null,
 }: {
-  onJoined: (auth: Auth) => void
+  /** `inviteCode`: the invite code that worked, null for a device-code join. */
+  onJoined: (auth: Auth, inviteCode: string | null) => void
   /** Why the person is back here (their session was ended elsewhere), or null. */
   notice?: string | null
+  /** The code of an invite link (`#davet=…`) this page was opened with. */
+  linkInvite?: string | null
 }) {
   const desktop = desktopBridge() !== null
-  const [mode, setMode] = useState<JoinMode>(() => initialJoinMode({ desktop, sessionEnded: Boolean(notice) }))
-  const [name, setName] = useState('')
-  const [code, setCode] = useState('')
+  const [mode, setMode] = useState<JoinMode>(() =>
+    initialJoinMode({ desktop, sessionEnded: Boolean(notice), inviteLink: linkInvite !== null }),
+  )
+  const [name, setName] = useState(() => loadLastName() ?? '')
+  const [code, setCode] = useState(linkInvite ?? '')
+  /** The code came from the link and is not shown; "değiştir" opens the field. */
+  const [codeFromLink, setCodeFromLink] = useState(linkInvite !== null)
   const [linkCode, setLinkCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,8 +73,10 @@ export function JoinScreen({
     try {
       const result =
         mode === 'invite' ? await api.join(code, name.trim()) : await api.joinWithLinkCode(normalized ?? '')
-      onJoined({ token: result.token, user: result.user })
+      onJoined({ token: result.token, user: result.user }, mode === 'invite' ? code : null)
     } catch (failure) {
+      // A wrong or old code from a link: back to the ordinary form, with the ordinary error.
+      if (failure instanceof ApiError && failure.code === 'INVALID_INVITE') setCodeFromLink(false)
       if (failure instanceof ApiError && failure.code === 'RATE_LIMITED') {
         setNow(Date.now())
         setLimitedUntil(failure.retryAfter === null ? null : Date.now() + failure.retryAfter * 1000)
@@ -135,19 +147,30 @@ export function JoinScreen({
               placeholder="Sana ne diyelim?"
             />
 
-            <label htmlFor="join-code">Davet kodu</label>
-            <input
-              id="join-code"
-              data-testid="join-code"
-              value={code}
-              onChange={(event) => {
-                setCode(event.target.value)
-                setError(null)
-              }}
-              type="password"
-              autoComplete="off"
-              placeholder="Arkadaşından aldığın kod"
-            />
+            {codeFromLink ? (
+              <p className="join-link-note" data-testid="join-code-from-link">
+                Davet koduyla katılıyorsun.{' '}
+                <button type="button" className="link" data-testid="join-code-change" onClick={() => setCodeFromLink(false)}>
+                  değiştir
+                </button>
+              </p>
+            ) : (
+              <>
+                <label htmlFor="join-code">Davet kodu</label>
+                <input
+                  id="join-code"
+                  data-testid="join-code"
+                  value={code}
+                  onChange={(event) => {
+                    setCode(event.target.value)
+                    setError(null)
+                  }}
+                  type="password"
+                  autoComplete="off"
+                  placeholder="Arkadaşından aldığın kod"
+                />
+              </>
+            )}
           </>
         ) : (
           <>

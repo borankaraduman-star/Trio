@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
-import { clearAuth, loadAuth, saveAuth, type Auth } from './api'
+import { clearAuth, clearInviteCode, loadAuth, saveAuth, saveInviteCode, saveLastName, type Auth } from './api'
+import { takeInviteFromLocation } from './lib/inviteLink'
 import { JoinScreen } from './components/JoinScreen'
 import { Session } from './components/Session'
 import { clearStoredState } from './store'
@@ -11,15 +12,23 @@ export const SESSION_ENDED_NOTICE =
 export function App() {
   const [auth, setAuth] = useState<Auth | null>(loadAuth)
   const [notice, setNotice] = useState<string | null>(null)
+  // An invite link's code, read (and taken out of the address bar) on load, signed in or not.
+  const [linkInvite, setLinkInvite] = useState(takeInviteFromLocation)
 
-  const onJoined = useCallback((next: Auth) => {
+  const onJoined = useCallback((next: Auth, inviteCode: string | null) => {
     saveAuth(next)
+    saveLastName(next.user.name)
+    // Kept to share as a link from Ayarlar › Hesap; a device-code join does not know it.
+    if (inviteCode !== null) saveInviteCode(inviteCode)
     setNotice(null)
+    // Used once: a later sign-out does not bring the link's code back.
+    setLinkInvite(null)
     setAuth(next)
   }, [])
 
   const forget = useCallback(() => {
     clearAuth()
+    clearInviteCode()
     clearStoredState()
     setAuth(null)
   }, [])
@@ -37,7 +46,7 @@ export function App() {
   }, [forget])
 
   // Keyed by the notice, so a join screen reached a second way starts in the right mode.
-  if (!auth) return <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} />
+  if (!auth) return <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} linkInvite={linkInvite} />
   // Keyed by token: a different account never inherits the previous one's state.
   return <Session key={auth.token} auth={auth} onSignedOut={onSignedOut} onSessionEnded={onSessionEnded} />
 }

@@ -7,6 +7,8 @@ export interface AccountProps {
   createLinkCode: () => Promise<LinkCode>
   /** Make a code as soon as the section opens (from the sign-out dialog). */
   createAtOnce?: boolean
+  /** `<origin>/#davet=<code>` when this device joined with the invite code, else null. */
+  inviteLink: string | null
 }
 
 function linkCodeError(error: unknown): string {
@@ -26,6 +28,8 @@ export function AccountSection({ account, onSignOut }: { account: AccountProps; 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const inviteField = useRef<HTMLInputElement>(null)
   const [now, setNow] = useState(() => Date.now())
   const codeText = useRef<HTMLElement>(null)
   const started = useRef(false)
@@ -82,6 +86,17 @@ export function AccountSection({ account, onSignOut }: { account: AccountProps; 
     }
   }
 
+  const copyInvite = async () => {
+    const link = account.inviteLink
+    if (!link) return
+    try {
+      await navigator.clipboard.writeText(link)
+      setLinkCopied(true)
+    } catch {
+      inviteField.current?.select()
+    }
+  }
+
   return (
     <section ref={section} className="settings-section account-section" aria-labelledby="settings-account" data-testid="settings-account">
       <h3 id="settings-account">Hesap</h3>
@@ -135,6 +150,38 @@ export function AccountSection({ account, onSignOut }: { account: AccountProps; 
             {busy ? 'Oluşturuluyor…' : live ? 'Yeni kod oluştur' : 'Cihaz kodu oluştur'}
           </button>
         </div>
+      </div>
+
+      <div className="settings-field">
+        <span className="settings-label" id="invite-link-label">
+          Davet bağlantısı
+        </span>
+        {account.inviteLink ? (
+          <>
+            <div className="invite-link-row">
+              <input
+                ref={inviteField}
+                readOnly
+                value={account.inviteLink}
+                data-testid="invite-link"
+                aria-labelledby="invite-link-label"
+                onFocus={(event) => event.target.select()}
+              />
+              <button type="button" className="ghost" data-testid="invite-link-copy" onClick={() => void copyInvite()}>
+                {linkCopied ? 'Kopyalandı' : 'Kopyala'}
+              </button>
+            </div>
+            <p className="settings-hint">
+              Bağlantıya sahip olan herkes, sunucunun kişi sınırı dolana kadar yeni hesap açıp katılabilir; yalnızca
+              güvendiğin kişilere gönder.
+            </p>
+          </>
+        ) : (
+          <p className="settings-hint" data-testid="invite-link-unknown">
+            Bu cihaz cihaz koduyla girdiği için davet kodunu bilmiyor. Davet bağlantısını, davet koduyla katılmış bir
+            cihazından kopyalayabilirsin.
+          </p>
+        )}
       </div>
 
       <div className="settings-field">

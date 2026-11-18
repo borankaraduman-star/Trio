@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
-import { api, ApiError, type Auth, type LinkCode } from '../api'
+import { api, ApiError, loadInviteCode, type Auth, type LinkCode } from '../api'
+import { inviteLinkUrl } from '../lib/inviteLink'
 import { sendErrorMessage } from '../lib/attachments'
 import { typingLabel } from '../lib/grouping'
 import { TrioSocket } from '../socket'
@@ -103,6 +104,8 @@ export function Session({
     setSettingsCode(false)
   }, [])
   const [logoutOpen, setLogoutOpen] = useState(false)
+  // The invite code this device joined with, kept to share as a link.
+  const [invite] = useState(loadInviteCode)
   const [signingOut, setSigningOut] = useState(false)
   /** The server kept refusing the socket with 4429. */
   const [tooMany, setTooMany] = useState(false)
@@ -626,7 +629,12 @@ export function Session({
           noiseState={voice.noiseState}
           transmitting={voice.transmitting}
           isDesktop={desktopBridge() !== null}
-          account={{ name: state.me.name, createLinkCode, createAtOnce: settingsCode }}
+          account={{
+            name: state.me.name,
+            createLinkCode,
+            createAtOnce: settingsCode,
+            inviteLink: invite === null ? null : inviteLinkUrl(window.location.origin, invite),
+          }}
           onSignOut={() => {
             closeSettings()
             setLogoutOpen(true)

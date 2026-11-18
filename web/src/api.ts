@@ -194,3 +194,31 @@ export function clearAuth(): void {
     // Nothing to clear.
   }
 }
+
+// v3: the invite code this device joined with (to share as a link) and the last name used.
+const INVITE_KEY = 'trio.invite'
+const LAST_NAME_KEY = 'trio.lastName'
+
+function readKey(key: string): string | null {
+  try {
+    const value = localStorage.getItem(key)
+    return value && value.trim() !== '' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeKey(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Kept nowhere: a convenience only.
+  }
+}
+
+export const loadInviteCode = (): string | null => readKey(INVITE_KEY)
+export const saveInviteCode = (code: string): void => writeKey(INVITE_KEY, code)
+export const clearInviteCode = (): void => writeKey(INVITE_KEY, null)
+export const loadLastName = (): string | null => readKey(LAST_NAME_KEY)
+export const saveLastName = (name: string): void => writeKey(LAST_NAME_KEY, name)
