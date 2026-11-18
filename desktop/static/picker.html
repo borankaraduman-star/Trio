@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Ekran paylaş</title>
+  <link rel="stylesheet" href="local.css">
+</head>
+<body>
+  <div class="picker">
+    <header><h1>Neyi paylaşmak istiyorsun?</h1></header>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-kind="screen" aria-selected="true">Ekranlar</button>
+      <button class="tab" role="tab" data-kind="window" aria-selected="false">Pencereler</button>
+    </div>
+    <div class="grid" id="grid" role="listbox" aria-label="Kaynaklar"></div>
+    <footer>
+      <label class="audio" id="audio-row" hidden>
+        <span><input type="checkbox" id="audio"> Sistem sesini de paylaş</span>
+        <small>Bilgisayardan çıkan tüm sesler gider — Trio'daki arkadaşlarının sesi de, yani onlar kendi seslerini yankı olarak duyabilir.</small>
+      </label>
+      <div class="spacer"></div>
+      <button class="btn secondary" id="refresh" type="button">Yenile</button>
+      <button class="btn secondary" id="cancel" type="button">Vazgeç</button>
+      <button class="btn" id="share" type="button" disabled>Paylaş</button>
+    </footer>
+  </div>
+  <script src="picker.js"></script>
+</body>
+</html>

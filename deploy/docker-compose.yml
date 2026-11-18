@@ -1,0 +1,81 @@
+# Trio — one VPS, three containers.
+#   cd deploy && cp .env.example .env && $EDITOR .env && docker compose up -d --build
+# Compose reads deploy/.env (next to this file) for the ${...} values below.
+
+name: trio
+
+services:
+  app:
+    build:
+      # The same root Dockerfile Railway builds.
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      TRIO_INVITE_CODE: ${TRIO_INVITE_CODE:?set TRIO_INVITE_CODE in deploy/.env}
+      TRIO_MAX_USERS: ${TRIO_MAX_USERS:-10}
+      # coturn runs on this same machine, so its public hostname is the domain.
+      TRIO_TURN_HOST: ${TRIO_DOMAIN:?set TRIO_DOMAIN in deploy/.env}
+      TRIO_TURN_SECRET: ${TRIO_TURN_SECRET:?set TRIO_TURN_SECRET in deploy/.env}
+      # Default: our own coturn also answers STUN, so no third party is involved.
+      TRIO_STUN_URLS: ${TRIO_STUN_URLS:-stun:${TRIO_DOMAIN}:3478}
+      TRIO_MAX_UPLOAD_MB: ${TRIO_MAX_UPLOAD_MB:-25}
+      # Optional: Cloudflare TURN instead of (takes precedence over) coturn.
+      TRIO_CF_TURN_KEY_ID: ${TRIO_CF_TURN_KEY_ID:-}
+      TRIO_CF_TURN_API_TOKEN: ${TRIO_CF_TURN_API_TOKEN:-}
+    volumes:
+      - trio_data:/data   # trio.db and uploads/
+    # Not published: only Caddy reaches it, over the compose network.
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      TRIO_DOMAIN: ${TRIO_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates — keep this volume
+      - caddy_config:/config
+
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    # Host networking, for two reasons:
+    #  1. The relay port range. Publishing 49160-49200/udp through Docker's
+    #     port mapping starts a proxy/NAT rule per port and rewrites addresses;
+    #     with host networking coturn binds the ports directly.
+    #  2. The external address. coturn has to tell peers the address its relay
+    #     sockets are reachable at. Inside a bridge network it only sees a
+    #     172.x address and would advertise that.
+    # Consequence: the ports are NOT listed here; open them in the firewall
+    # (3478 tcp+udp, 49160-49200 udp). See README.
+    network_mode: host
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    # Static options live in turnserver.conf; the three values that come from
+    # .env are flags, because coturn's config file cannot read the environment.
+    # NOTE: the image's entrypoint passes these through a shell `eval`, so keep
+    # the secret to hex characters (openssl rand -hex 32) — no spaces, quotes
+    # or `$`.
+    command:
+      - -c
+      - /etc/coturn/turnserver.conf
+      - --realm=${TRIO_DOMAIN}
+      - --static-auth-secret=${TRIO_TURN_SECRET}
+      # The VPS's public IPv4. If the provider NATs the machine (the interface
+      # shows a private address, e.g. AWS/Oracle/GCP), write it in .env as
+      # PUBLIC/PRIVATE, e.g. 203.0.113.7/10.0.0.5.
+      - --external-ip=${TRIO_PUBLIC_IP:?set TRIO_PUBLIC_IP in deploy/.env}
+
+volumes:
+  trio_data:
+  caddy_data:
+  caddy_config:

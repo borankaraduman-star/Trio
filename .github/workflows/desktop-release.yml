@@ -1,0 +1,79 @@
+# Builds the Trio desktop app on a v* tag and attaches the installers to a
+# GitHub release. Unsigned: no signing secrets are used (macOS builds are
+# ad-hoc signed by electron-builder, `mac.identity: "-"`).
+name: desktop-release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: desktop/release/*.exe
+          - os: macos-latest
+            target: --mac
+            files: desktop/release/*.dmg
+          - os: ubuntu-latest
+            target: --linux
+            files: desktop/release/*.AppImage
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    env:
+      # No certificates: never look for one in the keychain / store.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Version from tag
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build installers
+        run: npm run build && npx electron-builder ${{ matrix.target }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trio-desktop-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          pattern: trio-desktop-*
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true

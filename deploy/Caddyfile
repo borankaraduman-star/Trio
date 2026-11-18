@@ -1,0 +1,10 @@
+# TRIO_DOMAIN comes from the caddy container's environment (docker-compose.yml).
+# Caddy obtains and renews the Let's Encrypt certificate by itself; ports 80
+# and 443 must be reachable from the internet and the DNS A record must point
+# here BEFORE the first start.
+{$TRIO_DOMAIN} {
+	encode zstd gzip
+
+	# WebSockets (/ws) need no extra configuration: reverse_proxy upgrades them.
+	reverse_proxy app:8000
+}

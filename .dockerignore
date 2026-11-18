@@ -1,0 +1,24 @@
+# Only web/ and server/ go into the image; keep the build context small and
+# free of local data and secrets.
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+**/*.db
+**/*.db-*
+**/*.sqlite*
+**/uploads
+**/.env
+**/.env.*
+.git
+.github
+desktop
+design
+e2e
+deploy
+server/tests
+*.md

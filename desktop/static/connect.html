@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trio — Sunucuya bağlan</title>
+  <link rel="stylesheet" href="local.css">
+</head>
+<body>
+  <main class="center">
+    <form class="card" id="form" novalidate>
+      <h1><img src="icon.png" alt="">Trio</h1>
+      <p>Arkadaşlarınla kullandığın Trio sunucusunun adresini gir.</p>
+      <label for="url">Sunucu adresi</label>
+      <input id="url" type="url" inputmode="url" autocomplete="url" spellcheck="false"
+             placeholder="https://trio.up.railway.app" required autofocus>
+      <div class="hint">https:// gerekir. Yalnızca kendi bilgisayarında çalışan bir sunucu için http://localhost kullanılabilir.</div>
+      <div class="message" id="message" role="status" aria-live="polite"></div>
+      <div class="row">
+        <button class="btn" id="submit" type="submit">Bağlan</button>
+      </div>
+    </form>
+  </main>
+  <script src="connect.js"></script>
+</body>
+</html>

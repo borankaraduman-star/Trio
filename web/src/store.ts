@@ -1,0 +1,548 @@
+import type { Channel, Member, Message, ServerEvent, User, VoiceParticipant } from './types'
+
+export type MessageStatus = 'sent' | 'pending' | 'failed'
+
+export interface UiMessage extends Message {
+  /** Stable React key: the nonce for a message this tab sent, else `m<id>`. */
+  key: string
+  status: MessageStatus
+  nonce?: string
+}
+
+export interface ChannelMessages {
+  /** Confirmed messages by ascending id, then this tab's unconfirmed ones. */
+  items: UiMessage[]
+  hasMore: boolean
+  loaded: boolean
+  loadingOlder: boolean
+  error: boolean
+}
+
+export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting'
+
+export interface AppState {
+  connection: ConnectionStatus
+  /** A `ready` frame has been seen at least once. */
+  ready: boolean
+  me: User
+  users: Record<number, Member>
+  channels: Channel[]
+  voice: Record<number, VoiceParticipant[]>
+  activeChannelId: number | null
+  messages: Record<number, ChannelMessages>
+  /** channel id → user id → time (ms) the "typing" line expires. */
+  typing: Record<number, Record<number, number>>
+  /** channel id → id of the newest message the user has seen. */
+  lastRead: Record<number, number>
+  /** channel id → id of the newest message known to exist. */
+  latest: Record<number, number>
+  /** channel id → unread count (at least 1 when unread, exact for live messages). */
+  unread: Record<number, number>
+}
+
+export type Action =
+  | { type: 'server'; event: ServerEvent; now: number; viewing: boolean }
+  | { type: 'connection.down' }
+  | { type: 'channel.select'; channelId: number }
+  | { type: 'viewing' }
+  | { type: 'messages.loading-older'; channelId: number }
+  | {
+      type: 'messages.loaded'
+      channelId: number
+      messages: Message[]
+      hasMore: boolean
+      mode: 'replace' | 'prepend'
+      viewing: boolean
+    }
+  | { type: 'messages.load-failed'; channelId: number }
+  | { type: 'message.optimistic'; message: UiMessage }
+  | { type: 'message.failed'; channelId: number; nonce: string }
+  | { type: 'message.retry'; channelId: number; nonce: string }
+  | { type: 'latest.loaded'; channelId: number; latestId: number }
+  | { type: 'typing.prune'; now: number }
+
+export const TYPING_TTL_MS = 5000
+
+const EMPTY_CHANNEL: ChannelMessages = {
+  items: [],
+  hasMore: false,
+  loaded: false,
+  loadingOlder: false,
+  error: false,
+}
+
+export function createInitialState(init: {
+  me: User
+  activeChannelId?: number | null
+  lastRead?: Record<number, number>
+}): AppState {
+  return {
+    connection: 'connecting',
+    ready: false,
+    me: init.me,
+    users: {},
+    channels: [],
+    voice: {},
+    activeChannelId: init.activeChannelId ?? null,
+    messages: {},
+    typing: {},
+    lastRead: init.lastRead ?? {},
+    latest: {},
+    unread: {},
+  }
+}
+
+export function channelMessages(state: AppState, channelId: number | null): ChannelMessages {
+  if (channelId === null) return EMPTY_CHANNEL
+  return state.messages[channelId] ?? EMPTY_CHANNEL
+}
+
+export function totalUnread(state: AppState): number {
+  let total = 0
+  for (const channel of state.channels) {
+    if (channel.kind === 'text') total += state.unread[channel.id] ?? 0
+  }
+  return total
+}
+
+function toUi(message: Message, key = `m${message.id}`): UiMessage {
+  return { ...message, key, status: 'sent' }
+}
+
+/** Confirmed messages by id (incoming wins, keeping the old key), then the unconfirmed tail. */
+export function mergeMessages(existing: readonly UiMessage[], incoming: readonly UiMessage[]): UiMessage[] {
+  const confirmed = new Map<number, UiMessage>()
+  const tail: UiMessage[] = []
+  for (const message of existing) {
+    if (message.status === 'sent') confirmed.set(message.id, message)
+    else tail.push(message)
+  }
+  for (const message of incoming) {
+    const old = confirmed.get(message.id)
+    confirmed.set(message.id, old ? { ...message, key: old.key } : message)
+  }
+  return [...[...confirmed.values()].sort((a, b) => a.id - b.id), ...tail]
+}
+
+function withChannel(
+  state: AppState,
+  channelId: number,
+  update: (channel: ChannelMessages) => ChannelMessages,
+): AppState {
+  const current = state.messages[channelId] ?? EMPTY_CHANNEL
+  return { ...state, messages: { ...state.messages, [channelId]: update(current) } }
+}
+
+function markRead(state: AppState, channelId: number): AppState {
+  const latest = state.latest[channelId]
+  const lastRead = state.lastRead[channelId]
+  const unread = state.unread[channelId] ?? 0
+  const nextRead = latest !== undefined && latest > (lastRead ?? 0) ? latest : lastRead
+  if (unread === 0 && nextRead === lastRead) return state
+  return {
+    ...state,
+    unread: { ...state.unread, [channelId]: 0 },
+    lastRead: nextRead === undefined ? state.lastRead : { ...state.lastRead, [channelId]: nextRead },
+  }
+}
+
+function pickActiveChannel(channels: Channel[], preferred: number | null): number | null {
+  const text = channels.filter((channel) => channel.kind === 'text')
+  if (preferred !== null && text.some((channel) => channel.id === preferred)) return preferred
+  return text[0]?.id ?? null
+}
+
+function removeTyping(state: AppState, channelId: number, userId: number): AppState {
+  const channel = state.typing[channelId]
+  if (!channel || !(userId in channel)) return state
+  const rest = { ...channel }
+  delete rest[userId]
+  return { ...state, typing: { ...state.typing, [channelId]: rest } }
+}
+
+function removeFromVoice(
+  voice: Record<number, VoiceParticipant[]>,
+  userId: number,
+): Record<number, VoiceParticipant[]> {
+  let changed = false
+  const next: Record<number, VoiceParticipant[]> = {}
+  for (const [key, list] of Object.entries(voice)) {
+    const filtered = list.filter((participant) => participant.user_id !== userId)
+    if (filtered.length !== list.length) changed = true
+    next[Number(key)] = filtered
+  }
+  return changed ? next : voice
+}
+
+function reduceServer(state: AppState, event: ServerEvent, now: number, viewing: boolean): AppState {
+  switch (event.type) {
+    case 'ready': {
+      const users: Record<number, Member> = {}
+      for (const user of event.users) users[user.id] = user
+      const voice: Record<number, VoiceParticipant[]> = {}
+      for (const [key, list] of Object.entries(event.voice ?? {})) voice[Number(key)] = list
+      const activeChannelId = pickActiveChannel(event.channels, state.activeChannelId)
+
+      // After a reconnect anything may have been missed. The open channel is
+      // refetched by the caller; every other cache is dropped so that opening
+      // the channel loads it again.
+      const messages: Record<number, ChannelMessages> = {}
+      if (activeChannelId !== null && state.messages[activeChannelId]) {
+        messages[activeChannelId] = state.messages[activeChannelId]
+      }
+      return {
+        ...state,
+        connection: 'open',
+        ready: true,
+        me: event.user,
+        users,
+        channels: event.channels,
+        voice,
+        activeChannelId,
+        messages,
+        typing: {},
+      }
+    }
+
+    case 'presence': {
+      const user = state.users[event.user_id]
+      if (!user || user.online === event.online) return state
+      return { ...state, users: { ...state.users, [user.id]: { ...user, online: event.online } } }
+    }
+
+    case 'user.joined': {
+      const existing = state.users[event.user.id]
+      return {
+        ...state,
+        users: {
+          ...state.users,
+          [event.user.id]: { ...event.user, online: existing?.online ?? false },
+        },
+      }
+    }
+
+    case 'channel.new': {
+      if (state.channels.some((channel) => channel.id === event.channel.id)) return state
+      const channels = [...state.channels, event.channel]
+      return {
+        ...state,
+        channels,
+        activeChannelId: state.activeChannelId ?? pickActiveChannel(channels, null),
+      }
+    }
+
+    case 'message.new': {
+      const message = event.message
+      const channelId = message.channel_id
+      const nonce = event.nonce
+      let next = withChannel(state, channelId, (channel) => {
+        const pendingIndex =
+          nonce === undefined
+            ? -1
+            : channel.items.findIndex((item) => item.status !== 'sent' && item.nonce === nonce)
+        if (pendingIndex >= 0) {
+          // Our own optimistic row: swap it for the stored message, keeping its key.
+          const rest = channel.items.filter((_, index) => index !== pendingIndex)
+          return { ...channel, items: mergeMessages(rest, [{ ...toUi(message, nonce), nonce }]) }
+        }
+        if (channel.items.some((item) => item.status === 'sent' && item.id === message.id)) {
+          return channel
+        }
+        return { ...channel, items: mergeMessages(channel.items, [toUi(message)]) }
+      })
+
+      if (message.id > (next.latest[channelId] ?? 0)) {
+        next = { ...next, latest: { ...next.latest, [channelId]: message.id } }
+      }
+      next = removeTyping(next, channelId, message.author.id)
+
+      const own = message.author.id === state.me.id
+      const seen = own || (viewing && state.activeChannelId === channelId)
+      if (seen) {
+        if (message.id > (next.lastRead[channelId] ?? 0)) {
+          next = { ...next, lastRead: { ...next.lastRead, [channelId]: message.id } }
+        }
+      } else if (message.id > (state.latest[channelId] ?? 0)) {
+        next = {
+          ...next,
+          unread: { ...next.unread, [channelId]: (next.unread[channelId] ?? 0) + 1 },
+        }
+      }
+      return next
+    }
+
+    case 'typing': {
+      if (event.user_id === state.me.id) return state
+      return {
+        ...state,
+        typing: {
+          ...state.typing,
+          [event.channel_id]: {
+            ...state.typing[event.channel_id],
+            [event.user_id]: now + TYPING_TTL_MS,
+          },
+        },
+      }
+    }
+
+    case 'voice.joined': {
+      const voice = { ...removeFromVoice(state.voice, event.user_id) }
+      voice[event.channel_id] = [
+        ...(voice[event.channel_id] ?? []),
+        {
+          user_id: event.user_id,
+          muted: event.muted,
+          deafened: event.deafened,
+          screensharing: event.screensharing,
+        },
+      ]
+      return { ...state, voice }
+    }
+
+    case 'voice.left': {
+      const list = state.voice[event.channel_id]
+      if (!list || !list.some((participant) => participant.user_id === event.user_id)) return state
+      return {
+        ...state,
+        voice: {
+          ...state.voice,
+          [event.channel_id]: list.filter((participant) => participant.user_id !== event.user_id),
+        },
+      }
+    }
+
+    case 'voice.state': {
+      const list = state.voice[event.channel_id]
+      if (!list) return state
+      return {
+        ...state,
+        voice: {
+          ...state.voice,
+          [event.channel_id]: list.map((participant) =>
+            participant.user_id === event.user_id
+              ? {
+                  user_id: event.user_id,
+                  muted: event.muted,
+                  deafened: event.deafened,
+                  screensharing: event.screensharing,
+                }
+              : participant,
+          ),
+        },
+      }
+    }
+
+    // Handled outside the store (voice engine) or not at all.
+    case 'voice.peers':
+    case 'signal':
+    case 'pong':
+    case 'error':
+      return state
+
+    default:
+      return state
+  }
+}
+
+export function reducer(state: AppState, action: Action): AppState {
+  switch (action.type) {
+    case 'server':
+      return reduceServer(state, action.event, action.now, action.viewing)
+
+    case 'connection.down': {
+      // Whatever was still unconfirmed cannot be confirmed on this connection.
+      const messages: Record<number, ChannelMessages> = {}
+      for (const [key, channel] of Object.entries(state.messages)) {
+        messages[Number(key)] = channel.items.some((item) => item.status === 'pending')
+          ? {
+              ...channel,
+              items: channel.items.map((item) =>
+                item.status === 'pending' ? { ...item, status: 'failed' as const } : item,
+              ),
+            }
+          : channel
+      }
+      return {
+        ...state,
+        connection: state.ready ? 'reconnecting' : 'connecting',
+        messages,
+        typing: {},
+      }
+    }
+
+    case 'channel.select': {
+      const channel = state.channels.find((item) => item.id === action.channelId)
+      if (!channel || channel.kind !== 'text') return state
+      return markRead({ ...state, activeChannelId: channel.id }, channel.id)
+    }
+
+    case 'viewing':
+      return state.activeChannelId === null ? state : markRead(state, state.activeChannelId)
+
+    case 'messages.loading-older':
+      return withChannel(state, action.channelId, (channel) => ({ ...channel, loadingOlder: true }))
+
+    case 'messages.loaded': {
+      const page = action.messages
+      let next = withChannel(state, action.channelId, (channel) => {
+        if (action.mode === 'prepend') {
+          return {
+            ...channel,
+            items: mergeMessages(channel.items, page.map((message) => toUi(message))),
+            hasMore: action.hasMore,
+            loadingOlder: false,
+            error: false,
+          }
+        }
+        // Replace with the latest page, but keep what the page cannot know:
+        // unconfirmed rows, and live messages newer than the page.
+        const newestInPage = page.length > 0 ? page[page.length - 1].id : -Infinity
+        const kept = channel.items.filter(
+          (item) => item.status !== 'sent' || item.id > newestInPage,
+        )
+        const keys = new Map(channel.items.map((item) => [item.id, item.key]))
+        return {
+          items: mergeMessages(
+            kept,
+            page.map((message) => toUi(message, keys.get(message.id))),
+          ),
+          hasMore: action.hasMore,
+          loaded: true,
+          loadingOlder: false,
+          error: false,
+        }
+      })
+      const newest = page.length > 0 ? page[page.length - 1].id : 0
+      if (newest > (next.latest[action.channelId] ?? 0)) {
+        next = { ...next, latest: { ...next.latest, [action.channelId]: newest } }
+      }
+      if (action.viewing && next.activeChannelId === action.channelId) {
+        next = markRead(next, action.channelId)
+      }
+      return next
+    }
+
+    case 'messages.load-failed':
+      return withChannel(state, action.channelId, (channel) => ({
+        ...channel,
+        loadingOlder: false,
+        error: !channel.loaded,
+      }))
+
+    case 'message.optimistic':
+      return withChannel(state, action.message.channel_id, (channel) => ({
+        ...channel,
+        items: [...channel.items, action.message],
+      }))
+
+    case 'message.failed':
+    case 'message.retry': {
+      const from = action.type === 'message.failed' ? 'pending' : 'failed'
+      const to = action.type === 'message.failed' ? 'failed' : 'pending'
+      const channel = state.messages[action.channelId]
+      if (!channel?.items.some((item) => item.nonce === action.nonce && item.status === from)) {
+        return state
+      }
+      return withChannel(state, action.channelId, (current) => ({
+        ...current,
+        items: current.items.map((item) =>
+          item.nonce === action.nonce && item.status === from ? { ...item, status: to } : item,
+        ),
+      }))
+    }
+
+    case 'latest.loaded': {
+      const { channelId, latestId } = action
+      let next = state
+      if (latestId > (state.latest[channelId] ?? 0)) {
+        next = { ...next, latest: { ...next.latest, [channelId]: latestId } }
+      }
+      const unseen = latestId > (state.lastRead[channelId] ?? 0)
+      if (unseen && state.activeChannelId !== channelId && (state.unread[channelId] ?? 0) === 0) {
+        next = { ...next, unread: { ...next.unread, [channelId]: 1 } }
+      }
+      return next
+    }
+
+    case 'typing.prune': {
+      let changed = false
+      const typing: Record<number, Record<number, number>> = {}
+      for (const [channelKey, users] of Object.entries(state.typing)) {
+        const alive: Record<number, number> = {}
+        for (const [userKey, expires] of Object.entries(users)) {
+          if (expires > action.now) alive[Number(userKey)] = expires
+          else changed = true
+        }
+        typing[Number(channelKey)] = alive
+      }
+      return changed ? { ...state, typing } : state
+    }
+
+    default:
+      return state
+  }
+}
+
+export function typingNames(state: AppState, channelId: number | null, now: number): string[] {
+  if (channelId === null) return []
+  const users = state.typing[channelId]
+  if (!users) return []
+  return Object.entries(users)
+    .filter(([userId, expires]) => expires > now && Number(userId) !== state.me.id)
+    .map(([userId]) => state.users[Number(userId)]?.name)
+    .filter((name): name is string => typeof name === 'string')
+}
+
+// --- what the browser remembers -------------------------------------------
+
+const LAST_READ_KEY = 'trio.lastRead'
+const ACTIVE_CHANNEL_KEY = 'trio.channel'
+
+export function loadLastRead(): Record<number, number> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(LAST_READ_KEY) ?? '{}')
+    const result: Record<number, number> = {}
+    if (typeof raw === 'object' && raw !== null) {
+      for (const [key, value] of Object.entries(raw)) {
+        if (Number.isInteger(Number(key)) && typeof value === 'number') result[Number(key)] = value
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+export function saveLastRead(lastRead: Record<number, number>): void {
+  try {
+    localStorage.setItem(LAST_READ_KEY, JSON.stringify(lastRead))
+  } catch {
+    // Kept in memory only.
+  }
+}
+
+export function loadActiveChannel(): number | null {
+  try {
+    const value = Number(localStorage.getItem(ACTIVE_CHANNEL_KEY))
+    return Number.isInteger(value) && value > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function saveActiveChannel(channelId: number): void {
+  try {
+    localStorage.setItem(ACTIVE_CHANNEL_KEY, String(channelId))
+  } catch {
+    // Kept in memory only.
+  }
+}
+
+export function clearStoredState(): void {
+  try {
+    localStorage.removeItem(LAST_READ_KEY)
+    localStorage.removeItem(ACTIVE_CHANNEL_KEY)
+  } catch {
+    // Nothing to clear.
+  }
+}

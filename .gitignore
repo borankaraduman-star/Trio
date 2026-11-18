@@ -15,6 +15,7 @@ build/
 *.sqlite*
 .env
 .env.*
+uploads/
 !.env.example
 
 # test and tool artifacts

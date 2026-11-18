@@ -1,0 +1,103 @@
+{
+  "name": "trio-desktop",
+  "productName": "Trio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Trio masaüstü uygulaması",
+  "author": "Trio",
+  "license": "MIT",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"dist/test/**/*.test.js\"",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "desktopName": "trio-desktop.desktop",
+  "dependencies": {
+    "uiohook-napi": "^1.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^45.3.4",
+    "electron-builder": "^26.0.0",
+    "typescript": "^5.9.0"
+  },
+  "build": {
+    "appId": "app.trio.desktop",
+    "productName": "Trio",
+    "artifactName": "Trio-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "dist/**/*",
+      "!dist/test/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**"
+    ],
+    "npmRebuild": false,
+    "publish": null,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.social-networking",
+      "identity": "-",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Trio, sesli odalarda konuşabilmen için mikrofonunu kullanır.",
+        "NSCameraUsageDescription": "Trio, sesli odalarda kameranı açtığında görüntünü arkadaşlarına göndermek için kamerayı kullanır."
+      }
+    },
+    "dmg": {
+      "sign": false
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Network;Chat;InstantMessaging",
+      "synopsis": "Arkadaşlar için küçük, kendi sunucunda çalışan sohbet",
+      "syncDesktopName": true
+    }
+  }
+}
