@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { pastedFileName } from '../lib/attachments'
+import { checkLength, MAX_MESSAGE_LENGTH, tooLongMessage } from '../lib/messageLength'
+import './composer-length.css'
 import type { PendingAttachment } from '../lib/pending'
 import { PendingAttachments } from './Attachments'
 import { PaperclipIcon } from './icons2'
@@ -28,7 +30,7 @@ function clipboardFiles(event: ClipboardEvent): File[] {
   return result
 }
 
-export const MAX_MESSAGE_LENGTH = 4000
+export { MAX_MESSAGE_LENGTH }
 
 export function Composer({
   channelName,
@@ -47,7 +49,10 @@ export function Composer({
   // v2: content may be empty when an uploaded attachment goes with it; nothing
   // is sent while an upload is still running (it would be left behind).
   const uploading = attachments?.uploading ?? false
-  const canSend = !uploading && (text.trim() !== '' || (attachments?.ready ?? false))
+  // Counted as the server counts it; never truncated (lib/messageLength.ts).
+  const length = checkLength(text)
+  const canSend =
+    !uploading && length.over === 0 && (length.content !== '' || (attachments?.ready ?? false))
 
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {
@@ -58,7 +63,7 @@ export function Composer({
   }, [text])
 
   const send = () => {
-    const content = text.trim()
+    const content = length.content
     if (!canSend) return
     onSend(content)
     setText('')
@@ -89,6 +94,14 @@ export function Composer({
           <button type="button" className="link" onClick={attachments.onDismissNotice}>
             Tamam
           </button>
+        </div>
+      )}
+      {length.showCounter && (
+        <div className={`composer-length${length.over > 0 ? ' over' : ''}`} data-testid="composer-length">
+          {length.over > 0 && <span role="alert">{tooLongMessage(length.over)}</span>}
+          <span className="composer-length-count">
+            {length.length} / {MAX_MESSAGE_LENGTH}
+          </span>
         </div>
       )}
       {attachments && (
@@ -129,7 +142,7 @@ export function Composer({
         data-testid="composer"
         rows={1}
         value={text}
-        maxLength={MAX_MESSAGE_LENGTH}
+        aria-invalid={length.over > 0}
         placeholder={`Mesaj yaz… (#${channelName})`}
         aria-label="Mesaj yaz"
         onChange={(event) => {
@@ -144,7 +157,7 @@ export function Composer({
         className="primary"
         data-testid="composer-send"
         disabled={!canSend}
-        title={uploading ? 'Dosyalar yükleniyor…' : undefined}
+        title={uploading ? 'Dosyalar yükleniyor…' : length.over > 0 ? tooLongMessage(length.over) : undefined}
         onClick={send}
       >
         Gönder

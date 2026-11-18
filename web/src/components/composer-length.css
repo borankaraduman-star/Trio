@@ -1,0 +1,29 @@
+/* The message length counter above the composer (lib/messageLength.ts). */
+.composer-length {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 16px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.composer-length-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.composer-length.over {
+  color: var(--red);
+}
+
+.composer-length.over [role='alert'] {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .composer-length {
+    margin: 0 8px 6px;
+  }
+}
