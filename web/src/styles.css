@@ -560,52 +560,6 @@ textarea:focus {
   text-align: center;
 }
 
-.stage {
-  flex: none;
-  display: flex;
-  gap: 8px;
-  padding: 8px;
-  max-height: 55%;
-  background: #000;
-  overflow: auto;
-}
-
-.stage-tile {
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  justify-content: center;
-}
-
-.stage-tile video {
-  max-width: 100%;
-  max-height: 50vh;
-  border-radius: 6px;
-  background: #111;
-  cursor: zoom-in;
-  object-fit: contain;
-}
-
-.stage-tile figcaption {
-  position: absolute;
-  /* The video is centred in its tile and may be narrower than it (letterbox):
-     centring the caption keeps it on the picture instead of straddling its edge. */
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: calc(100% - 16px);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  bottom: 8px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: rgb(0 0 0 / 65%);
-  color: #fff;
-  font-size: 12px;
-  pointer-events: none;
-}
-
 .message-scroll {
   flex: 1;
   min-height: 0;

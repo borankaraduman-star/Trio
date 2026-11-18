@@ -71,7 +71,7 @@ interface Peer {
    * the answer.
    */
   signals: Promise<void>
-  // Turn-taking, so that the two sides never offer at once (see `negotiate`).
+  // Turn-taking, so that the two sides never offer at once (see "turn-taking").
   /** Polite side: a `request` is out and no `grant` has come back yet. */
   awaitingGrant: boolean
   /** Polite side: the grant came while we were busy; offer once stable. */
@@ -94,6 +94,14 @@ interface Peer {
   /** v2: the remote camera stream, and the remote's last `meta` signal. */
   camera: MediaStream | null
   meta: StreamMeta
+  /**
+   * Stream ids an earlier `meta` named and a later one no longer does: that
+   * camera or screen was stopped. Ignored from then on, so that its track,
+   * still present until the removal offer is applied (or even re-announced by
+   * an offer created just before the stop), is never shown, nor taken for a
+   * screen by the "named by neither" fallback. Stream ids are never reused.
+   */
+  retired: Set<string>
 }
 
 interface Monitor {
@@ -791,6 +799,7 @@ export class VoiceEngine {
         const peer = this.peers.get(event.user_id)
         // v2: a camera turned off goes away now, as a stopped screen does.
         if (peer?.camera && event.camera === false) {
+          peer.retired.add(peer.camera.id)
           peer.streams.delete(peer.camera.id)
           peer.camera = null
           this.emit()
@@ -807,20 +816,21 @@ export class VoiceEngine {
       case 'signal': {
         if (!this.joinSent || event.from === this.deps.myId) return
         const meta = parseMeta(event.data)
-        if (meta) {
-          const target = this.ensurePeer(event.from)
-          if (target && !sameMeta(target.meta, meta)) {
-            target.meta = meta
-            this.classifyStreams(target)
-          }
-          return
-        }
-        const data = parseSignal(event.data)
-        if (!data) return
+        const data = meta ? null : parseSignal(event.data)
+        if (!meta && !data) return
         // Normally the peer exists already (voice.peers / voice.joined come
         // first); creating it here keeps a reordered frame from being lost.
         const peer = this.ensurePeer(event.from)
-        if (peer) peer.signals = peer.signals.then(() => this.handleSignal(peer, data))
+        if (!peer) return
+        // ONE queue per peer for everything it signals, `meta` included. The
+        // peer sends a `meta` before it adds the tracks it describes, so it
+        // is ahead of the offer carrying them on the socket; queued with the
+        // descriptions it is also APPLIED before that offer, and a later
+        // `meta` (the camera turned off again) cannot overtake an offer
+        // still waiting in the queue.
+        peer.signals = peer.signals.then(() =>
+          meta ? this.applyMeta(peer, meta) : data ? this.handleSignal(peer, data) : undefined,
+        )
         return
       }
 
@@ -872,6 +882,7 @@ export class VoiceEngine {
       video: null,
       camera: null,
       meta: EMPTY_META,
+      retired: new Set(),
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
@@ -897,6 +908,7 @@ export class VoiceEngine {
     pc.ontrack = ({ streams }) => {
       if (!alive()) return
       for (const stream of streams) {
+        if (peer.retired.has(stream.id)) continue
         peer.streams.set(stream.id, stream)
         stream.onremovetrack = () => {
           if (alive()) this.classifyStreams(peer)
@@ -911,8 +923,8 @@ export class VoiceEngine {
     // v2: which stream is which, BEFORE any track reaches the peer.
     this.sendMeta(peer)
 
-    // Adding tracks is what triggers the first offer. Both sides do it; the
-    // resulting glare is what perfect negotiation resolves.
+    // Adding tracks is what triggers the first offer. Both sides do it at
+    // once; turn-taking (below) keeps that from becoming a glare.
     if (this.micStream) {
       for (const track of this.micStream.getAudioTracks()) {
         peer.micSenders.push(pc.addTrack(track, this.micStream))
@@ -930,7 +942,7 @@ export class VoiceEngine {
    */
   private classifyStreams(peer: Peer): void {
     for (const [id, stream] of peer.streams) {
-      if (stream.getTracks().length === 0) {
+      if (stream.getTracks().length === 0 || peer.retired.has(id)) {
         stream.onremovetrack = null
         stream.onaddtrack = null
         peer.streams.delete(id)
@@ -948,6 +960,17 @@ export class VoiceEngine {
     this.emit()
   }
 
+  /** A `meta` signal, applied in its place in the peer's signal queue. */
+  private applyMeta(peer: Peer, meta: StreamMeta): void {
+    if (this.peers.get(peer.id) !== peer || sameMeta(peer.meta, meta)) return
+    const named = new Set([meta.camera, meta.screen])
+    for (const id of [peer.meta.camera, peer.meta.screen]) {
+      if (id !== null && !named.has(id)) peer.retired.add(id)
+    }
+    peer.meta = meta
+    this.classifyStreams(peer)
+  }
+
   // --- turn-taking --------------------------------------------------------
   //
   // Perfect negotiation resolves two simultaneous offers by having the polite
@@ -960,7 +983,13 @@ export class VoiceEngine {
   // microphone at once). So offers take turns: the impolite side offers when
   // it likes; the polite side asks first (`request`), and the impolite side
   // answers `grant` when it is stable and then holds its own offers until the
-  // polite side's offer has been answered. Signal data stays opaque to the
+  // polite side's offer has been answered. Every negotiation goes through
+  // `onnegotiationneeded` and so through this: the microphone at connection
+  // time, a screen share, the camera on or off (also both at once), an ICE
+  // restart. Device and noise-suppression changes never renegotiate
+  // (`replaceTrack`). A `meta` signal is sent before the tracks it describes
+  // are added, so it always leaves before the offer that carries them, however
+  // long that offer waits for its turn. Signal data stays opaque to the
   // server; a peer that does not answer a request is waited for TURN_TIMEOUT_MS,
   // after which plain perfect negotiation (with its rollback) takes over.
 

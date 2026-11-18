@@ -18,7 +18,7 @@ test('screen share: the others see it decoding; stop removes it; a late joiner g
   await expect(ayse.page.getByTestId('local-video')).toBeVisible()
   await expectScreensDecoding(mehmet.page, 1)
   await expect(row(mehmet, ayse)).toHaveAttribute('data-screensharing', 'true')
-  await expect(mehmet.page.locator('.stage figcaption')).toHaveText('Ayşe ekranını paylaşıyor')
+  await expect(mehmet.page.getByTestId('stage').locator('figcaption')).toHaveText(['Ayşe · ekran'])
   // The sharer sees no remote screen of her own.
   await expect(ayse.page.getByTestId('remote-video')).toHaveCount(0)
   // The renegotiation did not break the audio.
@@ -37,7 +37,7 @@ test('screen share: the others see it decoding; stop removes it; a late joiner g
   await expect(ayse.page.getByTestId('btn-screen')).toHaveAttribute('aria-pressed', 'false')
   for (const viewer of [mehmet, zeynep]) {
     await expect(viewer.page.getByTestId('remote-video')).toHaveCount(0)
-    await expect(viewer.page.locator('.stage')).toHaveCount(0)
+    await expect(viewer.page.getByTestId('stage')).toHaveCount(0)
     await expect(row(viewer, ayse)).toHaveAttribute('data-screensharing', 'false')
   }
   await expect(ayse.page.getByTestId('local-video')).toHaveCount(0)
@@ -63,7 +63,7 @@ test('screen share: two people sharing at once both arrive', async ({ browser, t
   await expectScreensDecoding(zeynep.page, 2)
   await expectScreensDecoding(ayse.page, 1)
   await expectScreensDecoding(mehmet.page, 1)
-  await expect(zeynep.page.locator('.stage figcaption')).toHaveText(['Ayşe ekranını paylaşıyor', 'Mehmet ekranını paylaşıyor'])
+  await expect(zeynep.page.getByTestId('stage').locator('figcaption')).toHaveText(['Ayşe · ekran', 'Mehmet · ekran'])
   for (const listener of people) for (const speaker of people) {
     if (listener !== speaker) await expectHearing(listener, speaker)
   }
@@ -71,13 +71,17 @@ test('screen share: two people sharing at once both arrive', async ({ browser, t
   // One stops; the other's screen stays.
   await mehmet.page.getByTestId('btn-screen').click()
   await expectScreensDecoding(zeynep.page, 1)
-  await expect(zeynep.page.locator('.stage figcaption')).toHaveText('Ayşe ekranını paylaşıyor')
+  await expect(zeynep.page.getByTestId('stage').locator('figcaption')).toHaveText(['Ayşe · ekran'])
   await expect(ayse.page.getByTestId('remote-video')).toHaveCount(0)
 
-  // Clicking a shared screen asks for fullscreen.
-  await zeynep.page.getByTestId('remote-video').click()
-  await expect.poll(() => zeynep.page.evaluate(() => document.fullscreenElement?.getAttribute('data-testid'))).toBe('remote-video')
-  await zeynep.page.getByTestId('remote-video').click()
+  // The tile's fullscreen button asks for fullscreen (CallStage: a click on
+  // the tile itself enlarges it in the stage instead).
+  const fullscreenButton = zeynep.page.getByRole('button', { name: 'Tam ekran: Ayşe · ekran' })
+  await fullscreenButton.click()
+  await expect
+    .poll(() => zeynep.page.evaluate(() => document.fullscreenElement?.querySelector('video')?.getAttribute('data-testid')))
+    .toBe('remote-video')
+  await fullscreenButton.click()
   await expect.poll(() => zeynep.page.evaluate(() => document.fullscreenElement)).toBeNull()
 
   // The sharer leaving the call takes the screen away.
