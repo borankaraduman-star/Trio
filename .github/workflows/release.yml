@@ -1,0 +1,255 @@
+# Builds the Trio desktop installers (Windows .exe, macOS .dmg x64 + arm64,
+# Linux .AppImage) and publishes them as a GitHub release. Unsigned: no
+# signing secrets are used (macOS builds are ad-hoc signed by
+# electron-builder, `mac.identity: "-"`).
+#
+# Two ways to start it:
+#
+#   * By hand (Actions -> release -> Run workflow), with a version such as
+#     0.2.0, the branch or commit to release (default main) and whether it is
+#     a pre-release. Nothing has to be tagged beforehand: the release job
+#     creates the tag v<version> at exactly the resolved commit.
+#   * By pushing a v* tag (the old way); the commit is the tag's.
+#
+# The workflow DEFINITION that runs on a dispatch is the one on the branch the
+# dispatch is started from ("Use workflow from"), which need not be the commit
+# being released. So `prepare` resolves the commit ONCE to a full SHA and
+# every later job checks out exactly that SHA; no job relies on the default
+# checkout ref. If the branch moves while the builds run, nothing changes.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v (semver), e.g. 0.2.0 or 0.2.0-rc.1"
+        required: true
+        type: string
+      ref:
+        description: "Branch or commit SHA to release"
+        required: false
+        default: main
+        type: string
+      prerelease:
+        description: "Mark as pre-release (always on when the version has a -suffix)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Two releases of the same version never run at the same time: the second
+# waits, then fails the existing-tag check in `prepare`.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      # Full history and every tag, so any branch, full or short SHA and the
+      # existing tags can be looked up below.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version, resolve commit
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # Strict semver 2.0 core + optional pre-release, no leading v, no
+          # leading zeros, no build metadata.
+          id='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          semver="^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-${id}(\.${id})*)?$"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if ! [[ "$version" =~ $semver ]]; then
+            echo "::error::Invalid version '${version}': expected semver without a leading v, e.g. 0.2.0 or 0.2.0-rc.1"
+            exit 1
+          fi
+          tag="v${version}"
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null \
+               || [ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ]; then
+              echo "::error::Tag ${tag} already exists; pick a new version"
+              exit 1
+            fi
+            ref="${INPUT_REF:-main}"
+            if git rev-parse -q --verify "refs/remotes/origin/${ref}^{commit}" >/dev/null; then
+              sha="$(git rev-parse "refs/remotes/origin/${ref}^{commit}")"
+            elif [[ "$ref" =~ ^[0-9a-fA-F]{7,40}$ ]] \
+                 && sha="$(git rev-parse -q --verify "${ref}^{commit}")"; then
+              :
+            else
+              echo "::error::Ref '${ref}' is neither a branch nor a commit SHA of this repository"
+              exit 1
+            fi
+          else
+            sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          fi
+
+          prerelease=false
+          if [ "$INPUT_PRERELEASE" = "true" ] || [[ "$version" == *-* ]]; then
+            prerelease=true
+          fi
+
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "sha=${sha}"
+            echo "prerelease=${prerelease}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing ${tag} from ${sha} (prerelease: ${prerelease})" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build (${{ matrix.os }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      # Every OS finishes even if one fails, but `release` needs all of them:
+      # one failed build means no release.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: desktop/release/*.exe
+          - os: macos-latest
+            target: --mac
+            files: desktop/release/*.dmg
+          - os: ubuntu-latest
+            target: --linux
+            files: desktop/release/*.AppImage
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    env:
+      # No certificates: never look for one in the keychain / store.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: npm version --no-git-tag-version --allow-same-version "$VERSION"
+
+      - name: Install
+        run: npm ci
+
+      # The keymap test needs an X display; without one it is skipped
+      # silently, so Linux runs the tests under a virtual display.
+      - name: Test (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+          xvfb-run -a npm test
+
+      - name: Test
+        if: runner.os != 'Linux'
+        run: npm test
+
+      - name: Build installers
+        run: npm run build && npx electron-builder ${{ matrix.target }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trio-desktop-${{ matrix.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          pattern: trio-desktop-*
+          merge-multiple: true
+
+      - name: List installers
+        run: ls -l installers
+
+      # On a dispatch the tag must still not exist: it is created below, by
+      # the release, at the resolved commit.
+      - name: Check tag is still free
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} was created while the builds ran"
+            exit 1
+          fi
+
+      # On a dispatch the tag does not exist yet, so GitHub creates it at
+      # target_commitish (the full SHA from `prepare`). On a tag push the tag
+      # exists and target_commitish is ignored.
+      #
+      # The tag is created with the default GITHUB_TOKEN, and events caused by
+      # that token do not start new workflow runs (GitHub's rule against
+      # recursive runs). So the new v* tag does NOT trigger this workflow's
+      # `push: tags` path a second time. That is intended: do not switch to a
+      # PAT here, or every dispatch would build and release twice.
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          target_commitish: ${{ needs.prepare.outputs.sha }}
+          name: Trio ${{ needs.prepare.outputs.tag }}
+          prerelease: ${{ needs.prepare.outputs.prerelease }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            installers/*.exe
+            installers/*.dmg
+            installers/*.AppImage
+          # With generate_release_notes the action puts this text BEFORE the
+          # generated notes.
+          body: |
+            ## Kurulum notu
+
+            Kurulum dosyaları imzasızdır; işletim sistemi ilk açılışta uyarır. Bu beklenen bir durumdur.
+
+            - **Windows (SmartScreen):** "Windows bilgisayarınızı korudu" penceresi çıkar, yayımcı "Bilinmeyen yayımcı" görünür. **Daha fazla bilgi**'ye tıkla, sonra **Yine de çalıştır**. Tarayıcı "yaygın olarak indirilmiyor" derse indirilenler listesinden **Sakla** seç.
+            - **macOS (Gatekeeper):** `.dmg`'yi açıp Trio'yu **Uygulamalar**'a sürükle (Intel için `x64`, Apple Silicon için `arm64`). "Apple, Trio'nun kötü amaçlı yazılım içermediğini doğrulayamadı" uyarısını **Bitti** ile kapat, **Sistem Ayarları → Gizlilik ve Güvenlik**'te "Trio engellendi…" satırının yanındaki **Yine de Aç**'a bas, parolanı gir, tekrar **Aç**. (macOS 14 ve öncesinde Control+tıklayıp **Aç** da yeter.)
+            - **Linux:** `.AppImage` dosyasını çalıştırılabilir yap (`chmod +x`) ve aç.
+
+            İlk açılışta sunucu adresi sorulur (ör. `https://<ad>.up.railway.app`).

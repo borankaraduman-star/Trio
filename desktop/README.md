@@ -76,19 +76,37 @@ aşağıdaki GitHub Actions iş akışıdır.
 
 ## Sürüm yayınlamak
 
-`.github/workflows/desktop-release.yml`, `v` ile başlayan her etikette
-(`v0.2.0` gibi) Windows, macOS ve Linux makinelerinde uygulamayı derler,
-testleri çalıştırır, kurulum dosyalarını üretir ve hepsini o etiketin GitHub
-sürümüne (Release) ekler. Sürüm numarası etiketten alınır.
+`.github/workflows/release.yml` uygulamayı Windows, macOS ve Linux
+makinelerinde derler, testleri çalıştırır (Linux'ta sanal ekranla, `xvfb-run`),
+kurulum dosyalarını üretir ve hepsini bir GitHub sürümüne (Release) ekler.
+Etiketi (`v0.2.0` gibi) iş akışı kendisi oluşturur; geliştirici makinesinden
+etiket göndermek gerekmez.
+
+GitHub'da **Actions → release → Run workflow**:
+
+- **Use workflow from:** `main` (iş akışının hangi daldaki tanımı çalışsın)
+- **version:** başında `v` olmadan sürüm, ör. `0.2.0` ya da `0.2.0-rc.1`
+- **ref:** yayınlanacak dal ya da commit SHA'sı (varsayılan `main`)
+- **prerelease:** ön sürüm mü (sürümde `-rc.1` gibi bir ek varsa kendiliğinden işaretlenir)
+
+Ya da komut satırından:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+gh workflow run release.yml --ref main -f version=0.2.0 -f ref=main
 ```
 
+İş akışı `ref`'i en başta tek bir commit'e çözer; bütün derlemeler o commit'ten
+yapılır ve `v<sürüm>` etiketi tam o commit'te oluşur. Sürüm geçersizse ya da
+`v<sürüm>` etiketi zaten varsa hemen durur. Derlemelerden biri bile başarısız
+olursa sürüm oluşturulmaz.
+
+Eski yol da çalışır: `v` ile başlayan bir etiket göndermek (`git tag v0.2.0 &&
+git push origin v0.2.0`) aynı iş akışını o etiketin commit'i için başlatır.
+
 Birkaç dakika sonra GitHub'daki **Releases** sayfasında `.exe`, iki `.dmg`
-(Intel ve Apple Silicon) ve `.AppImage` dosyaları olur. İmzalama sırrı
-kullanılmaz.
+(Intel ve Apple Silicon) ve `.AppImage` dosyaları olur; sürüm notunun başında
+imzasız kurulum uyarıları ve ilk açılışta sunucu adresinin sorulduğu yazar.
+İmzalama sırrı kullanılmaz.
 
 ## İmzasız sürüm uyarıları
 
