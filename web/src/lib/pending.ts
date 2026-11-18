@@ -9,9 +9,12 @@ export interface PendingAttachment {
   size: number
   /** The type the browser claims; only used for the chip's thumbnail. */
   type: string
-  status: 'uploading' | 'done' | 'error'
+  /** v3: `queued` waits its turn (one upload at a time per user). */
+  status: 'queued' | 'uploading' | 'done' | 'error'
   /** 0..1 */
   progress: number
+  /** Queued again because another tab or device of this user was uploading. */
+  waiting?: boolean
   attachment: Attachment | null
   error: string | null
 }
@@ -20,6 +23,8 @@ export type PendingState = Record<number, PendingAttachment[]>
 
 export type PendingAction =
   | { type: 'add'; items: PendingAttachment[] }
+  | { type: 'start'; localId: string }
+  | { type: 'waiting'; localId: string }
   | { type: 'progress'; localId: string; progress: number }
   | { type: 'done'; localId: string; attachment: Attachment }
   | { type: 'error'; localId: string; error: string }
@@ -50,6 +55,18 @@ export function pendingReducer(state: PendingState, action: PendingAction): Pend
       for (const item of action.items) next[item.channelId] = [...(next[item.channelId] ?? []), item]
       return next
     }
+    case 'start':
+      return mapItem(state, action.localId, (item) =>
+        item.status === 'queued' || item.status === 'uploading'
+          ? { ...item, status: 'uploading', progress: 0, waiting: false }
+          : item,
+      )
+    case 'waiting':
+      return mapItem(state, action.localId, (item) =>
+        item.status === 'uploading' || item.status === 'queued'
+          ? { ...item, status: 'queued', progress: 0, waiting: true }
+          : item,
+      )
     case 'progress':
       return mapItem(state, action.localId, (item) =>
         item.status === 'uploading' ? { ...item, progress: action.progress } : item,
@@ -92,6 +109,12 @@ export function readyAttachments(list: readonly PendingAttachment[]): Attachment
   return list.flatMap((item) => (item.status === 'done' && item.attachment ? [item.attachment] : []))
 }
 
+/** Something is still on its way (being sent or waiting its turn): the message must wait for it. */
 export function isUploading(list: readonly PendingAttachment[]): boolean {
-  return list.some((item) => item.status === 'uploading')
+  return list.some((item) => item.status === 'uploading' || item.status === 'queued')
+}
+
+/** A chip that failed: the message is held until it is removed, so nothing is silently left out. */
+export function hasFailed(list: readonly PendingAttachment[]): boolean {
+  return list.some((item) => item.status === 'error')
 }

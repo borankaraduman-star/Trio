@@ -209,6 +209,8 @@ export function PendingAttachments({
                 {item.name}
               </span>
               <span className="pending-meta">
+                {item.status === 'queued' &&
+                  (item.waiting ? 'Başka bir yükleme bitince denenecek…' : 'Sırada bekliyor…')}
                 {item.status === 'uploading' && `Yükleniyor… %${percent}`}
                 {item.status === 'done' && formatSize(item.size)}
                 {item.status === 'error' && (item.error ?? 'Yüklenemedi.')}
@@ -230,8 +232,8 @@ export function PendingAttachments({
               type="button"
               className="icon-button small"
               data-testid="pending-remove"
-              title={item.status === 'uploading' ? 'Yüklemeyi iptal et' : 'Kaldır'}
-              aria-label={`${item.status === 'uploading' ? 'Yüklemeyi iptal et' : 'Kaldır'}: ${item.name}`}
+              title={item.status === 'uploading' || item.status === 'queued' ? 'Yüklemeyi iptal et' : 'Kaldır'}
+              aria-label={`${item.status === 'uploading' || item.status === 'queued' ? 'Yüklemeyi iptal et' : 'Kaldır'}: ${item.name}`}
               onClick={() => onRemove(item.localId)}
             >
               <CloseIcon size={14} />
