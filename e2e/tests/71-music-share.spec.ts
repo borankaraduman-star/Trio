@@ -18,7 +18,7 @@ test.beforeEach(async () => {
 })
 
 async function sharer(browser: Parameters<typeof personViaApi>[0], name: string): Promise<Person> {
-  return personViaApi(browser, name, { prepare: (context) => context.addInitScript(FAKE_MUSIC_CAPTURE) })
+  return personViaApi(browser, name, { prepare: async (context) => void (await context.addInitScript(FAKE_MUSIC_CAPTURE)) })
 }
 
 test('music: stereo at ~128 kbit/s to everyone, its own element and volume, mute and deafen, title as text', async ({ browser, trio }) => {

@@ -74,7 +74,7 @@ test('phone: the call bar has the music button; no music control where getDispla
   test.setTimeout(120_000)
   const ayse = trio.add(await personViaApi(browser, 'Ayşe', DESKTOP))
   const mehmet = trio.add(
-    await personViaApi(browser, 'Mehmet', { ...PHONE, prepare: (context) => context.addInitScript(FAKE_MUSIC_CAPTURE) }),
+    await personViaApi(browser, 'Mehmet', { ...PHONE, prepare: async (context) => void (await context.addInitScript(FAKE_MUSIC_CAPTURE)) }),
   )
   await joinVoice(ayse)
   await joinVoiceOnPhone(mehmet, SOHBET)
@@ -95,7 +95,7 @@ test('phone: the call bar has the music button; no music control where getDispla
 
   // A phone browser without getDisplayMedia: no music control anywhere.
   const zeynep = trio.add(
-    await personViaApi(browser, 'Zeynep', { ...PHONE, prepare: (context) => context.addInitScript(NO_SCREEN_SHARE) }),
+    await personViaApi(browser, 'Zeynep', { ...PHONE, prepare: async (context) => void (await context.addInitScript(NO_SCREEN_SHARE)) }),
   )
   await joinVoiceOnPhone(zeynep, SOHBET)
   await expect(zeynep.page.getByTestId('call-bar')).toBeVisible()

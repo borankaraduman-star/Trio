@@ -87,7 +87,7 @@ test('the real picker path: a real tab with stereo sound is shared, the picture 
 })
 
 test('a picker answer without sound is a clear error, not a silent share', async ({ browser, trio }) => {
-  const ayse = trio.add(await personViaApi(browser, 'Ayşe', { prepare: (context) => context.addInitScript(FAKE_MUSIC_CAPTURE) }))
+  const ayse = trio.add(await personViaApi(browser, 'Ayşe', { prepare: async (context) => void (await context.addInitScript(FAKE_MUSIC_CAPTURE)) }))
   const mehmet = trio.add(await personViaApi(browser, 'Mehmet'))
   await joinVoice(ayse)
   await joinVoice(mehmet)
