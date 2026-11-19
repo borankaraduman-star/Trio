@@ -37,16 +37,23 @@ export function VoiceRecordButton({
   const callbacks = useRef({ onRecorded, onError, onActiveChange })
   callbacks.current = { onRecorded, onError, onActiveChange }
 
-  useEffect(() => {
-    callbacks.current.onActiveChange?.(phase !== 'idle')
-  }, [phase])
+  /**
+   * The phase, and the composer told in the SAME update: reported from an
+   * effect, the composer switched its layout one render after the bar, and
+   * for that frame the microphone stood where the paperclip is (a press
+   * meant for the microphone opened the file picker).
+   */
+  const go = useCallback((next: Phase) => {
+    setPhase(next)
+    callbacks.current.onActiveChange?.(next !== 'idle')
+  }, [])
 
   const finish = useCallback(async (send: boolean) => {
     const current = recorder.current
     recorder.current = null
     press.current = null
     setHeld(false)
-    setPhase('idle')
+    go('idle')
     setElapsed(0)
     setLevel(0)
     if (!current) return
@@ -56,7 +63,7 @@ export function VoiceRecordButton({
     }
     const recording = await current.stop()
     if (recording && recording.file.size > 0) callbacks.current.onRecorded(recording)
-  }, [])
+  }, [go])
 
   const begin = useCallback(async () => {
     if (recorder.current) return
@@ -68,20 +75,20 @@ export function VoiceRecordButton({
       () => void finish(true),
     )
     recorder.current = next
-    setPhase('starting')
+    go('starting')
     try {
       await next.start()
     } catch (error) {
       recorder.current = null
       press.current = null
       setHeld(false)
-      setPhase('idle')
+      go('idle')
       callbacks.current.onError(micErrorMessage(error))
       return
     }
     if (recorder.current !== next) return // cancelled while the permission was asked
-    setPhase('recording')
-  }, [finish])
+    go('recording')
+  }, [finish, go])
 
   // Esc cancels, wherever the focus is.
   useEffect(() => {
