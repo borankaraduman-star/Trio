@@ -7,18 +7,20 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { activityLine, activityStore, activityTooltip, CLASSES, gameShare, gameStatusBridge } from '../gameActivity'
 
 /** Re-render once a minute so "x dk" in the tooltip stays true. */
-function useMinute(): number {
-  const [now, setNow] = useState(() => Date.now())
+function useMinuteTick(): void {
+  const [, setTick] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000)
+    const id = setInterval(() => setTick((n) => n + 1), 60_000)
     return () => clearInterval(id)
   }, [])
-  return now
 }
 
 export function GameActivityLine({ userId, testid }: { userId: number; testid: string }) {
   const entries = useSyncExternalStore(activityStore.subscribe, activityStore.getSnapshot)
-  const now = useMinute()
+  useMinuteTick()
+  // Read the clock at render: a time kept from mount would be up to a minute
+  // behind a status that arrived since.
+  const now = Date.now()
   const entry = entries[userId]
   if (!entry) return null
   const { activity } = entry
