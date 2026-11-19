@@ -117,7 +117,11 @@ export function VoiceRecordButton({
     if (phase !== 'idle') return
     event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    press.current = { x: event.clientX, y: event.clientY, at: performance.now(), pointerId: event.pointerId }
+    // The press is timed by when the events HAPPENED (`timeStamp`), not by when
+    // this page got round to handling them: on a busy phone the render this
+    // press starts can hold the pointerup back past HOLD_MS, and a quick tap
+    // was then taken for a short hold, stopped at once and dropped as too short.
+    press.current = { x: event.clientX, y: event.clientY, at: event.timeStamp, pointerId: event.pointerId }
     setHeld(true)
     void begin()
   }
@@ -132,7 +136,7 @@ export function VoiceRecordButton({
     press.current = null
     setHeld(false)
     // A short press: click-to-record (it keeps running until "Gönder").
-    if (performance.now() - start.at >= HOLD_MS) void finish(true)
+    if (event.timeStamp - start.at >= HOLD_MS) void finish(true)
   }
   const onPointerCancel = () => {
     if (press.current) void finish(false)
