@@ -18,8 +18,9 @@ Railway. UI text is Turkish; code, comments and commit messages are English.
 
 The wire protocol and every behaviour rule are in `CONTRACT.md` (v1),
 `CONTRACT-V2.md` (attachments, camera, settings, push-to-talk, noise
-suppression, desktop bridge) and `CONTRACT-V3.md` (quotas, sessions, device
-linking, limits). Read the relevant one before changing either side; change
+suppression, desktop bridge), `CONTRACT-V3.md` (quotas, sessions, device
+linking, limits), `CONTRACT-V4.md` (calls that survive a restart, ring,
+connection test, messages family, identity) and `CONTRACT-V5.md` (game status). Read the relevant one before changing either side; change
 the contract in the same commit as the code.
 
 ## Production is live and auto-deploys from `main`
@@ -100,6 +101,17 @@ the deploy) → dispatch the release.
 - **The join rate limit has a global ceiling on failures** with a slow trickle
   that still reaches the code check; do not replace it with a plain global
   counter (that would be a lock-out switch for anyone who floods it).
+- **A meter or detector that samples a level must cover the time between
+  samples.** The speaking ring read an 11 ms analyser window every 100 ms, so
+  ~88 % of the audio was never looked at; Chromium's fake microphone (a 20 ms
+  beep every 500 ms) then fell between reads at most phases, for a whole test,
+  and the ring of somebody plainly heard never lit (an "order-dependent" e2e
+  failure that was only phase). `audio/speaking.ts` sizes the window to the
+  interval. The same goes for a test that polls an instantaneous level: read
+  a peak (`data-peak`), not the current frame.
+- **A long-press sheet opens under the finger.** Lifting it ends the touch
+  with a click on whatever sheet item is there; `lib/pressEnd.ts` swallows
+  that one click. Anything new that opens on a long-press needs the same.
 - **Uploaded files are served from the app's own origin**, so every file
   response carries `Content-Security-Policy: sandbox` and html/svg are
   download-only. The client keeps its token in `localStorage`; an XSS on the
@@ -107,6 +119,12 @@ the deploy) → dispatch the release.
 
 ## Not verified yet
 
-Real microphones/cameras and the sound of noise suppression on speech; Safari
-and Firefox; the desktop installers actually running on Windows and macOS and
-their global push-to-talk hook; the Cloudflare TURN call against real keys.
+Real microphones/cameras and the sound of noise suppression on speech, and
+the speaking ring's threshold on real speech; Safari and Firefox; the desktop
+installers actually running on Windows and macOS and their global
+push-to-talk hook; the Cloudflare TURN call against real keys. Game status:
+process detection only against fakes (no real Windows/macOS process list), the
+TrioDurum addon only in the Lua harness with stubbed WoW globals (never in a
+WoW client — whether the whisper-to-self reaches the chat log is the open
+question in `addon/README.md`). The long-press click fix on real iOS/Android
+touch (only Chromium's emulated touch here).
