@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, joinErrorMessage, type Auth } from '../api'
+import { BrandMark } from './BrandMark'
 
 export function JoinScreen({ onJoined }: { onJoined: (auth: Auth) => void }) {
   const [name, setName] = useState('')
@@ -26,6 +27,7 @@ export function JoinScreen({ onJoined }: { onJoined: (auth: Auth) => void }) {
   return (
     <main className="join">
       <form className="join-card" onSubmit={submit}>
+        <BrandMark size={56} className="join-brand" />
         <div className="join-logo" aria-hidden="true">
           <span />
           <span />
