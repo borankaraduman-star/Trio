@@ -5,6 +5,8 @@ export const BACKOFF_CAP_MS = 15000
 export const PING_INTERVAL_MS = 25000
 const PONG_TIMEOUT_MS = 10000
 const CLOSE_UNAUTHORIZED = 4401
+/** A connection counts as healthy (and resets the backoff) once `ready` came and it stayed up this long. */
+export const STABLE_AFTER_MS = 5000
 
 /** Delay before reconnect attempt `attempt` (0-based): 1 s, 2 s, 4 s, 8 s, then 15 s. */
 export function backoffDelay(attempt: number): number {
@@ -38,6 +40,7 @@ export class TrioSocket {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
   private pongTimer: ReturnType<typeof setTimeout> | null = null
+  private stableTimer: ReturnType<typeof setTimeout> | null = null
   private lastFrameAt = 0
 
   constructor(private readonly token: string) {}
@@ -87,7 +90,6 @@ export class TrioSocket {
 
     ws.onopen = () => {
       if (this.ws !== ws) return
-      this.attempt = 0
       this.lastFrameAt = Date.now()
       this.startPing(ws)
       this.handlers.onOpen?.()
@@ -105,6 +107,10 @@ export class TrioSocket {
         return
       }
       if (event.type === 'pong') return
+      // Not on open: a server that accepts and closes at once must still back off.
+      if (event.type === 'ready' && !this.stableTimer) {
+        this.stableTimer = setTimeout(() => (this.attempt = 0), STABLE_AFTER_MS)
+      }
       this.handlers.onEvent?.(event)
     }
     ws.onclose = (close) => this.handleClose(ws, close.code)
@@ -162,6 +168,8 @@ export class TrioSocket {
     if (this.retryTimer) clearTimeout(this.retryTimer)
     if (this.pingTimer) clearInterval(this.pingTimer)
     if (this.pongTimer) clearTimeout(this.pongTimer)
+    if (this.stableTimer) clearTimeout(this.stableTimer)
+    this.stableTimer = null
     this.retryTimer = null
     this.pingTimer = null
     this.pongTimer = null

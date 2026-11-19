@@ -1,6 +1,8 @@
 import { memo, useLayoutEffect, useMemo, useRef } from 'react'
 import { buildRows, dayLabel, timeLabel } from '../lib/grouping'
 import { linkify } from '../lib/linkify'
+import { captureAnchor, restoreAnchor, type Anchor } from '../lib/scrollAnchor'
+import './message-list-jump.css'
 import type { ChannelMessages, UiMessage } from '../store'
 import { MessageAttachments } from './Attachments'
 import { Avatar } from './Avatar'
@@ -39,6 +41,7 @@ const MessageRow = memo(function MessageRow({
     <li
       className={`message${showHeader ? ' with-header' : ''} ${message.status}`}
       data-testid="message"
+      data-key={message.key}
       data-status={message.status}
       data-author-id={message.author.id}
     >
@@ -77,16 +80,24 @@ export function MessageList({
   onLoadOlder,
   onRetryLoad,
   onRetry,
+  onJumpToLatest,
+  onAtBottomChange,
 }: {
   channel: ChannelMessages
   myId: number
   onLoadOlder: () => void
   onRetryLoad: () => void
   onRetry: (message: UiMessage) => void
+  /** The list is `behind` (a gap after a long drop): load the newest and go there. */
+  onJumpToLatest?: () => void
+  onAtBottomChange?: (atBottom: boolean) => void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
-  const previous = useRef<{ firstKey?: string; lastKey?: string; height: number }>({ height: 0 })
+  const previous = useRef<{ lastKey?: string }>({})
+  /** The row being read; kept in place across every change of the list (lib/scrollAnchor.ts). */
+  const anchor = useRef<Anchor | null>(null)
+  const reportedAtBottom = useRef(true)
   const rows = useMemo(() => buildRows(channel.items), [channel.items])
   const { items, hasMore, loadingOlder, loaded } = channel
 
@@ -99,21 +110,19 @@ export function MessageList({
   useLayoutEffect(() => {
     const element = scroller.current
     if (!element) return
-    const firstKey = items[0]?.key
     const last = items[items.length - 1]
     const before = previous.current
-    const prepended =
-      before.firstKey !== undefined && firstKey !== before.firstKey && last?.key === before.lastKey
     const ownNew = last !== undefined && last.key !== before.lastKey && last.author.id === myId
 
-    if (prepended) {
-      // Older messages were added above: keep what the reader sees in place.
-      element.scrollTop += element.scrollHeight - before.height
-    } else if (stickToBottom.current || ownNew) {
+    if (stickToBottom.current || ownNew) {
       element.scrollTop = element.scrollHeight
       stickToBottom.current = true
+    } else if (anchor.current) {
+      // Older messages above, a merge after a reconnect: what the reader sees stays put.
+      restoreAnchor(element, anchor.current)
     }
-    previous.current = { firstKey, lastKey: last?.key, height: element.scrollHeight }
+    previous.current = { lastKey: last?.key }
+    anchor.current = captureAnchor(element)
     // A page that does not fill the view cannot be scrolled to ask for more.
     maybeLoadOlder()
   })
@@ -122,7 +131,13 @@ export function MessageList({
     const element = scroller.current
     if (!element) return
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight
-    stickToBottom.current = distance < NEAR_EDGE_PX
+    const atBottom = distance < NEAR_EDGE_PX
+    if (atBottom !== reportedAtBottom.current) {
+      reportedAtBottom.current = atBottom
+      onAtBottomChange?.(atBottom)
+    }
+    stickToBottom.current = atBottom
+    anchor.current = captureAnchor(element)
     maybeLoadOlder()
   }
 
@@ -159,6 +174,19 @@ export function MessageList({
           ),
         )}
       </ol>
+      {channel.behind && onJumpToLatest && (
+        <button
+          type="button"
+          className="jump-to-latest"
+          data-testid="jump-to-latest"
+          onClick={() => {
+            stickToBottom.current = true
+            onJumpToLatest()
+          }}
+        >
+          Yeni mesajlar var — en yeniye git
+        </button>
+      )}
     </div>
   )
 }

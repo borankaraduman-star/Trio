@@ -1,4 +1,5 @@
 import type { Channel, Member, Message, ServerEvent, User, VoiceParticipant } from './types'
+import { claimEchoes } from './lib/reconcile'
 
 export type MessageStatus = 'sent' | 'pending' | 'failed'
 
@@ -7,6 +8,8 @@ export interface UiMessage extends Message {
   key: string
   status: MessageStatus
   nonce?: string
+  /** Client time (ms) of the latest retry of an unconfirmed row; see lib/reconcile.ts. */
+  sentAt?: number
 }
 
 export interface ChannelMessages {
@@ -16,6 +19,12 @@ export interface ChannelMessages {
   loaded: boolean
   loadingOlder: boolean
   error: boolean
+  /**
+   * More was missed during a drop than a catch-up fetches, and the reader is
+   * up in history: their messages stay as they are, live ones are not added
+   * below them (there is a gap), and the list offers a jump to the newest.
+   */
+  behind?: boolean
 }
 
 export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting'
@@ -51,13 +60,14 @@ export type Action =
       channelId: number
       messages: Message[]
       hasMore: boolean
-      mode: 'replace' | 'prepend'
+      /** `behind`: the page does not meet what is held and is not shown yet (see `behind`). */
+      mode: 'replace' | 'prepend' | 'behind'
       viewing: boolean
     }
   | { type: 'messages.load-failed'; channelId: number }
   | { type: 'message.optimistic'; message: UiMessage }
   | { type: 'message.failed'; channelId: number; nonce: string }
-  | { type: 'message.retry'; channelId: number; nonce: string }
+  | { type: 'message.retry'; channelId: number; nonce: string; at?: number }
   | { type: 'latest.loaded'; channelId: number; latestId: number }
   | { type: 'typing.prune'; now: number }
 
@@ -190,10 +200,17 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
 
       // After a reconnect anything may have been missed. The open channel is
       // refetched by the caller; every other cache is dropped so that opening
-      // the channel loads it again.
+      // the channel loads it again, except what only this tab has: messages not
+      // sent yet (pending or failed) stay, and a load merges them back.
       const messages: Record<number, ChannelMessages> = {}
       if (activeChannelId !== null && state.messages[activeChannelId]) {
         messages[activeChannelId] = state.messages[activeChannelId]
+      }
+      for (const [key, channel] of Object.entries(state.messages)) {
+        const unsent = channel.items.filter((item) => item.status !== 'sent')
+        if (Number(key) !== activeChannelId && unsent.length > 0) {
+          messages[Number(key)] = { ...EMPTY_CHANNEL, items: unsent }
+        }
       }
       return {
         ...state,
@@ -252,6 +269,13 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         }
         if (channel.items.some((item) => item.status === 'sent' && item.id === message.id)) {
           return channel
+        }
+        // Not below a gap; the jump to the newest loads it.
+        if (channel.behind) return channel
+        if (nonce === undefined) {
+          // My message without a nonce (its echo was lost): pair it with the local row.
+          const paired = claimEchoes(channel.items, [toUi(message)], state.me.id)
+          return { ...channel, items: mergeMessages(paired.items, paired.incoming) }
         }
         return { ...channel, items: mergeMessages(channel.items, [toUi(message)]) }
       })
@@ -393,26 +417,51 @@ export function reducer(state: AppState, action: Action): AppState {
       const page = action.messages
       let next = withChannel(state, action.channelId, (channel) => {
         if (action.mode === 'prepend') {
+          const paired = claimEchoes(channel.items, page.map((message) => toUi(message)), state.me.id)
           return {
             ...channel,
-            items: mergeMessages(channel.items, page.map((message) => toUi(message))),
+            items: mergeMessages(paired.items, paired.incoming),
             hasMore: action.hasMore,
             loadingOlder: false,
             error: false,
           }
         }
+        if (action.mode === 'behind') return { ...channel, behind: true, error: false }
+        // A page that meets what is held (its oldest id is at or before the
+        // newest held) is merged: nothing loaded is thrown away, and a reader
+        // up in history keeps their place. Only after a gap is it replaced.
+        const newestInPage = page.length > 0 ? page[page.length - 1].id : -Infinity
+        const held = channel.items.filter((item) => item.status === 'sent')
+        // Behind a gap, the newest page is the jump and always replaces.
+        if (channel.loaded && !channel.behind && held.length > 0 && page.length > 0 && page[0].id <= held[held.length - 1].id) {
+          // Within the page's range the page is the truth; outside it, what is held stays.
+          const inPage = new Set(page.map((message) => message.id))
+          const outside = channel.items.filter(
+            (item) =>
+              item.status !== 'sent' || item.id < page[0].id || item.id > newestInPage || inPage.has(item.id),
+          )
+          const paired = claimEchoes(outside, page.map((message) => toUi(message)), state.me.id)
+          return {
+            ...channel,
+            items: mergeMessages(paired.items, paired.incoming),
+            hasMore: page[0].id < held[0].id ? action.hasMore : channel.hasMore,
+            error: false,
+            behind: false,
+          }
+        }
         // Replace with the latest page, but keep what the page cannot know:
         // unconfirmed rows, and live messages newer than the page.
-        const newestInPage = page.length > 0 ? page[page.length - 1].id : -Infinity
         const kept = channel.items.filter(
           (item) => item.status !== 'sent' || item.id > newestInPage,
         )
         const keys = new Map(channel.items.map((item) => [item.id, item.key]))
+        const paired = claimEchoes(
+          kept,
+          page.map((message) => toUi(message, keys.get(message.id))),
+          state.me.id,
+        )
         return {
-          items: mergeMessages(
-            kept,
-            page.map((message) => toUi(message, keys.get(message.id))),
-          ),
+          items: mergeMessages(paired.items, paired.incoming),
           hasMore: action.hasMore,
           loaded: true,
           loadingOlder: false,
@@ -453,7 +502,9 @@ export function reducer(state: AppState, action: Action): AppState {
       return withChannel(state, action.channelId, (current) => ({
         ...current,
         items: current.items.map((item) =>
-          item.nonce === action.nonce && item.status === from ? { ...item, status: to } : item,
+          item.nonce === action.nonce && item.status === from
+            ? { ...item, status: to, ...(action.type === 'message.retry' && action.at !== undefined ? { sentAt: action.at } : {}) }
+            : item,
         ),
       }))
     }

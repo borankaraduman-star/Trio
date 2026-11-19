@@ -1,0 +1,21 @@
+/* "New messages" after a gap: stays at the bottom of the list while the reader is up in history. */
+.jump-to-latest {
+  position: sticky;
+  bottom: 8px;
+  display: block;
+  margin: 8px auto 0;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}
+
+.jump-to-latest:hover {
+  background: var(--accent-hover);
+}
