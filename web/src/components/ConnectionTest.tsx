@@ -26,6 +26,8 @@ export interface ConnectionTestProps {
   peerStats: () => Promise<PeerStat[]>
   inVoice: boolean
   nameOf: (userId: number) => string
+  /** Told true while the test is on screen (it measures then), false after: the reload guard waits. */
+  onActiveChange?: (active: boolean) => void
 }
 
 type SinkAudio = HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }
@@ -45,6 +47,7 @@ export function ConnectionTest({
   nameOf,
   micDeviceId,
   outputDeviceId,
+  onActiveChange,
 }: ConnectionTestProps & { micDeviceId: string; outputDeviceId: string }) {
   const [turn, setTurn] = useState<TurnState>('checking')
   const [peers, setPeers] = useState<PeerStat[]>([])
@@ -58,6 +61,11 @@ export function ConnectionTest({
   const stream = useRef<MediaStream | null>(null)
   const context = useRef<AudioContext | null>(null)
   const loopAudio = useRef<SinkAudio | null>(null)
+
+  useEffect(() => {
+    onActiveChange?.(true)
+    return () => onActiveChange?.(false)
+  }, [onActiveChange])
 
   // --- TURN -------------------------------------------------------------------
   const runProbe = useCallback(async () => {

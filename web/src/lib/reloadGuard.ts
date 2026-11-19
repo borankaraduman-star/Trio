@@ -17,13 +17,26 @@ export interface ReloadState {
   unsentMessages: boolean
   /** v4: the picture cropper is open, or a name (own or the server's) is typed but not saved. */
   profileEdit: boolean
+  /** V4 A4: somebody is calling me into voice (the ring band is up). */
+  ringing: boolean
+  /** V4 A3: Ayarlar › Bağlantı testi is measuring (microphone, TURN probe, the call's stats). */
+  connectionTest: boolean
 }
 
 export type ReloadBlocker = keyof ReloadState
 
 /** The first thing a reload would lose, or null when it is safe. */
 export function reloadBlocker(state: ReloadState): ReloadBlocker | null {
-  for (const key of ['inCall', 'dialogOpen', 'pendingFiles', 'draft', 'unsentMessages', 'profileEdit'] as const) {
+  for (const key of [
+    'inCall',
+    'dialogOpen',
+    'pendingFiles',
+    'draft',
+    'unsentMessages',
+    'profileEdit',
+    'ringing',
+    'connectionTest',
+  ] as const) {
     if (state[key]) return key
   }
   return null

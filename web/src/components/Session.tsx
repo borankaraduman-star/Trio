@@ -185,6 +185,8 @@ export function Session({
   /** The composer holds unsent text (reported by Composer). */
   const draft = useRef(false)
   const dialogs = useRef(false)
+  /** V4 A3: the connection test is mounted (it measures while it is). */
+  const connectionTestActive = useRef(false)
   dialogs.current = settingsOpen || logoutOpen || signingOut
   const anyPendingFiles = attachments.anyPending
   // A ref, so the connection effect reads it without depending on it (a new
@@ -198,6 +200,8 @@ export function Session({
       channel.items.some((item) => item.status !== 'sent'),
     ),
     profileEdit: identity.editing(),
+    ringing: alerts.getSnapshot().incoming !== null,
+    connectionTest: connectionTestActive.current,
   }))
   const busyForNews = useCallback(() => reloadBlocker(reloadState.current()) !== null, [])
 
@@ -771,6 +775,9 @@ export function Session({
             peerStats: () => engine.peerStats(),
             inVoice: voice.status === 'connected',
             nameOf,
+            onActiveChange: (active) => {
+              connectionTestActive.current = active
+            },
           }}
           noiseState={voice.noiseState}
           transmitting={voice.transmitting}
