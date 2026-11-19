@@ -53,6 +53,47 @@ call. New rule:
   `voice.join {resume: true}` within 10 s. During the grace the others keep
   the peer connection and show the participant dimmed.)
 
+### A1 on the wire, as the server implements it
+
+    client → server   voice.join  {channel_id, muted?, deafened?, camera?, screensharing?, resume?}
+    server → joiner   voice.peers {channel_id, peers: [user_id], reconnecting: [user_id], resumed}
+    server → everyone voice.joined {channel_id, user_id, muted, deafened, screensharing, camera,
+                                    reconnecting, resumed}
+    server → everyone voice.state  {channel_id, user_id, muted, deafened, screensharing, camera,
+                                    reconnecting}
+    ready.voice["<channel id>"]: [{user_id, muted, deafened, screensharing, camera, reconnecting}]
+
+- `screensharing`, `resume` on `voice.join` are booleans, default false; any
+  other type is `error BAD_REQUEST`. `resumed` in `voice.peers`/`voice.joined`
+  is exactly the request's `resume` (always present, false for an ordinary
+  join). `reconnecting` is always present, false except during a grace.
+- **The grace.** When the voice-bound connection of a member closes by itself
+  (network, tab closed, server-side send queue overflow) the member stays in
+  the room with `reconnecting: true`, announced by one `voice.state`; flags are
+  kept. `voice.left` follows only when 10 s pass without the grace ending.
+  A connection closed BY the server (logout `DELETE /api/session`, a revoked
+  token, a removed user) gets no grace: `voice.left` at once.
+- The grace ends early:
+  - `voice.join {channel_id: <the same channel>, resume: true}` from ANY
+    connection of that user takes the membership over: no `voice.left`; the
+    joiner gets `voice.peers {resumed: true}` and everyone `voice.joined
+    {resumed: true, reconnecting: false}` with the flags from the new join.
+  - Any other `voice.join` (another channel, or `resume` absent/false) is the
+    ordinary rule: `voice.left` for the old membership, then the join.
+  - `voice.leave` from any of the user's connections: `voice.left` at once.
+- During the grace the member has no voice-bound connection, so they are
+  unreachable: a `signal` to them is `error NOT_IN_VOICE` (as for somebody not
+  in voice), `voice.state` from their other tabs is `NOT_IN_VOICE`, and they
+  cannot `voice.ring`. They ARE still listed (`ready.voice`, and in
+  `voice.peers.reconnecting` of a newcomer, not in `peers`): a newcomer must not
+  connect to them; when they resume, the newcomer receives `voice.joined
+  {resumed: true}` for a peer it has no connection to and connects as on any
+  `voice.joined`.
+- A resume after the grace ran out, after a server restart, or by a user who
+  was never in voice is an ordinary join (with `resumed: true` echoed).
+- Presence is independent: the last socket closing still broadcasts
+  `presence {online: false}` while the member is in the grace.
+
 e2e: kill and restart the server with three people in voice — receiver stats
 show audio never stopped on any pair (bytes keep increasing across the
 restart), and afterwards camera/screen toggles work.
@@ -63,6 +104,11 @@ restart), and afterwards camera/screen toggles work.
   `__TRIO_BUILD__` (short commit or build time). `GET /api/health` gains
   `{"ok": true, "version": "<server version>"}`; `ready` gains
   `server_version`.
+  *Server, as built:* the version is the `[project] version` of
+  `server/pyproject.toml` (read from the installed package's metadata; from
+  the file itself when run uninstalled from a source tree), e.g. `"0.2.0"`.
+  When neither can be read it is the string `"unknown"`. It is a plain string:
+  compare it for equality, do not parse it. `/api/health` needs no token.
 - Settings footer shows "Trio <version> (<build>)".
 - The reload-on-new-build check (already shipped) stays the mechanism that
   moves a stale tab; after such a reload — and on the first open after an
@@ -91,6 +137,14 @@ everyone ("TURN ayarlı değil: bazı ağlarda ses bağlanmayabilir").
 - Only from a user who is in that voice channel; at most one per user per
   30 s (`error` `RATE_LIMITED` otherwise); delivered to every online user not
   already in that channel.
+  *Server, as built:* `channel_id` missing, not an integer, unknown or a text
+  channel → `error INVALID_CHANNEL`; the user not in THAT voice channel (or in
+  its reconnect grace) → `error NOT_IN_VOICE`; any of the ringer's connections
+  may send it. Over the limit → `error RATE_LIMITED` (a refused ring does not
+  restart the 30 s). Delivered to every connection of every online user not
+  listed in the channel (members in their grace count as listed); never to the
+  ringer; nothing is sent back on success and nothing is kept for offline
+  users.
 - Receiver: a ringtone (short, looped up to 20 s), a band "X seni <kanal>
   odasına çağırıyor — Katıl / Kapat", and a browser Notification when the page
   is not being viewed. Deafened or "rahatsız etme" (a new local setting) →
@@ -147,6 +201,97 @@ read time; if the target was deleted: `{id, deleted: true}`),
   on boot (test from the previous shape — CLAUDE.md).
 - History pages include all the new fields.
 
+### B on the wire, as the server implements it
+
+`Message` (REST pages, `GET /pins`, `message.new`, `message.updated`, every
+REST answer below) is now:
+
+    {id, channel_id, author: {id, name, avatar_url}, content, created_at,
+     attachments: [Attachment], edited_at, reply_to, reactions, pinned_at,
+     pinned_by, rev}
+
+- `edited_at`: ISO time of the last edit that changed the content, else null.
+- `reply_to`: null, or `{id, author: {id, name}, excerpt}`, or `{id, deleted:
+  true}` when the target no longer exists. `excerpt` is the target's CURRENT
+  content cut to its first 140 code points (not graphemes, not bytes); when
+  the content is empty, `"📎 " + <first attachment's filename>`. It is resolved
+  whenever a message is serialised; the server sends NO `message.updated` for
+  replies when their target is edited or deleted — a client updates the quotes
+  it shows from the `message.updated`/`message.deleted` of the target itself.
+- `reactions`: `[{key, count, user_ids}]`; `count == len(user_ids)`; keys are
+  ordered by each key's earliest REMAINING reaction (so a key whose first
+  reactor takes theirs back may move behind a later key), `user_ids` by when
+  each reacted.
+- `pinned_at`: ISO or null; `pinned_by`: the pinner's user **id** (an int, as
+  in `user_ids`), or null.
+- `rev`: an integer, 0 at creation, +1 on every change (edit that changed the
+  content, reaction added/removed, pin/unpin). A client keeps, per message,
+  the copy with the highest `rev` and drops anything older, whichever way it
+  arrived. A no-op (same content, a reaction or pin already there or not
+  there) changes nothing: same `rev`, no broadcast, 200 with the current
+  message.
+
+Ordering: each change is committed and its `message.updated` /
+`message.deleted` is queued to EVERY socket — the actor's own included, with
+no nonce — before the HTTP response is written. Changes to messages leave on
+the websocket in the order they were made. The HTTP response and the
+broadcast may reach the actor's client in either order (different
+connections): use `rev`, or ignore the REST body and wait for the broadcast.
+For a delete, the 204 carries no body; `message.deleted` is the only signal.
+
+Requests and errors (all REST errors are the usual envelope):
+
+    PATCH  /api/messages/{id} {content}
+           422 INVALID_MESSAGE   content not a string, contains NUL, over 4000
+                                 characters after trim, or empty after trim while
+                                 the message has no attachments
+           422 INVALID_REQUEST   body not a JSON object, or contains a lone surrogate
+           413 PAYLOAD_TOO_LARGE body over 64 KiB
+    DELETE /api/messages/{id}
+    PUT|DELETE /api/messages/{id}/reactions/{key}
+           422 INVALID_REACTION  key is not one emoji and not :name: (see below)
+           409 REACTION_LIMIT    adding a 21st distinct key (an existing key may
+                                 still gain people)
+    PUT|DELETE /api/messages/{id}/pin
+           409 PIN_LIMIT         a 51st pin in the channel
+    GET    /api/channels/{id}/pins  → {messages} (newest pin first, ≤ 50)
+           404 NOT_FOUND for a missing or voice channel
+    every route: 401 UNAUTHORIZED; 404 NOT_FOUND for an unknown message id;
+           403 FORBIDDEN for edit/delete by somebody else; 422 INVALID_REQUEST
+           for an id that is not 1..2^63-1; 429 RATE_LIMITED; 507 STORAGE_FULL
+           when the database cannot be written.
+
+- Rate limits are per user per sliding 60 s, checked before anything else
+  (a refused, invalid or no-op request still counts): **30** edits, deletes,
+  pins and unpins together; **120** reaction adds and removes together. Over
+  it: `429 RATE_LIMITED` (no Retry-After).
+- A deleted message: its row, reactions, pin and attachment rows go in one
+  transaction; the files are then unlinked; at start-up the server removes any
+  file in the upload directory whose attachment row is gone (what a crash
+  between the two leaves). The bytes stop counting towards the uploader's
+  quota at once (V3 §4's quota is no longer a lifetime figure). Any message id
+  may be deleted by its author, at any age.
+- Reaction keys: either `:name:` with 1-32 of `a-z 0-9 _` (exactly; no
+  uppercase, no newline), or ONE emoji: a pictographic character (Unicode
+  `Extended_Pictographic`, including not-yet-assigned code points there) with
+  optional VS15/VS16 and one optional skin-tone modifier; up to 10 such
+  elements joined by ZWJ; a pair of regional indicators (a flag); a keycap
+  (`0-9 # *`, optional VS16, U+20E3); or a tag-sequence flag (🏴 + tags +
+  CANCEL TAG). At most 64 UTF-8 bytes. Keys are compared byte for byte, no
+  normalisation: `❤` and `❤️` are two keys — **send the fully qualified form
+  (with VS16) your picker shows.** In the URL the key is percent-encoded UTF-8
+  (`encodeURIComponent`).
+- `message.send {…, reply_to: <message id> | null}`: absent or null = not a
+  reply; not an integer → `error BAD_REQUEST`; no such message, or one in
+  another channel → `error INVALID_REPLY`, nothing stored. A deleted message
+  cannot be replied to (it no longer exists).
+- Nonce retries (V3 §10, `message.send` de-duplication): a retry answers the
+  sender with the message as it is NOW (re-read by id, so with its edits,
+  reactions and pin), not as first stored; if it has been deleted meanwhile,
+  the sender's connections get `message.deleted {channel_id, message_id,
+  nonce}` instead. `reply_to` of a retry is ignored like the rest of the
+  frame.
+
 Client: hover/long-press actions on a message (tepki, yanıtla, düzenle, sil,
 sabitle); edit in place (Esc cancels, Enter saves, "düzenlendi" mark); delete
 asks once; a small emoji picker (a built-in set of ~80 common emoji grouped,
@@ -179,3 +324,79 @@ must not re-layout the scroll position when reactions arrive.
 - Client: avatars wherever initials are shown today (messages, members, voice
   participants with the speaking ring around the avatar, stage tiles when the
   camera is off); initials remain the fallback.
+
+### C on the wire, as the server implements it
+
+`User` is `{id, name, avatar_url}` everywhere a user is sent: `POST /api/join`,
+`GET /api/me`, `ready.user`, `ready.users[]` (plus `online`), `user.joined`,
+`user.updated`, message `author`. (`reply_to.author` stays `{id, name}`.)
+`avatar_url` is null or `/api/avatars/<user id>/<32 hex>.<png|jpg|webp>`; the
+hex is the start of the file's SHA-256, so a URL is never reused for other
+bytes. A removed user's messages keep their author's `avatar_url`.
+
+    PUT    /api/me/avatar     multipart, one part `file`  → 200 {user}
+    DELETE /api/me/avatar                                  → 200 {user}  (also with none set)
+    PATCH  /api/me            {name}                       → 200 {user}
+    GET    /api/server                                     → 200 {server: {name, icon_url}}
+    PATCH  /api/server        {name}                       → 200 {server}
+    PUT    /api/server/icon   multipart, one part `file`  → 200 {server}
+    DELETE /api/server/icon                                → 200 {server}
+    GET    /api/avatars/<user id>/<hash>.<ext>             no auth
+    GET    /api/server/icon/<hash>.<ext>                   no auth
+
+Note `GET /api/server` answers `{server: {...}}` (an envelope like `{user}`),
+needs a token like everything but join/health, and the default name is
+`"Trio"`. `icon_url` is null or `/api/server/icon/<32 hex>.<ext>`.
+
+- Image rules (avatar and icon alike): at most 2 MiB (`413 FILE_TOO_LARGE`,
+  counted while streaming); the server reads the bytes, never the part's
+  filename or Content-Type: a well-formed PNG, baseline/progressive JPEG or
+  still WebP (VP8, VP8L, or VP8X without animation), each side 1–512 px, else
+  `422 INVALID_IMAGE`. Not square is accepted (the client crops). The bytes
+  are served exactly as uploaded (no re-encoding, so no metadata is removed:
+  the client's canvas re-encode is what strips EXIF). Missing `file` part /
+  not multipart: `422 INVALID_UPLOAD`; disk full: `507 STORAGE_FULL`.
+- Serving: `Content-Type` from the verified type, `Content-Disposition:
+  inline`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
+  sandbox; default-src 'none'`, `Cache-Control: public, max-age=31536000,
+  immutable`. Any other path, an old (replaced) file, or another user's id
+  with somebody's hash: `404 NOT_FOUND`.
+- Uploading the identical file again changes nothing and broadcasts nothing;
+  a different file replaces the old one (the old URL 404s at once). Avatars
+  and the icon do not count towards `TRIO_USER_QUOTA_MB`.
+- Names: `PATCH /api/me` and `PATCH /api/server` use the join's rules
+  (`clean_name`: 1–32 characters after trim, no control/format characters):
+  `422 INVALID_NAME`; a user name held by another user (case-insensitive, the
+  Turkish I/ı rule) → `409 NAME_TAKEN`; changing the case of one's own name is
+  allowed. The name a user leaves becomes free for a newcomer. An unchanged
+  name: 200, no broadcast.
+- Broadcasts (to every socket, the actor's included, queued before the
+  response): `user.updated {user}` after a rename or avatar change;
+  `server.updated {server}` after a name or icon change. `ready` gains
+  `server: {name, icon_url}`.
+- Rate limit: 10 profile changes (rename, avatar put/delete, server name,
+  icon put/delete together) per user per sliding minute → `429 RATE_LIMITED`.
+
+### New error codes and limits (server)
+
+| where | code | when |
+|---|---|---|
+| ws `voice.join` | `BAD_REQUEST` | `resume` / `screensharing` not a boolean |
+| ws `voice.ring` | `INVALID_CHANNEL`, `NOT_IN_VOICE`, `RATE_LIMITED` | see A4 |
+| ws `message.send` | `INVALID_REPLY`; `BAD_REQUEST` for a non-integer `reply_to` | see B |
+| REST message family | `403 FORBIDDEN`, `404 NOT_FOUND`, `409 REACTION_LIMIT`, `409 PIN_LIMIT`, `422 INVALID_MESSAGE`, `422 INVALID_REACTION`, `429 RATE_LIMITED` | see B |
+| REST identity | `409 NAME_TAKEN`, `413 FILE_TOO_LARGE`, `422 INVALID_IMAGE`, `422 INVALID_NAME`, `422 INVALID_UPLOAD`, `429 RATE_LIMITED`, `507 STORAGE_FULL` | see C |
+
+| limit | value |
+|---|---|
+| reconnect grace | 10 s |
+| `voice.ring` | 1 per user per 30 s |
+| edits + deletes + pins/unpins | 30 per user per minute |
+| reaction adds + removes | 120 per user per minute |
+| distinct reaction keys per message | 20 |
+| reaction key | 1–64 UTF-8 bytes; ZWJ sequences of at most 10 elements |
+| pins per channel | 50 |
+| reply excerpt | 140 code points |
+| edit body | 64 KiB |
+| avatar / icon file | 2 MiB, 1–512 px a side |
+| profile changes | 10 per user per minute |

@@ -38,6 +38,12 @@ from trio_server.db import (
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
+from trio_server.message_routes import register_message_routes
+from trio_server.profile_routes import (
+    prepare_profile_dirs,
+    register_profile_routes,
+    unreferenced_profile_files,
+)
 from trio_server.ratelimit import JoinGuard, client_address
 from trio_server.uploads import (
     ATTACHMENT_ID,
@@ -50,6 +56,7 @@ from trio_server.uploads import (
     storage_full,
 )
 from trio_server.validation import CHANNEL_KINDS, clean_name, name_key
+from trio_server.version import VERSION
 from trio_server.ws import encodable, websocket_endpoint
 
 logger = logging.getLogger("trio")
@@ -76,15 +83,15 @@ _STATUS_CODES = {
 }
 
 
-async def read_json_object(request: Request) -> dict[str, Any]:
+async def read_json_object(request: Request, max_bytes: int = BODY_MAX_BYTES) -> dict[str, Any]:
     """The request body as a JSON object, counted as it arrives."""
     declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > BODY_MAX_BYTES:
+    if declared.isdigit() and int(declared) > max_bytes:
         raise ApiError(413, "PAYLOAD_TOO_LARGE", "request body is too large")
     body = b""
     async for chunk in request.stream():
         body += chunk
-        if len(body) > BODY_MAX_BYTES:
+        if len(body) > max_bytes:
             raise ApiError(413, "PAYLOAD_TOO_LARGE", "request body is too large")
     try:
         data = json.loads(body)
@@ -130,7 +137,7 @@ def create_app(
     """
     logsafe.install()
     db = Database(settings.db_path)
-    hub = Hub()
+    hub = Hub(now)
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,
@@ -154,6 +161,22 @@ def create_app(
             await db.delete_attachments(stale)
         _remove(*(upload_dir / attachment_id for attachment_id in stale))
         logger.info("uploads.swept count=%s", len(stale))
+
+    async def sweep_unreferenced_files() -> None:
+        """Startup: remove attachment files that no row names any more.
+
+        Deleting a message commits the rows first and unlinks the files
+        after; a crash in between leaves exactly these. Only names shaped
+        like an attachment id are considered (not ``*.part``, not the
+        profile subdirectories).
+        """
+        stray = _unreferenced_files(upload_dir, await db.all_attachment_ids())
+        stray += unreferenced_profile_files(
+            upload_dir, await db.avatar_files(), await db.server_icon()
+        )
+        _remove(*stray)
+        if stray:
+            logger.info("uploads.unreferenced_removed count=%s", len(stray))
 
     async def recheck_tokens() -> None:
         """Close sockets whose token is gone; mirror removed users.
@@ -183,10 +206,13 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _prepare_upload_dir(upload_dir)
+        prepare_profile_dirs(upload_dir)
         await db.open()
         hub.load(await db.list_users(), await db.list_channels())
+        hub.server = await db.get_server()
         # Not only on upload: a server nobody uploads to never swept at all.
         await sweep_orphans()
+        await sweep_unreferenced_files()
         watcher = asyncio.create_task(watch_tokens())
         try:
             yield
@@ -194,6 +220,7 @@ def create_app(
             watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
+            hub.close()
             await db.close()
 
     # redirect_slashes off: behind a TLS edge the app sees http://, and a
@@ -244,8 +271,8 @@ def create_app(
     # -- REST -----------------------------------------------------------------
 
     @app.get("/api/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    async def health() -> dict[str, Any]:
+        return {"ok": True, "version": VERSION}
 
     @app.post("/api/join", status_code=201)
     async def join(request: Request) -> Any:
@@ -450,6 +477,27 @@ def create_app(
             headers=serving_headers(attachment["content_type"], attachment["filename"]),
         )
 
+    register_message_routes(
+        app,
+        db=db,
+        hub=hub,
+        now=now,
+        upload_dir=upload_dir,
+        current_user=current_user,
+        read_json=read_json_object,
+    )
+
+    register_profile_routes(
+        app,
+        db=db,
+        hub=hub,
+        now=now,
+        upload_dir=upload_dir,
+        current_user=current_user,
+        read_json=read_json_object,
+        space_left=space_left,
+    )
+
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
     # Registered after every real /api route: an unknown one is a JSON 404 for
@@ -470,6 +518,14 @@ def _prepare_upload_dir(directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     # Partial files left by a crash mid-upload; nothing refers to them.
     _remove(*directory.glob("*.part"))
+
+
+def _unreferenced_files(directory: Path, known: set[str]) -> list[Path]:
+    return [
+        path
+        for path in directory.iterdir()
+        if ATTACHMENT_ID.match(path.name) and path.is_file() and path.name not in known
+    ]
 
 
 def _remove(*paths: Path) -> None:

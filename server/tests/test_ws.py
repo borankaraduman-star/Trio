@@ -52,12 +52,20 @@ def test_ready_is_the_first_frame(trio, three):
     ali, berk, cem = three
     with trio.ws(ali) as a:
         ready = a.ready
-        assert set(ready) == {"type", "user", "users", "channels", "voice"}
-        assert ready["user"] == {"id": ali["id"], "name": "Ali"}
+        assert set(ready) == {
+            "type",
+            "server_version",
+            "server",
+            "user",
+            "users",
+            "channels",
+            "voice",
+        }
+        assert ready["user"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
         assert ready["users"] == [
-            {"id": ali["id"], "name": "Ali", "online": True},
-            {"id": berk["id"], "name": "Berk", "online": False},
-            {"id": cem["id"], "name": "Cem", "online": False},
+            {"id": ali["id"], "name": "Ali", "avatar_url": None, "online": True},
+            {"id": berk["id"], "name": "Berk", "avatar_url": None, "online": False},
+            {"id": cem["id"], "name": "Cem", "avatar_url": None, "online": False},
         ]
         assert ready["channels"] == [
             {"id": TEXT, "name": "genel", "kind": "text"},
@@ -81,6 +89,7 @@ def test_ready_carries_who_is_in_voice(trio, three):
                         "deafened": False,
                         "screensharing": False,
                         "camera": False,
+                        "reconnecting": False,
                     }
                 ]
             }
@@ -120,7 +129,7 @@ def test_user_joined_and_channel_new_are_broadcast(trio, three):
         for sock in (a, b):
             assert sock.receive_json() == {
                 "type": "user.joined",
-                "user": {"id": dana["id"], "name": "Dana"},
+                "user": {"id": dana["id"], "name": "Dana", "avatar_url": None},
             }
         channel_id = new_voice_channel(trio, ali)
         for sock in (a, b):
@@ -155,10 +164,16 @@ def test_message_send_reaches_everyone_and_the_nonce_only_the_sender(trio, three
             "content",
             "created_at",
             "attachments",
+            "edited_at",
+            "reply_to",
+            "reactions",
+            "pinned_at",
+            "pinned_by",
+            "rev",
         }
         assert message["attachments"] == []
         assert message["channel_id"] == TEXT
-        assert message["author"] == {"id": ali["id"], "name": "Ali"}
+        assert message["author"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
         assert message["content"] == "merhaba"
         assert message["created_at"].endswith("Z")
         # The sender's other tab gets the nonce too; other users never do.
@@ -275,7 +290,13 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
                 expect(sock, "presence")
 
         a.send_json({"type": "voice.join", "channel_id": VOICE})
-        assert a.receive_json() == {"type": "voice.peers", "channel_id": VOICE, "peers": []}
+        assert a.receive_json() == {
+            "type": "voice.peers",
+            "channel_id": VOICE,
+            "peers": [],
+            "reconnecting": [],
+            "resumed": False,
+        }
         joined = {
             "type": "voice.joined",
             "channel_id": VOICE,
@@ -284,6 +305,8 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "deafened": False,
             "screensharing": False,
             "camera": False,
+            "reconnecting": False,
+            "resumed": False,
         }
         for sock in (a, b, c):  # everyone, the joiner included
             assert sock.receive_json() == joined
@@ -293,6 +316,8 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "type": "voice.peers",
             "channel_id": VOICE,
             "peers": [ali["id"]],
+            "reconnecting": [],
+            "resumed": False,
         }
         joined = {
             "type": "voice.joined",
@@ -302,6 +327,8 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "deafened": True,
             "screensharing": False,
             "camera": False,
+            "reconnecting": False,
+            "resumed": False,
         }
         for sock in (a, b, c):
             assert sock.receive_json() == joined
@@ -322,6 +349,7 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "deafened": False,
             "screensharing": True,
             "camera": False,
+            "reconnecting": False,
         }
         for sock in (a, b, c):
             assert sock.receive_json() == state
@@ -388,9 +416,17 @@ def test_joining_again_from_another_channel_leaves_the_old_one_first(trio, three
             "deafened": False,
             "screensharing": False,
             "camera": False,
+            "reconnecting": False,
+            "resumed": False,
         }
         assert a.receive_json() == left
-        assert a.receive_json() == {"type": "voice.peers", "channel_id": other, "peers": []}
+        assert a.receive_json() == {
+            "type": "voice.peers",
+            "channel_id": other,
+            "peers": [],
+            "reconnecting": [],
+            "resumed": False,
+        }
         assert a.receive_json() == joined
         assert b.receive_json() == left
         assert b.receive_json() == joined
@@ -421,7 +457,11 @@ def test_joining_from_another_tab_moves_the_voice_binding(trio, three):
                 {"type": "voice.state", "muted": True, "deafened": False, "screensharing": False}
             )
             expect_error(a1, "NOT_IN_VOICE")
-        # ... so it is the NEW tab closing that ends it.
+        # ... so it is the NEW tab closing that ends it (after the grace).
+        for sock in (a1, b):
+            assert expect(sock, "voice.state")["reconnecting"] is True
+        trio.clock.value += 10
+        trio.client.portal.call(trio.client.app.state.hub.expire_graces)
         left = {"type": "voice.left", "channel_id": VOICE, "user_id": ali["id"]}
         assert a1.receive_json() == left
         assert b.receive_json() == left
@@ -452,13 +492,18 @@ def test_disconnecting_means_voice_left(trio, three):
             expect(b, "voice.peers")
             expect(b, "voice.joined")
             expect(a, "voice.joined")
+        # CONTRACT-V4 A1: first the reconnect grace, voice.left when it runs out.
+        state = expect(a, "voice.state")
+        assert state["user_id"] == berk["id"] and state["reconnecting"] is True
+        assert a.receive_json() == {"type": "presence", "user_id": berk["id"], "online": False}
+        hub = trio.client.app.state.hub
+        trio.clock.value += 10
+        trio.client.portal.call(hub.expire_graces)
         assert a.receive_json() == {
             "type": "voice.left",
             "channel_id": VOICE,
             "user_id": berk["id"],
         }
-        assert a.receive_json() == {"type": "presence", "user_id": berk["id"], "online": False}
-        hub = trio.client.app.state.hub
         assert hub.voice == {} and hub.voice_of == {}
 
 

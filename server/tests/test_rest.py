@@ -10,6 +10,7 @@ import pytest
 
 from trio_server import Settings
 from trio_server.config import ConfigError
+from trio_server.version import VERSION
 
 from .conftest import INVITE
 
@@ -51,7 +52,7 @@ def test_settings_defaults_and_parsing():
 def test_health(trio):
     response = trio.client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json() == {"ok": True, "version": VERSION}
 
 
 def test_join_ok(trio):
@@ -59,7 +60,7 @@ def test_join_ok(trio):
     assert response.status_code == 201
     body = response.json()
     assert set(body) == {"token", "user"}
-    assert body["user"] == {"id": 1, "name": "Ayşe"}
+    assert body["user"] == {"id": 1, "name": "Ayşe", "avatar_url": None}
     assert len(body["token"]) >= 43
 
 
@@ -173,7 +174,7 @@ def test_me(trio):
     user = trio.user("Ali")
     response = trio.client.get("/api/me", headers=user["auth"])
     assert response.status_code == 200
-    assert response.json() == {"user": {"id": user["id"], "name": "Ali"}}
+    assert response.json() == {"user": {"id": user["id"], "name": "Ali", "avatar_url": None}}
 
 
 @pytest.mark.parametrize(
@@ -311,9 +312,26 @@ def test_message_shape(trio):
     send_messages(trio, user, 1)
     body = trio.client.get("/api/channels/1/messages", headers=user["auth"]).json()
     (message,) = body["messages"]
-    assert set(message) == {"id", "channel_id", "author", "content", "created_at", "attachments"}
+    assert set(message) == {
+        "id",
+        "channel_id",
+        "author",
+        "content",
+        "created_at",
+        "attachments",
+        "edited_at",
+        "reply_to",
+        "reactions",
+        "pinned_at",
+        "pinned_by",
+        "rev",
+    }
     assert message["attachments"] == []
-    assert message["author"] == {"id": user["id"], "name": "Ali"}
+    # CONTRACT-V4 B: everything a later change adds starts empty.
+    assert message["edited_at"] is None and message["reply_to"] is None
+    assert message["reactions"] == [] and message["rev"] == 0
+    assert message["pinned_at"] is None and message["pinned_by"] is None
+    assert message["author"] == {"id": user["id"], "name": "Ali", "avatar_url": None}
     assert message["channel_id"] == 1
     assert message["content"] == "m1"
     assert message["created_at"].endswith("Z") and "T" in message["created_at"]
@@ -441,7 +459,7 @@ def test_static_webp_is_served_as_image_webp(make_trio, tmp_path, monkeypatch):
 
 def test_static_serving_does_not_shadow_the_api_or_the_websocket(static_trio):
     client = static_trio.client
-    assert client.get("/api/health").json() == {"ok": True}
+    assert client.get("/api/health").json()["ok"] is True
     for path in ("/api/nope", "/api", "/api/", "/ws", "/ws/x"):
         response = client.get(path)
         assert response.status_code == 404, path

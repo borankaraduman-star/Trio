@@ -10,7 +10,13 @@ from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from trio_server.db import Database, InvalidAttachmentError, StorageFullError, hash_token
+from trio_server.db import (
+    Database,
+    InvalidAttachmentError,
+    InvalidReplyError,
+    StorageFullError,
+    hash_token,
+)
 from trio_server.hub import (
     CLOSE_TOO_MANY,
     CLOSE_UNAUTHORIZED,
@@ -50,6 +56,16 @@ class FrameError(Exception):
         self.message = message
 
 
+def _reply_to(frame: dict[str, Any]) -> int | None:
+    """``message.send``'s ``reply_to`` (CONTRACT-V4 B): a message id or null."""
+    value = frame.get("reply_to")
+    if value is None:
+        return None
+    if not is_int(value):
+        raise FrameError("BAD_REQUEST", "'reply_to' must be a message id")
+    return value
+
+
 def _bool(frame: dict[str, Any], key: str, *, default: bool | None = None) -> bool:
     value = frame.get(key, default)
     if not isinstance(value, bool):
@@ -81,6 +97,7 @@ class Session:
             "voice.leave": self.on_voice_leave,
             "voice.state": self.on_voice_state,
             "signal": self.on_signal,
+            "voice.ring": self.on_voice_ring,
         }
 
     async def handle_text(self, text: str) -> None:
@@ -119,6 +136,7 @@ class Session:
 
     async def on_message_send(self, frame: dict[str, Any]) -> None:
         channel_id = self._text_channel(frame)
+        reply_to = _reply_to(frame)
         ids = frame.get("attachment_ids", [])
         if ids is None:
             ids = []
@@ -148,6 +166,7 @@ class Session:
                     content,
                     ids,
                     not_before_ts=self.now() - ORPHAN_SECONDS,
+                    reply_to=reply_to,
                 )
             except StorageFullError:
                 raise FrameError("STORAGE_FULL", "the server's disk is full") from None
@@ -155,6 +174,10 @@ class Session:
                 raise FrameError(
                     "INVALID_ATTACHMENT",
                     "each attachment must be your own upload and not on a message yet",
+                ) from None
+            except InvalidReplyError:
+                raise FrameError(
+                    "INVALID_REPLY", "'reply_to' must be a message in the same channel"
                 ) from None
             # Still under the lock, and no await below: events leave in id order.
             event = {"type": "message.new", "message": message}
@@ -178,7 +201,30 @@ class Session:
         muted = _bool(frame, "muted", default=False)
         deafened = _bool(frame, "deafened", default=False)
         camera = _bool(frame, "camera", default=False)
-        self.hub.voice_join(self.conn, channel_id, muted, deafened, camera)
+        screensharing = _bool(frame, "screensharing", default=False)
+        resume = _bool(frame, "resume", default=False)
+        self.hub.voice_join(
+            self.conn,
+            channel_id,
+            muted,
+            deafened,
+            camera,
+            screensharing=screensharing,
+            resume=resume,
+        )
+
+    async def on_voice_ring(self, frame: dict[str, Any]) -> None:
+        """CONTRACT-V4 A4: call the others into the voice channel I am in."""
+        channel_id = frame.get("channel_id")
+        channel = self.hub.channels.get(channel_id) if is_int(channel_id) else None
+        if channel is None or channel["kind"] != "voice":
+            raise FrameError("INVALID_CHANNEL", "no such voice channel")
+        found = self.hub.voice_member(self.user["id"])
+        if found is None or found[0] != channel_id:
+            raise FrameError("NOT_IN_VOICE", "you can only ring from the voice channel you are in")
+        if not self.hub.rings.allow(str(self.user["id"])):
+            raise FrameError("RATE_LIMITED", "you can ring at most once every 30 seconds")
+        self.hub.voice_ring(self.user["id"], channel_id)
 
     async def on_voice_leave(self, frame: dict[str, Any]) -> None:
         self.hub.voice_leave(self.user["id"])

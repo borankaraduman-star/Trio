@@ -247,6 +247,7 @@ def test_camera_round_trip(trio):
                     "deafened": False,
                     "screensharing": False,
                     "camera": True,
+                    "reconnecting": False,
                 }
             ]
         # A v1 client's voice.state (no camera) means camera off.
