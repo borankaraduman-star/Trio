@@ -8,7 +8,7 @@
 import type { BrowserContext, WebSocketRoute } from '@playwright/test'
 import { freshServer } from '../lib/server'
 import { apiJoin, expect, personViaApi, personWithSession, test, type ContextOptions } from '../lib/trio'
-import { row } from '../lib/messages'
+import { row, submitComposer } from '../lib/messages'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -64,9 +64,9 @@ for (const width of [1280, 390] as const) {
     const mehmet = trio.add(await personViaApi(browser, 'Mehmet'))
     const composer = ayse.page.getByTestId('composer')
     await composer.fill('birinci mesaj')
-    await composer.press('Enter')
+    await submitComposer(ayse.page)
     await composer.fill('ikinci mesaj')
-    await composer.press('Enter')
+    await submitComposer(ayse.page)
 
     await expect(row(ayse.page, 'ikinci mesaj')).toHaveAttribute('data-status', 'sent')
     await expect(row(ayse.page, 'birinci mesaj')).toHaveAttribute('data-status', 'failed')

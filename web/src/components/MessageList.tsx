@@ -366,7 +366,7 @@ export function MessageList({
               key={row.key}
               message={row.message}
               author={resolveAuthor(row.message.author, people)}
-              showHeader={row.showHeader}
+              showHeader={row.showHeader || row.message.key === dividerKey}
               former={isMember ? !isMember(row.message.author.id) : false}
               onRetry={onRetry}
               family={rowFamily.row}
