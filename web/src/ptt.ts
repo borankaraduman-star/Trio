@@ -12,6 +12,7 @@
  * in-page source, so a key-up lost to another window cannot hold the
  * microphone open; the desktop source is global and keeps its own state.
  */
+import type { DesktopMusicBridge } from './music/capture'
 
 export const PTT_RELEASE_TAIL_MS = 150
 
@@ -96,6 +97,11 @@ export interface TrioDesktopBridge {
   onPtt(callback: (down: boolean) => void): () => void
   /** CONTRACT-V6-VOICE "Desktop version": the app's own version; absent in builds before it. */
   appVersion?: string
+  /** CONTRACT-V8-MUSIC §5 (absent in older apps): see music/capture.ts. */
+  musicCaptureSupport?: DesktopMusicBridge['musicCaptureSupport']
+  prepareMusicCapture?: DesktopMusicBridge['prepareMusicCapture']
+  setNowPlayingWatch?: DesktopMusicBridge['setNowPlayingWatch']
+  onNowPlaying?: DesktopMusicBridge['onNowPlaying']
 }
 
 export function desktopBridge(): TrioDesktopBridge | null {

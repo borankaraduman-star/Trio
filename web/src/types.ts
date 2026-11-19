@@ -98,12 +98,18 @@ export interface VoiceParticipant {
   reconnecting?: boolean
   /** V6: away (auto-AFK). Missing (older servers) = false. */
   afk?: boolean
+  /** CONTRACT-V8-MUSIC: sharing their computer's sound. Missing = false. */
+  music?: boolean
+  /** CONTRACT-V8-MUSIC: what is playing, or null. Text only. */
+  music_title?: string | null
 }
 
 /** v2: which of a peer's outgoing streams is the camera and which the screen. */
 export interface StreamMeta {
   camera: string | null
   screen: string | null
+  /** CONTRACT-V8-MUSIC: the music stream; missing (older clients) = null. */
+  music?: string | null
 }
 
 export type SignalData =
@@ -198,6 +204,9 @@ export type ClientEvent =
       session?: string
       /** V6 */
       afk?: boolean
+      /** V8 */
+      music?: boolean
+      music_title?: string | null
     }
   | { type: 'voice.leave' }
   | { type: 'voice.ring'; channel_id: number }
@@ -209,6 +218,9 @@ export type ClientEvent =
       camera?: boolean
       /** V6 */
       afk?: boolean
+      /** V8 */
+      music?: boolean
+      music_title?: string | null
     }
   | { type: 'signal'; to: number; data: SignalData | { meta: StreamMeta } | { watch: { stream: string; on: boolean } } }
   | { type: 'ping' }

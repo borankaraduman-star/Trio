@@ -381,6 +381,12 @@ function reconnectingFlag(event: { reconnecting?: unknown }): { reconnecting?: b
   return event.reconnecting === true ? { reconnecting: true } : {}
 }
 
+/** CONTRACT-V8-MUSIC: the music flags, only when sharing (a frame without them = not sharing). */
+function musicFlags(event: { music?: unknown; music_title?: unknown }): { music?: boolean; music_title?: string | null } {
+  if (event.music !== true) return {}
+  return { music: true, music_title: typeof event.music_title === 'string' && event.music_title !== '' ? event.music_title : null }
+}
+
 function reduceServer(state: AppState, event: ServerEvent, now: number, viewing: boolean): AppState {
   switch (event.type) {
     case 'ready': {
@@ -611,6 +617,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           ...cameraFlag(event),
           ...reconnectingFlag(event),
           ...(event.afk === true ? { afk: true } : {}),
+          ...musicFlags(event),
         },
       ]
       return { ...state, voice }
@@ -645,6 +652,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
                   ...cameraFlag(event),
                   ...reconnectingFlag(event),
                   ...(event.afk === true ? { afk: true } : {}),
+                  ...musicFlags(event),
                 }
               : participant,
           ),

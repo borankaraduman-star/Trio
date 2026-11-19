@@ -74,6 +74,8 @@ import { NO_MEMBERS_QUERY, PHONE_QUERY, useMediaQuery } from '../lib/phone'
 import { CallBar } from './phone/CallBar'
 import { DrawerPresence, PRESENCE_ID, PresencePill } from './phone/Presence'
 import { StageFrame } from './phone/StageFrame'
+// CONTRACT-V8-MUSIC: sharing the sound playing on my computer.
+import { MusicButton, MusicPanel, MusicVolumeControls, RemoteMusicList, useMusicTitle } from '../music/MusicUi'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -712,6 +714,7 @@ export function Session({
   useVoiceEvening({ engine, toggle: selfToggle, pttKey: settings.inputMode === 'ptt' ? settings.pttKey : null })
   const [volumeTarget, setVolumeTarget] = useState<VolumeTarget | null>(null)
   const participantMenu = useParticipantMenu(setVolumeTarget)
+  const musicTitle = useMusicTitle(engine, voice)
   const closeVolume = useCallback(() => setVolumeTarget(null), [])
 
   /** "Add a device" (CONTRACT-V3 §2); a 401 here means this session is over. */
@@ -777,6 +780,7 @@ export function Session({
       onToggleScreen={() => void engine.toggleScreen()}
       onHangup={() => engine.leave()}
       onOpenRoom={() => setDrawerOpen(true)}
+      musicButton={<MusicButton voice={voice} engine={engine} variant="callbar" />}
     />
   )
 
@@ -821,6 +825,8 @@ export function Session({
         server={state.server}
         voiceControls={<ShareMenu engine={engine} voice={voice} nameOf={nameOf} variant="button" />}
         participantMenu={participantMenu}
+        musicButton={<MusicButton voice={voice} engine={engine} variant="panel" />}
+        musicPanel={<MusicPanel voice={voice} title={musicTitle} />}
       />
       {drawerOpen && (
         <button
@@ -1091,6 +1097,11 @@ export function Session({
             (media) => media.userId === volumeTarget.userId && media.stream.getAudioTracks().length > 0,
           )}
           onClose={closeVolume}
+          extra={
+            voice.remoteMusic.some((media) => media.userId === volumeTarget.userId) ? (
+              <MusicVolumeControls userId={volumeTarget.userId} />
+            ) : undefined
+          }
         />
       )}
 
@@ -1098,6 +1109,7 @@ export function Session({
         {voice.remoteAudio.map((media) => (
           <RemoteAudio key={media.userId} media={media} muted={voice.deafened} />
         ))}
+        <RemoteMusicList voice={voice} />
       </div>
     </div>
   )

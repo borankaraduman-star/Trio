@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type HTMLAttributes, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type HTMLAttributes, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { swallowPressEndClick } from '../../lib/pressEnd'
 import { MAX_VOLUME, voicePrefsStore, volumeOf, type PersonVolume } from '../../lib/voicePrefs'
 import type { Member } from '../../types'
@@ -112,11 +112,14 @@ export function VolumeSheet({
   user,
   hasStreamAudio,
   onClose,
+  extra,
 }: {
   target: VolumeTarget
   user: Member | undefined
   hasStreamAudio: boolean
   onClose: () => void
+  /** V8: the music volume and mute, while they share music. */
+  extra?: ReactNode
 }) {
   const prefs = useSyncExternalStore(voicePrefsStore.subscribe, voicePrefsStore.getSnapshot)
   const volume = volumeOf(prefs, target.userId)
@@ -179,6 +182,7 @@ export function VolumeSheet({
         </header>
         <Slider label="Ses" kind="voice" userId={target.userId} value={volume.voice} />
         {hasStreamAudio && <Slider label="Yayın sesi" kind="stream" userId={target.userId} value={volume.stream} />}
+        {extra}
         {(volume.voice > 1 || volume.stream > 1) && (
           <p className="volume-hint">
             <VolumeIcon size={14} /> %100'ün üstü yalnız senin için yükseltilir; hoparlörde yankı yapabilir, kulaklık önerilir.
