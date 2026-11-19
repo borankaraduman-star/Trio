@@ -252,3 +252,30 @@ test('screenshot 08: the settings dialog', async ({ browser, trio }) => {
   await page.getByTestId('settings-mic').blur()
   await shot(page, '08-settings.png')
 })
+
+test('screenshot 09: adding a device, the code in Ayarlar › Hesap', async ({ browser, trio }) => {
+  const people = await threePeople(browser, trio, DESKTOP)
+  await seedConversation(people)
+  const page = people[0].page
+  await page.getByTestId('btn-settings').click()
+  const account = page.getByTestId('settings-account')
+  await account.getByTestId('settings-add-device').click()
+  await expect(account.getByTestId('link-code')).toHaveText(/^\w{5}-\w{5}$/)
+  await expect(account.getByTestId('link-code-countdown')).toHaveText(/^(10:00|9:5\d)$/)
+  await account.scrollIntoViewIfNeeded()
+  await page.getByTestId('settings-dialog').evaluate((el) => (el.scrollTop = el.scrollHeight))
+  await expect(account.getByTestId('link-code-card')).toBeInViewport({ ratio: 1 })
+  await shot(page, '09-add-device.png')
+})
+
+test('screenshot 10: the join screen, "Zaten hesabım var"', async ({ browser }) => {
+  const context = await newContext(browser, DESKTOP)
+  const page = await context.newPage()
+  await page.goto('/')
+  await page.getByTestId('join-mode-link').click()
+  await page.getByTestId('join-link-code').pressSequentially('k7qx3mz9pa')
+  await expect(page.getByTestId('join-link-code')).toHaveValue('K7QX3-MZ9PA')
+  await expect(page.getByTestId('join-submit')).toBeEnabled()
+  await shot(page, '10-join-with-code.png')
+  await context.close()
+})
