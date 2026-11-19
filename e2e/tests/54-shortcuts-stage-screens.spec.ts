@@ -179,7 +179,11 @@ test('the people strip: only with a stage, everyone without a camera tile, with 
   await expect(mehmet.page.getByTestId('gate-meter')).toHaveAttribute('data-gate-state', 'active')
   await mehmet.page.getByTestId('gate-meter').scrollIntoViewIfNeeded()
   await expect(mehmet.page.getByTestId('gate-meter')).toHaveAttribute('data-above', 'true', { timeout: 15_000 })
-  await mehmet.page.getByRole('heading', { name: 'Giriş hassasiyeti' }).evaluate((h) => h.scrollIntoView({ block: 'start' }))
+  // The section's heading just under the dialog's own header.
+  await mehmet.page.getByRole('heading', { name: 'Giriş hassasiyeti' }).evaluate((h) => {
+    const scroller = h.closest('.settings-dialog') as HTMLElement
+    scroller.scrollTop += h.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 90
+  })
   await mehmet.page.screenshot({ path: `${SHOTS}/v6-voice-sensitivity.png` })
 })
 

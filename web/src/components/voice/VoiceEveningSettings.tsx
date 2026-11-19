@@ -8,6 +8,13 @@ import { GATE_MAX_DB, GATE_MIN_DB, voicePrefsStore } from '../../lib/voicePrefs'
 import { isBindableKey, keyLabel, settingsStore } from '../../settings'
 
 const METER_MS = 100
+/** The bar falls at most this many dB per reading: a word reads as one bar, not a flicker. */
+const FALL_DB = 4
+
+function withFall(shown: number, now: number): number {
+  if (!Number.isFinite(shown)) return now
+  return Math.max(now, shown - FALL_DB)
+}
 
 /** dBFS → position on the bar (0..1), over the threshold's own range. */
 function barPosition(db: number): number {
@@ -30,7 +37,7 @@ function useInputLevel(testing: boolean): { db: number; source: 'call' | 'test' 
     if (!inCall || !engine) return
     const timer = setInterval(() => {
       const peak = engine.inputPeak()
-      setDb(peak === null ? -Infinity : linearToDb(peak))
+      setDb((shown) => withFall(shown, peak === null ? -Infinity : linearToDb(peak)))
     }, METER_MS)
     return () => clearInterval(timer)
   }, [inCall, engine])
@@ -54,7 +61,7 @@ function useInputLevel(testing: boolean): { db: number; source: 'call' | 'test' 
           analyser.getFloatTimeDomainData(data)
           let peak = 0
           for (const v of data) peak = Math.max(peak, Math.abs(v))
-          setDb(linearToDb(peak))
+          setDb((shown) => withFall(shown, linearToDb(peak)))
         }, METER_MS)
       } catch {
         setDb(-Infinity)

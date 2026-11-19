@@ -82,6 +82,10 @@
 
 .share-popover h4 {
   margin: 4px 0 6px;
+}
+
+.share-popover .share-hint + h4 {
+  margin-top: 14px;
   color: var(--trio-muted, #a0a6b2);
   font-size: 11px;
   font-weight: 700;
@@ -200,7 +204,7 @@
 
 .call-stage-people {
   flex: none;
-  padding: 2px 12px 12px;
+  padding: 0 12px 10px;
   background: var(--trio-base, #111318);
   border-bottom: 1px solid var(--trio-border, #2b303a);
 }
@@ -210,27 +214,26 @@
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
+/* As in design/mockups/main.png: the faces under the stage, no cards. */
 .stage-person {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  width: 76px;
+  gap: 3px;
+  width: 64px;
   margin: 0;
-  padding: 8px 4px 6px;
-  border-radius: 12px;
-  background: var(--trio-surface, #1a1d24);
+  padding: 0;
 }
 
 .stage-person figcaption {
   max-width: 100%;
   overflow: hidden;
-  color: var(--trio-text, #f2f1ed);
-  font-size: 12px;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -241,8 +244,8 @@
 
 .stage-person-marks {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: -2px;
+  right: 4px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;

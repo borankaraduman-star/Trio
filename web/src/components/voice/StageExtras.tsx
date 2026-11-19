@@ -96,7 +96,7 @@ export function StagePeople({
             data-deafened={deafened}
             data-afk={afk}
           >
-            <Avatar id={id} name={users[id]?.name ?? name} size={44} speaking={speaking.has(id)} url={users[id]?.avatar_url} />
+            <Avatar id={id} name={users[id]?.name ?? name} size={40} speaking={speaking.has(id)} url={users[id]?.avatar_url} />
             <figcaption>{name}</figcaption>
             <span className="stage-person-marks">
               {afk && <span className="afk-mark" title="Klavye başında değil">AFK</span>}
