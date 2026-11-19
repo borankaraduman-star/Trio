@@ -2,7 +2,11 @@
 
 export type AttachmentKind = 'image' | 'video' | 'audio' | 'file'
 
-/** Exactly the types the server serves inline (CONTRACT-V2 §2); svg and html are NOT here. */
+/**
+ * Exactly the types the server serves inline (CONTRACT-V2 §2, V3 §4); svg and
+ * html are NOT here, and neither are `image/heic` and `video/quicktime`: the
+ * server sends those as `attachment`, and most browsers cannot show them.
+ */
 const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
 const VIDEO_TYPES = new Set(['video/mp4', 'video/webm'])
 const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav'])
@@ -67,6 +71,18 @@ export function uploadErrorMessage(code: string): string {
       return 'Bağlantı hatası, dosya yüklenemedi.'
     default:
       return 'Dosya yüklenemedi.'
+  }
+}
+
+/** The websocket's answer to a `message.send` that could not be stored (V3 §4), in Turkish; null for others. */
+export function sendErrorMessage(code: string): string | null {
+  switch (code) {
+    case 'STORAGE_FULL':
+      return 'Sunucunun diski dolu, mesaj kaydedilemedi. Sunucuyu yöneten kişiye haber ver.'
+    case 'INVALID_ATTACHMENT':
+      return 'Ekli dosyalardan biri artık gönderilemiyor (24 saatten eski olabilir). Dosyayı yeniden ekle.'
+    default:
+      return null
   }
 }
 

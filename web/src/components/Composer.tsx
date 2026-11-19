@@ -13,6 +13,8 @@ export interface ComposerAttachments {
   /** At least one uploaded attachment would go with the message. */
   ready: boolean
   uploading: boolean
+  /** A chip failed: the message is held until it is removed, so no file is silently left out. */
+  failed?: boolean
   notice: string | null
   onAdd: (files: File[]) => void
   onRemove: (localId: string) => void
@@ -37,11 +39,14 @@ export function Composer({
   onSend,
   onTyping,
   attachments,
+  onDraftChange,
 }: {
   channelName: string
   onSend: (content: string) => void
   onTyping: () => void
   attachments?: ComposerAttachments
+  /** Whether the box holds unsent text (false again when it is sent, emptied or unmounted). */
+  onDraftChange?: (hasDraft: boolean) => void
 }) {
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -49,10 +54,20 @@ export function Composer({
   // v2: content may be empty when an uploaded attachment goes with it; nothing
   // is sent while an upload is still running (it would be left behind).
   const uploading = attachments?.uploading ?? false
+  const failed = attachments?.failed ?? false
   // Counted as the server counts it; never truncated (lib/messageLength.ts).
   const length = checkLength(text)
   const canSend =
-    !uploading && length.over === 0 && (length.content !== '' || (attachments?.ready ?? false))
+    !uploading &&
+    !failed &&
+    length.over === 0 &&
+    (length.content !== '' || (attachments?.ready ?? false))
+
+  const hasDraft = text.trim() !== ''
+  const draftReport = useRef(onDraftChange)
+  draftReport.current = onDraftChange
+  useEffect(() => draftReport.current?.(hasDraft), [hasDraft])
+  useEffect(() => () => draftReport.current?.(false), [])
 
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {
@@ -157,7 +172,15 @@ export function Composer({
         className="primary"
         data-testid="composer-send"
         disabled={!canSend}
-        title={uploading ? 'Dosyalar yükleniyor…' : length.over > 0 ? tooLongMessage(length.over) : undefined}
+        title={
+          uploading
+            ? 'Dosyalar yükleniyor…'
+            : failed
+              ? 'Önce yüklenemeyen dosyayı kaldır'
+              : length.over > 0
+                ? tooLongMessage(length.over)
+                : undefined
+        }
         onClick={send}
       >
         Gönder

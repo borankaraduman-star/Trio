@@ -5,6 +5,7 @@ import { mouseButtonCode } from '../ptt'
 import { useDevices } from '../useDevices'
 import type { NoiseState } from '../audio/pipeline'
 import { CloseIcon } from './icons2'
+import { AccountSection, type AccountProps } from './AccountSection'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -133,6 +134,8 @@ export function SettingsDialog({
   noiseState,
   transmitting,
   isDesktop,
+  account,
+  onSignOut,
 }: {
   settings: Settings
   onChange: (patch: Partial<Omit<Settings, 'version'>>) => void
@@ -141,6 +144,9 @@ export function SettingsDialog({
   noiseState: NoiseState
   transmitting: boolean
   isDesktop: boolean
+  /** v3: the "Hesap" section (add a device, sign out). */
+  account?: AccountProps
+  onSignOut?: () => void
 }) {
   const { devices, requestLabels } = useDevices()
   const dialog = useRef<HTMLDivElement>(null)
@@ -284,6 +290,8 @@ export function SettingsDialog({
             </p>
           )}
         </section>
+
+        {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
       </div>
     </div>
   )

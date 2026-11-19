@@ -30,10 +30,13 @@ const Content = memo(function Content({ text }: { text: string }) {
 const MessageRow = memo(function MessageRow({
   message,
   showHeader,
+  former,
   onRetry,
 }: {
   message: UiMessage
   showHeader: boolean
+  /** v3: the author is no longer a member (removed by the admin). */
+  former: boolean
   onRetry: (message: UiMessage) => void
 }) {
   const time = timeLabel(message.created_at)
@@ -56,6 +59,11 @@ const MessageRow = memo(function MessageRow({
         {showHeader && (
           <div className="message-header">
             <strong>{message.author.name}</strong>
+            {former && (
+              <span className="author-former" data-testid="author-former" title="Bu hesap sunucudan kaldırıldı">
+                eski üye
+              </span>
+            )}
             <time dateTime={message.created_at}>{time}</time>
           </div>
         )}
@@ -82,9 +90,12 @@ export function MessageList({
   onRetry,
   onJumpToLatest,
   onAtBottomChange,
+  isMember,
 }: {
   channel: ChannelMessages
   myId: number
+  /** Whether an author id is a current member; unknown authors are shown as former members. */
+  isMember?: (userId: number) => boolean
   onLoadOlder: () => void
   onRetryLoad: () => void
   onRetry: (message: UiMessage) => void
@@ -169,6 +180,7 @@ export function MessageList({
               key={row.key}
               message={row.message}
               showHeader={row.showHeader}
+              former={isMember ? !isMember(row.message.author.id) : false}
               onRetry={onRetry}
             />
           ),

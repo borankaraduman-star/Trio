@@ -168,14 +168,17 @@ export const MessageAttachments = memo(function MessageAttachments({
 
 function Thumbnail({ file, type }: { file: File | null; type: string }) {
   const [url, setUrl] = useState<string | null>(null)
+  // A picture this browser cannot decode (HEIC on Chromium): the file icon, not a broken image.
+  const [broken, setBroken] = useState(false)
   useEffect(() => {
     if (!file || !type.startsWith('image/')) return
     const objectUrl = URL.createObjectURL(file)
     setUrl(objectUrl)
+    setBroken(false)
     return () => URL.revokeObjectURL(objectUrl)
   }, [file, type])
-  if (!url) return <FileIcon size={20} />
-  return <img src={url} alt="" />
+  if (!url || broken) return <FileIcon size={20} />
+  return <img src={url} alt="" onError={() => setBroken(true)} />
 }
 
 /** The chips above the composer. */

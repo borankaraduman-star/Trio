@@ -1,0 +1,222 @@
+/* --- v3: join modes, device codes, sign-out ------------------------------- */
+
+.join-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: var(--bg-deep);
+}
+
+.join-modes button {
+  padding: 8px 6px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.join-modes button:hover {
+  color: var(--text-strong);
+}
+
+.join-modes button.active {
+  background: var(--bg-active);
+  color: var(--text-strong);
+}
+
+.join-notice {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgb(240 178 50 / 14%);
+  border: 1px solid rgb(240 178 50 / 45%);
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.join-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.join-hint.desktop {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgb(88 101 242 / 16%);
+  color: var(--text);
+}
+
+.join-card input.link-code-input,
+.link-code {
+  font-family: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, Consolas, monospace;
+  letter-spacing: 0.12em;
+}
+
+.join-card input.link-code-input {
+  font-size: 20px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.banner.warn {
+  background: #f28b3f;
+}
+
+.account-who {
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.link-code-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 10px;
+  padding: 14px 14px 12px;
+  border-radius: 10px;
+  background: var(--bg-deep);
+  border: 1px solid var(--bg-active);
+}
+
+.link-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.link-code {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-strong);
+  user-select: all;
+  white-space: nowrap;
+}
+
+.link-code-row .ghost {
+  border: 1px solid var(--bg-active);
+}
+
+.link-code-expiry,
+.link-code-help {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.link-code-expiry strong {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.link-code-help strong {
+  color: var(--text);
+}
+
+.account-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.danger {
+  background: var(--red);
+  color: #fff;
+  border-radius: 6px;
+  padding: 9px 16px;
+  font-weight: 600;
+}
+
+.danger:hover:not(:disabled) {
+  background: #c93437;
+}
+
+.ghost.danger-text {
+  color: #ff8a8d;
+}
+
+/* Text-like buttons line up with the text above them; their hover box reaches out. */
+.account-actions .ghost {
+  margin-left: -10px;
+}
+
+.logout-dialog {
+  width: min(520px, 100%);
+}
+
+.logout-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.logout-body strong {
+  color: var(--text-strong);
+}
+
+.logout-warning {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgb(240 178 50 / 12%);
+  border-left: 3px solid var(--yellow);
+}
+
+.logout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.logout-actions .ghost {
+  margin-left: auto;
+}
+
+.author-former {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+@media (max-width: 680px) {
+  .link-code {
+    font-size: 24px;
+  }
+
+  .logout-actions button {
+    flex: 1 1 100%;
+  }
+
+  .logout-actions .ghost {
+    margin-left: 0;
+  }
+}
+
+.join-link-note {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--bg-deep);
+  font-size: 14px;
+}
+
+.invite-link-row {
+  display: flex;
+  gap: 8px;
+}
+
+.invite-link-row input {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.invite-link-row .ghost {
+  flex: none;
+  border: 1px solid var(--bg-active);
+}

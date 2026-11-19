@@ -65,6 +65,8 @@ export type ServerEvent =
     }
   | { type: 'presence'; user_id: number; online: boolean }
   | { type: 'user.joined'; user: User }
+  /** v3: the admin removed this account; drop it from the member list, keep its messages. */
+  | { type: 'user.removed'; user_id: number }
   | { type: 'channel.new'; channel: Channel }
   | { type: 'message.new'; message: Message; nonce?: string }
   | { type: 'typing'; channel_id: number; user_id: number }
