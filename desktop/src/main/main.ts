@@ -237,7 +237,7 @@ function createMainWindow(): void {
     minHeight: 420,
     show: false,
     title: "Trio",
-    backgroundColor: "#1e1f22",
+    backgroundColor: "#111318",
     autoHideMenuBar: true,
     icon: process.platform === "linux" ? path.join(STATIC_DIR, "icon.png") : undefined,
     webPreferences: {
@@ -350,9 +350,13 @@ function updateUnread(count: number): void {
 // ------------------------------------------------------------- tray/menu
 
 function createTray(): void {
-  const image = nativeImage.createFromPath(path.join(STATIC_DIR, "icon.png"));
-  const size = process.platform === "darwin" ? 18 : 24;
-  tray = new Tray(image.isEmpty() ? image : image.resize({ width: size, height: size }));
+  // macOS: a black-and-alpha template image the menu bar recolours for light
+  // and dark; elsewhere the light dots. nativeImage picks the @2x file beside
+  // each on a HiDPI screen by itself.
+  const mac = process.platform === "darwin";
+  const image = nativeImage.createFromPath(path.join(STATIC_DIR, mac ? "trayTemplate.png" : "tray.png"));
+  if (mac) image.setTemplateImage(true);
+  tray = new Tray(image);
   tray.setToolTip("Trio");
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -568,7 +572,7 @@ function pickSource(audioRequested: boolean): Promise<PickResult | null> {
       minWidth: 520,
       minHeight: 400,
       title: "Ekran paylaş",
-      backgroundColor: "#1e1f22",
+      backgroundColor: "#111318",
       autoHideMenuBar: true,
       show: false,
       webPreferences: {
