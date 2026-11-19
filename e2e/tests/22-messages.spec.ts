@@ -272,27 +272,29 @@ test('reply: the quote for everybody, a jump to an older page, edits and deletio
   }
 
   // Zeynep has only the newest page: the jump loads older ones and lands on it.
+  const targetId = (await allMessages(mehmet.token, GENEL)).find((message) => message.content.startsWith('hedef: kamp'))!.id
+  const onMehmet = mehmet.page.locator(`li[data-message-id="${targetId}"]`)
+  const target = zeynep.page.locator(`li[data-message-id="${targetId}"]`)
   await zeynep.page.reload()
   await expect(row(zeynep.page, 'bence çok iyi')).toHaveCount(1)
-  await expect(row(zeynep.page, 'hedef: kamp')).toHaveCount(0)
+  await expect(target).toHaveCount(0)
   await row(zeynep.page, 'bence çok iyi').getByTestId('reply-quote').click()
-  const target = row(zeynep.page, 'hedef: kamp')
   await expect(target).toBeInViewport()
   await expect(target).toHaveClass(/msg-flash/)
 
   // The target is edited: the shown quotes follow.
-  await barAction(row(mehmet.page, 'hedef: kamp'), 'edit')
+  await barAction(onMehmet, 'edit')
   await mehmet.page.getByTestId('message-editor-input').fill('hedef: kamp yeri Ida')
   await mehmet.page.getByTestId('message-editor-input').press('Enter')
   for (const person of [ayse, mehmet, zeynep])
     await expect(row(person.page, 'bence çok iyi').getByTestId('reply-quote')).toContainText('hedef: kamp yeri Ida')
 
   // …and deleted: "silinmiş mesaj" for all three, and after a reload too.
-  await menuAction(mehmet.page, row(mehmet.page, 'hedef: kamp'), 'delete')
+  await menuAction(mehmet.page, onMehmet, 'delete')
   await mehmet.page.getByTestId('delete-confirm-yes').click()
   for (const person of [ayse, mehmet, zeynep]) {
     await expect(row(person.page, 'bence çok iyi').getByTestId('reply-quote')).toHaveText('silinmiş mesaj')
-    await expect(row(person.page, 'hedef: kamp')).toHaveCount(0)
+    await expect(person.page.locator(`li[data-message-id="${targetId}"]`)).toHaveCount(0)
   }
   await ayse.page.reload()
   await expect(row(ayse.page, 'bence çok iyi').getByTestId('reply-quote')).toHaveText('silinmiş mesaj')
@@ -317,8 +319,12 @@ test('pins: the panel for all three, newest first, jump and unpin; the limit is 
     await expect(items.nth(0)).toContainText('adres: Moda sahili')
     await expect(items.nth(1)).toContainText('saat: 19.00')
   }
-  // Zeynep jumps to the older one (not loaded on her page) from the panel.
+  // Zeynep jumps to the older one (not loaded on her page after a reload) from the panel.
+  await zeynep.page.reload()
+  await expect(row(zeynep.page, 'saat: 19.00')).toHaveCount(1)
   await expect(row(zeynep.page, 'adres: Moda')).toHaveCount(0)
+  await zeynep.page.getByTestId('btn-pins').click()
+  await expect(zeynep.page.getByTestId('pins-panel').getByTestId('pin-item')).toHaveCount(2)
   await zeynep.page.getByTestId('pins-panel').getByTestId('pin-jump').first().click()
   await expect(zeynep.page.getByTestId('pins-panel')).toHaveCount(0)
   await expect(row(zeynep.page, 'adres: Moda')).toBeInViewport()

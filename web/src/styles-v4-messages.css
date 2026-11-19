@@ -80,7 +80,8 @@
   top: -12px;
 }
 
-.message:focus-within .msg-actions {
+.message:focus-visible .msg-actions,
+.message:has(:focus-visible) .msg-actions {
   display: flex;
 }
 
@@ -90,7 +91,8 @@
   }
 
   .message:hover .msg-pin-mark,
-  .message:focus-within .msg-pin-mark {
+  .message:focus-visible .msg-pin-mark,
+  .message:has(:focus-visible) .msg-pin-mark {
     visibility: hidden;
   }
 }
@@ -228,7 +230,8 @@ button.reply-quote:hover {
 }
 
 .message:hover .reaction-chip.add,
-.message:focus-within .reaction-chip.add {
+.message:focus-visible .reaction-chip.add,
+.message:has(:focus-visible) .reaction-chip.add {
   opacity: 1;
 }
 
