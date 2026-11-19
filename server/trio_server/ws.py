@@ -121,6 +121,7 @@ class Session:
             "voice.ring": self.on_voice_ring,
             "activity.set": self.on_activity_set,
             "activity.clear": self.on_activity_clear,
+            "client.viewing": self.on_client_viewing,
         }
 
     async def handle_text(self, text: str) -> None:
@@ -218,6 +219,8 @@ class Session:
                 )
                 event = {**event, "nonce": nonce}
             self.hub.send_to_user(self.user["id"], event)
+            if self.hub.notify is not None:
+                self.hub.notify.message_new(message)
 
     async def _replay(self, nonce: str) -> bool:
         """Answer a retry of a send that was stored (its acknowledgement was
@@ -327,6 +330,16 @@ class Session:
         if to == self.user["id"] or target is None or target[0] != channel_id:
             raise FrameError("NOT_IN_VOICE", "that user is not in your voice channel")
         target[1].conn.send({"type": "signal", "from": self.user["id"], "data": data})
+
+    # -- CONTRACT-V6-PUSH: is this connection being looked at -------------------
+
+    async def on_client_viewing(self, frame: dict[str, Any]) -> None:
+        viewing = _bool(frame, "viewing")
+        channel_id = frame.get("channel_id")
+        if channel_id is not None and not is_int(channel_id):
+            raise FrameError("BAD_REQUEST", "'channel_id' must be a channel id or null")
+        if self.hub.notify is not None:
+            self.hub.notify.set_viewing(self.conn, viewing, channel_id)
 
     # -- CONTRACT-V5: game status ---------------------------------------------
 

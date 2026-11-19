@@ -39,11 +39,13 @@ from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
 from trio_server.message_routes import register_message_routes
+from trio_server.notify import Notifier
 from trio_server.profile_routes import (
     prepare_profile_dirs,
     register_profile_routes,
     unreferenced_profile_files,
 )
+from trio_server.push import PushSender, PushStore, Resolver, register_push_routes, system_resolver
 from trio_server.ratelimit import JoinGuard, client_address
 from trio_server.uploads import (
     ATTACHMENT_ID,
@@ -128,6 +130,7 @@ def create_app(
     now: Callable[[], float] = time.time,
     http_transport: httpx.AsyncBaseTransport | None = None,
     disk_free: Callable[[Path], int] | None = None,
+    push_resolver: Resolver | None = None,
 ) -> FastAPI:
     """Build the app.
 
@@ -149,6 +152,18 @@ def create_app(
     ice_provider = IceProvider(settings, now, http_transport)
     upload_dir = Path(settings.upload_dir)
     free_bytes = disk_free or (lambda path: shutil.disk_usage(path).free)
+    # CONTRACT-V6-PUSH: Web Push (push.py) and who is told what (notify.py).
+    push_store = PushStore(db)
+    push_sender = PushSender(
+        push_store,
+        now=now,
+        transport=http_transport,
+        resolver=push_resolver or system_resolver,
+        subject=settings.push_subject,
+        test_service=settings.test_push_service,
+    )
+    notifier = Notifier(hub=hub, enqueue=push_sender.enqueue, now=now)
+    hub.notify = notifier
     # Users with an upload being received right now (one at a time each).
     uploading: set[int] = set()
 
@@ -210,6 +225,9 @@ def create_app(
         await db.open()
         hub.load(await db.list_users(), await db.list_channels())
         hub.server = await db.get_server()
+        vapid = await push_store.ensure()
+        notifier.prefs = await push_store.all_prefs()
+        await push_sender.start(vapid)
         # Not only on upload: a server nobody uploads to never swept at all.
         await sweep_orphans()
         await sweep_unreferenced_files()
@@ -220,6 +238,7 @@ def create_app(
             watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
+            await push_sender.stop()
             hub.close()
             await db.close()
 
@@ -241,6 +260,9 @@ def create_app(
     app.state.recheck_tokens = recheck_tokens
     app.state.sweep_orphans = sweep_orphans
     app.state.uploading = uploading
+    app.state.push_sender = push_sender
+    app.state.push_store = push_store
+    app.state.notifier = notifier
 
     # -- errors: always the contract's envelope ------------------------------
 
@@ -351,6 +373,7 @@ def create_app(
         token_hash = request.state.token_hash
         async with db.write_lock:
             await db.delete_token(token_hash)
+            await push_store.delete_for_token(token_hash)
         closed = hub.kick_token(token_hash)
         logger.info("session.ended user=%s sockets=%s", user["id"], closed)
         return Response(status_code=204)
@@ -498,6 +521,18 @@ def create_app(
         space_left=space_left,
     )
 
+    register_push_routes(
+        app,
+        store=push_store,
+        sender=push_sender,
+        notifier=notifier,
+        hub=hub,
+        now=now,
+        current_user=current_user,
+        read_json=read_json_object,
+        test_service=settings.test_push_service,
+    )
+
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
     # Registered after every real /api route: an unknown one is a JSON 404 for
@@ -575,6 +610,24 @@ def shell_headers(host: str) -> dict[str, str]:
     }
 
 
+# CONTRACT-V6-PUSH: files with a fixed name that must update promptly. The
+# service worker especially: browsers re-check it on navigation, and a cached
+# copy would keep an old worker in charge of notifications after a deploy.
+_UNHASHED_PROMPT: dict[str, dict[str, str]] = {
+    "sw.js": {
+        "Cache-Control": "no-cache",
+        "Content-Type": "text/javascript; charset=utf-8",
+        # The worker's own policy (a worker does not inherit the page's).
+        "Content-Security-Policy": "default-src 'self'; script-src 'self'; object-src 'none'",
+        "Service-Worker-Allowed": "/",
+    },
+    "manifest.webmanifest": {
+        "Cache-Control": "no-cache",
+        "Content-Type": "application/manifest+json",
+    },
+}
+
+
 def _mount_static(app: FastAPI, directory: Path) -> None:
     """Serve the built client, falling back to index.html for client-side routes."""
     # python:3.12-slim has no /etc/mime.types and Python 3.12's own table lacks
@@ -600,6 +653,8 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
                 if path.startswith("assets/"):
                     # Vite puts a content hash in every file name under assets/.
                     headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                elif path in _UNHASHED_PROMPT:
+                    headers.update(_UNHASHED_PROMPT[path])
                 return FileResponse(candidate, headers=headers)
         # A missing asset or file with an extension is a 404, not HTML that a
         # <script> tag would then fail to parse.

@@ -143,6 +143,9 @@ class Hub:
         self.nonces = NonceCache()
         # CONTRACT-V5: game status, presence-like and in memory only.
         self.activity = ActivityBoard(self.broadcast, now)
+        # CONTRACT-V6-PUSH: notify.Notifier (set by the app), told about messages,
+        # rooms opening and rings right after their broadcast. None: no pushes.
+        self.notify: Any = None
 
     def load(self, users: list[dict[str, Any]], channels: list[dict[str, Any]]) -> None:
         self.users = {u["id"]: u for u in users}
@@ -206,6 +209,8 @@ class Hub:
         first = not self.conns.get(conn.user_id)
         self.conns.setdefault(conn.user_id, set()).add(conn)
         self.activity.user_online(conn.user_id)
+        if self.notify is not None:
+            self.notify.connected(conn)
         conn.send(self.ready_frame(conn.user_id))
         if first:
             frame = {"type": "presence", "user_id": conn.user_id, "online": True}
@@ -398,6 +403,7 @@ class Hub:
         else:
             self.voice_leave(user_id)
         members = self.voice.setdefault(channel_id, {})
+        opened = not members
         conn.send(
             {
                 "type": "voice.peers",
@@ -428,6 +434,8 @@ class Hub:
                 "resumed": resume,
             }
         )
+        if self.notify is not None:
+            self.notify.voice_joined(channel_id, user_id, opened=opened, resumed=resume)
 
     def voice_ring(self, user_id: int, channel_id: int) -> None:
         """``voice.ring`` to every online user not listed in ``channel_id``."""
@@ -436,6 +444,8 @@ class Hub:
         for target in list(self.conns):
             if target not in inside:
                 self.send_to_user(target, frame)
+        if self.notify is not None:
+            self.notify.voice_ring(user_id, channel_id)
 
     def voice_state(
         self,
