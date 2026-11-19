@@ -112,6 +112,8 @@ Chromium 153 facts the specs depend on, measured here:
 | `19-uploads-v3` | files of one message upload one at a time (at most one request in flight; a queued file cancelled), another device's upload in progress (429 → wait → retry), quota exceeded and a full disk (the message waits), avif inline, heic and quicktime as file rows |
 | `20-limits` | the per-address and the global join limits worded with `Retry-After` and counted down, 4429 with ten sockets open, the desktop app's join screen |
 | `21-invite-link` | `/#davet=<code>`: only a name to type, the fragment gone at once, the link in Ayarlar › Hesap, a wrong code from a link, the name remembered |
+| `22-identity` | an avatar picked as a 1600 px JPEG with EXIF GPS, cropped in the app, stored as a 256 px WebP with no EXIF and decoded by all three in the member list, on old and new messages and in the voice room (ring around the picture); removed for everyone; HEIC, a text file and broken bytes refused in Turkish; rename live on old messages, `NAME_TAKEN` and `INVALID_NAME` worded as on joining, the left name free again; server name and icon live for all three, after a reload, with the `(n) ` title; the versions footer against `/api/health`; Yenilikler only after an update and held while a dialog is open; the cropper by touch (CDP pinch and drag) and the sections at 390 px |
+| `23-identity-screenshots` | `13-avatars.png`, `14-profile-settings.png`, `14b-avatar-cropper.png` |
 
 ## Screenshots
 

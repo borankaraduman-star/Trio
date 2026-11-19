@@ -7,6 +7,7 @@ const idle: ReloadState = {
   pendingFiles: false,
   draft: false,
   unsentMessages: false,
+  profileEdit: false,
 }
 
 describe('reloadBlocker', () => {

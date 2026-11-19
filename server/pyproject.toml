@@ -1,6 +1,6 @@
 [project]
 name = "trio-server"
-version = "0.2.0"
+version = "0.3.0"
 description = "Backend of Trio, a small self-hosted chat and voice server"
 requires-python = ">=3.12"
 dependencies = [

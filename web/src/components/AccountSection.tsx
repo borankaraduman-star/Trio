@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, type LinkCode } from '../api'
 import { formatCountdown, formatLinkCode, secondsLeft } from '../lib/linkCode'
+import { ProfileFields, type ProfileProps } from './ProfileFields'
 
 export interface AccountProps {
   name: string
@@ -9,6 +10,8 @@ export interface AccountProps {
   createAtOnce?: boolean
   /** `<origin>/#davet=<code>` when this device joined with the invite code, else null. */
   inviteLink: string | null
+  /** v4: picture and name. */
+  profile?: ProfileProps
 }
 
 function linkCodeError(error: unknown): string {
@@ -103,6 +106,7 @@ export function AccountSection({ account, onSignOut }: { account: AccountProps; 
       <p className="account-who">
         Bu cihazda <strong>{account.name}</strong> olarak giriş yaptın.
       </p>
+      {account.profile && <ProfileFields profile={account.profile} />}
 
       <div className="settings-field">
         <span className="settings-label">Cihaz ekle</span>
