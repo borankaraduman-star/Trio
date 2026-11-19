@@ -11,6 +11,7 @@ import {
   relativeTime,
   turnLabel,
 } from '../../lib/opsFormat'
+import { dataAgeLine, freeSeatsLine, NOT_PERSISTENT_TEXT } from '../../lib/persistence'
 import { opsApi, type ClientErrorRow, type OwnerUser } from '../../owner/opsApi'
 import { opsStore } from '../../owner/opsStore'
 import { ConfirmCodeDialog } from './ConfirmCodeDialog'
@@ -256,11 +257,56 @@ export function OwnerSection() {
   const progress = backup.in_progress
   const stale = backupStale(backup.last, now)
   const diskUsed = storage.disk_total_bytes - storage.disk_free_bytes
+  const freeSeats = freeSeatsLine(overview.limits.max_users, active.length)
+  const ownerUnset = server.owner_rule !== 'TRIO_OWNER'
+  const dataAge = dataAgeLine(server.data_since, server.boot_count, now)
 
   return (
     <section className="settings-section ops-section" aria-labelledby="settings-owner" data-testid="owner-section">
       <h3 id="settings-owner">Yönetim</h3>
       <p className="settings-hint">Bu bölümü yalnızca sen görüyorsun: sunucunun sahibi sensin.</p>
+
+      {server.persistent === false && (
+        <div className="ops-card ops-warnings danger-card" data-testid="owner-volume-steps">
+          <div className="ops-card-head">
+            <h4>Kalıcı disk yok</h4>
+          </div>
+          <p className="ops-warn">{NOT_PERSISTENT_TEXT}</p>
+          <ol>
+            <li>Önce buradan bir yedek indir (aşağıda).</li>
+            <li>
+              Railway’de Trio servisini aç › <b>Settings › Volumes › New Volume</b>.
+            </li>
+            <li>
+              Bağlama yolu (mount path) olarak <code>/data</code> yaz ve kaydet.
+            </li>
+            <li>Servis yeniden başlar; bu kırmızı uyarı kaybolmalı.</li>
+            <li>Veriler boş gelirse yedeği geri yükle (docs/yedek.md).</li>
+          </ol>
+        </div>
+      )}
+
+      {(ownerUnset || freeSeats) && (
+        <div className="ops-card ops-warnings" data-testid="owner-warnings">
+          <div className="ops-card-head">
+            <h4>Dikkat</h4>
+          </div>
+          <ul>
+            {ownerUnset && (
+              <li data-testid="owner-warning-owner">
+                TRIO_OWNER ayarlı değil: sahip = ilk katılan kişi. Railway’de bu değişkene kendi adını yazarsan sahiplik
+                sabitlenir.
+              </li>
+            )}
+            {freeSeats && (
+              <li data-testid="owner-warning-seats">
+                {freeSeats}: davet kodunu bilen herkes katılabilir. Gerekmiyorsa TRIO_MAX_USERS değerini kişi sayısına
+                indir.
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
 
       <div className={`ops-card ops-backup${stale ? ' stale' : ''}`} data-testid="owner-backup">
         <div className="ops-card-head">
@@ -372,6 +418,12 @@ export function OwnerSection() {
             <dd>{server.version}</dd>
             <dt>Açık kalma</dt>
             <dd>{formatUptime(server.uptime_seconds)}</dd>
+            {dataAge && (
+              <>
+                <dt>Veri</dt>
+                <dd data-testid="owner-data-age">{dataAge.replace(/^Veri: /, '')}</dd>
+              </>
+            )}
             <dt>Mesajlar</dt>
             <dd>{formatCount(overview.counts.messages)}</dd>
             <dt>Python</dt>

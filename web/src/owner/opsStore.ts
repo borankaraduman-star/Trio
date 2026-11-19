@@ -4,6 +4,7 @@
  * overview. Its own module (not store.ts): nothing else reads it.
  */
 import { loadAuth } from '../api'
+import { rememberDataSince } from './healthStore'
 import { opsApi, type Overview } from './opsApi'
 
 export interface OpsState {
@@ -45,6 +46,8 @@ class OpsStore {
     this.loading = (async () => {
       try {
         const { user } = await opsApi.me(token)
+        // The session is valid in this database: remember which one (V6-OPS §7).
+        void rememberDataSince()
         const isOwner = user.is_owner === true
         this.set({ isOwner, overview: isOwner ? this.state.overview : null })
         if (isOwner) this.set({ overview: await opsApi.overview(token) })

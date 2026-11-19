@@ -30,7 +30,17 @@ export interface Overview {
     disk_reserve_bytes: number
     max_upload_bytes: number
   }
-  server: { version: string; started_at: string; uptime_seconds: number; python: string; owner_rule: string }
+  server: {
+    version: string
+    started_at: string
+    uptime_seconds: number
+    python: string
+    owner_rule: 'TRIO_OWNER' | 'lowest_id'
+    /** V6-OPS §7. */
+    persistent: boolean | null
+    data_since: string | null
+    boot_count: number | null
+  }
   turn: {
     provider: TurnProvider
     stun: string[]

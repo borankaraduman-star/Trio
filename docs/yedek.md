@@ -51,9 +51,15 @@ ok: integrity_check passed and the counts match the manifest
 `problem:` ile başlayan bir satır varsa dosya bozulmuş ya da eksik inmiştir; yeni bir
 yedek indir.
 
-## 3. Geri yükle (yeni bir Railway volume'üne)
+## 3. Geri yükle (yeni bir Railway volume'üne) — denenmedi
 
-Ne zaman: volume silindi/bozuldu, sunucuyu başka bir projeye taşıyorsun.
+> **Denenmedi:** bu adımlar gerçek bir Railway volume'ünde hiç çalıştırılmadı. Otomatik
+> testler yalnızca boş bir klasöre geri yükleyip sunucuyu onunla açıyor. İlk kez
+> yapacaksan, önce yedeğin `verify` ile kontrolden geçtiğinden emin ol; `--force` eski
+> veriyi silmez, `before-restore-…` klasörüne taşır.
+
+Ne zaman: volume silindi/bozuldu, sunucuyu başka bir projeye taşıyorsun, ya da Yönetim
+“Kalıcı disk yok” diyor ve volume'ü yeni bağladın.
 
 1. **Railway'de yeni bir volume oluştur** ve Trio servisine `/data` yoluna bağla
    (Service › Settings › Volumes). Servis açılınca boş bir `trio.db` ve `uploads/`

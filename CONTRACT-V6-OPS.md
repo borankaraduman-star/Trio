@@ -231,8 +231,11 @@ can tell a server whose data was just created.
 
 **client:** when `persistent === false`, a red band that cannot be closed, for
 everybody and on the join screen: "Kalıcı disk bağlı değil: bir sonraki
-güncellemede her şey silinir." Yönetim shows how to attach a volume. When a
-session ends (401 / 4401) and `data_since` is under 15 minutes old, the join
-screen says "Sunucu sıfırlandı, herkes yeniden katılmalı." instead of the
-device-code hint. Yönetim also warns when `TRIO_OWNER` is unset (the owner is
+güncellemede her şey silinir." Yönetim shows how to attach a volume. The client
+remembers `data_since` (`localStorage` `trio.dataSince`) whenever an
+authenticated request succeeds; when a session then ends (401 / 4401) and the
+server's `data_since` is a DIFFERENT value, the database the session lived in
+is gone, and the join screen says "Sunucu sıfırlandı, herkes yeniden
+katılmalı." instead of the device-code hint. (A plain age threshold would also
+fire for an owner's revoke on a young server.) Yönetim also warns when `TRIO_OWNER` is unset (the owner is
 the first to join) and when seats are free (`max_users` above the user count).

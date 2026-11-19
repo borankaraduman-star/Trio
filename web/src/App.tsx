@@ -4,6 +4,9 @@ import { takeInviteFromLocation } from './lib/inviteLink'
 import { JoinScreen } from './components/JoinScreen'
 import { Session } from './components/Session'
 import { clearStoredState } from './store'
+import { PersistenceBand } from './components/owner/PersistenceBand'
+import { sessionEndedNotice } from './lib/persistence'
+import { fetchHealth, loadKnownDataSince } from './owner/healthStore'
 
 /** Shown on the join screen when the server ended this device's session (CONTRACT-V3 §2, §3). */
 export const SESSION_ENDED_NOTICE =
@@ -41,12 +44,27 @@ export function App() {
 
   /** The server no longer accepts this token: signed out from elsewhere, revoked or removed. */
   const onSessionEnded = useCallback(() => {
+    const known = loadKnownDataSince()
     setNotice(SESSION_ENDED_NOTICE)
     forget()
+    // V6-OPS §7: another database than the one this session lived in: the server was reset.
+    void fetchHealth().then(({ dataSince }) => {
+      const text = sessionEndedNotice(known, dataSince, SESSION_ENDED_NOTICE)
+      setNotice((current) => (current === SESSION_ENDED_NOTICE ? text : current))
+    })
   }, [forget])
 
   // Keyed by the notice, so a join screen reached a second way starts in the right mode.
-  if (!auth) return <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} linkInvite={linkInvite} />
-  // Keyed by token: a different account never inherits the previous one's state.
-  return <Session key={auth.token} auth={auth} onSignedOut={onSignedOut} onSessionEnded={onSessionEnded} />
+  // V6-OPS §7: the not-persistent band sits above both screens.
+  return (
+    <>
+      <PersistenceBand />
+      {auth ? (
+        // Keyed by token: a different account never inherits the previous one's state.
+        <Session key={auth.token} auth={auth} onSignedOut={onSignedOut} onSessionEnded={onSessionEnded} />
+      ) : (
+        <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} linkInvite={linkInvite} />
+      )}
+    </>
+  )
 }
