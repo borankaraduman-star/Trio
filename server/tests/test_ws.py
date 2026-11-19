@@ -64,6 +64,7 @@ def test_ready_is_the_first_frame(trio, three):
             "channels",
             "voice",
             "activity",
+            "persistent",  # CONTRACT-V6-OPS §7
         }
         # Ali is the first user, so the owner (CONTRACT-V6-OPS §1).
         assert ready["user"] == {

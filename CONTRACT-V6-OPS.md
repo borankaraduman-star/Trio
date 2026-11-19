@@ -202,3 +202,37 @@ swallowed.
     meta (key TEXT PRIMARY KEY, value TEXT)                -- JSON values: last_backup
     client_errors (...)                                    -- §5
     attachments.deleted_at TEXT                            -- added on boot (UPGRADE_COLUMNS)
+
+## 7. Is the data on persistent storage?
+
+On Railway a service without a volume writes to the container's own disk,
+which every deploy throws away. At startup the server decides, for the
+directory holding `TRIO_DB_PATH` (`trio_server/persistence.py`):
+
+| signal (in order) | verdict |
+|---|---|
+| `TRIO_PERSISTENT_OVERRIDE` = `true` / `false` / `unknown` — **for tests only** (the e2e suite uses it to force the case below) | as given |
+| `RAILWAY_VOLUME_MOUNT_PATH` covers the data directory | `true` |
+| the data directory is on another device than `/` (`st_dev`) | `true` |
+| a `/proc/self/mountinfo` mount point (not `/`) covers it | `true` |
+| none of these, and `RAILWAY_ENVIRONMENT` (or `_NAME`) is set | `false` |
+| none of these, not on Railway | `null` (unknown: nothing is shown) |
+
+It never refuses to start; `false` is logged at ERROR. It also records in
+`meta` the database's first-open time (`first_open_at`, kept for ever) and a
+boot counter (`boot_count`, +1 per start).
+
+    GET /api/health   → {"ok", "version", "persistent": true|false|null, "data_since": ISO|null}
+    ready             + "persistent": true|false|null
+    overview.server   + "persistent", "data_since", "boot_count"
+
+`data_since` is public (health is unauthenticated) so that a signed-out client
+can tell a server whose data was just created.
+
+**client:** when `persistent === false`, a red band that cannot be closed, for
+everybody and on the join screen: "Kalıcı disk bağlı değil: bir sonraki
+güncellemede her şey silinir." Yönetim shows how to attach a volume. When a
+session ends (401 / 4401) and `data_since` is under 15 minutes old, the join
+screen says "Sunucu sıfırlandı, herkes yeniden katılmalı." instead of the
+device-code hint. Yönetim also warns when `TRIO_OWNER` is unset (the owner is
+the first to join) and when seats are free (`max_users` above the user count).

@@ -212,6 +212,7 @@ def create_app(
         await db.open()
         hub.load(await db.list_users(), await db.list_channels())
         hub.server = await db.get_server()
+        await app.state.record_boot()  # CONTRACT-V6-OPS §7
         # Not only on upload: a server nobody uploads to never swept at all.
         await sweep_orphans()
         await sweep_unreferenced_files()
@@ -274,7 +275,13 @@ def create_app(
 
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
-        return {"ok": True, "version": VERSION}
+        boot = app.state.boot  # CONTRACT-V6-OPS §7
+        return {
+            "ok": True,
+            "version": VERSION,
+            "persistent": boot["persistent"],
+            "data_since": boot["data_since"],
+        }
 
     @app.post("/api/join", status_code=201)
     async def join(request: Request) -> Any:

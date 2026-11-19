@@ -28,12 +28,13 @@ from fastapi import Depends, FastAPI, Request
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 
-from trio_server import admin
+from trio_server import admin, persistence
 from trio_server.config import Settings
 from trio_server.db import SQL_INT_MAX, Database, utc_iso
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import MAX_CONNECTIONS_PER_USER, Connection, Hub
 from trio_server.ice import IceProvider
+from trio_server.ops_schema import ensure_ops_schema, get_meta, set_meta_locked
 from trio_server.ratelimit import JoinGuard, client_address
 from trio_server.validation import clean_name, name_key
 from trio_server.version import VERSION
@@ -41,6 +42,8 @@ from trio_server.version import VERSION
 logger = logging.getLogger("trio")
 
 UserId = Annotated[int, PathParam(ge=1, le=SQL_INT_MAX)]
+FIRST_OPEN_KEY = "first_open_at"
+BOOT_COUNT_KEY = "boot_count"
 
 
 def owner_id_of(users: Iterable[tuple[int, str]], configured: str | None) -> int | None:
@@ -84,6 +87,8 @@ class OwnerAwareHub(Hub):
         super().__init__(now)
         self.configured_owner = configured_owner
         self.last_seen: dict[int, float] = {}
+        # CONTRACT-V6-OPS §7: decided once at startup (record_boot).
+        self.persistent: bool | None = None
 
     def owner_id(self) -> int | None:
         return owner_id_of(
@@ -92,6 +97,7 @@ class OwnerAwareHub(Hub):
 
     def ready_frame(self, user_id: int) -> dict[str, Any]:
         frame = super().ready_frame(user_id)
+        frame["persistent"] = self.persistent
         if self.owner_id() == user_id:
             frame["user"] = {**frame["user"], "is_owner": True}
         return frame
@@ -171,6 +177,34 @@ def register_owner_routes(
 
     started_at = now()
     invite_code = settings.invite_code.encode("utf-8")
+    data_dir = os.path.dirname(os.path.abspath(settings.db_path))
+    boot: dict[str, Any] = {"persistent": None, "data_since": None, "boot_count": None}
+    app.state.boot = boot
+
+    async def record_boot() -> None:
+        """Startup (CONTRACT-V6-OPS §7): persistence, the data's age, a boot counter.
+        Never stops the server from starting."""
+        try:
+            persistent = await asyncio.to_thread(persistence.detect_persistent, data_dir)
+        except Exception:  # noqa: BLE001 - unknown, never a failed start
+            logger.exception("storage.detect.failed")
+            persistent = None
+        persistence.log_verdict(persistent, data_dir)
+        boot["persistent"] = hub.persistent = persistent
+        try:
+            await ensure_ops_schema(db)
+            async with db.write_lock:
+                first = await get_meta(db, FIRST_OPEN_KEY)
+                if first is None:
+                    first = utc_iso(now())
+                    await set_meta_locked(db, FIRST_OPEN_KEY, first)
+                count = int(await get_meta(db, BOOT_COUNT_KEY) or 0) + 1
+                await set_meta_locked(db, BOOT_COUNT_KEY, count)
+            boot["data_since"], boot["boot_count"] = first, count
+        except Exception:  # noqa: BLE001 - a full disk must not stop the start
+            logger.exception("meta.boot.failed")
+
+    app.state.record_boot = record_boot
 
     async def owner_user(user: Annotated[dict[str, Any], Depends(current_user)]) -> dict[str, Any]:
         if await resolve_owner_id(db, settings) != user["id"]:
@@ -354,6 +388,9 @@ def register_owner_routes(
                 "uptime_seconds": max(0, round(clock - started_at)),
                 "python": platform.python_version(),
                 "owner_rule": "TRIO_OWNER" if settings.owner else "lowest_id",
+                "persistent": boot["persistent"],
+                "data_since": boot["data_since"],
+                "boot_count": boot["boot_count"],
             },
             "turn": turn_facts(),
             "limits": {
