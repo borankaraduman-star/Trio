@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { api, ApiError, loadInviteCode, type Auth, type LinkCode } from '../api'
 import { newerBuildIsLive } from '../lib/buildCheck'
-import { reloadBlocker } from '../lib/reloadGuard'
+import { messageFamilyBusy, reloadBlocker } from '../lib/reloadGuard'
 import { inviteLinkUrl } from '../lib/inviteLink'
 import { sendErrorMessage } from '../lib/attachments'
 import { typingLabel } from '../lib/grouping'
@@ -147,6 +147,13 @@ export function Session({
   // v4: edit, delete, reactions, replies, pins (useMessageFamily.ts).
   const family = useMessageFamily({ token, dispatch, stateRef, onLogout, onSendTimerDone: (nonce) => sendTimers.clear(nonce) })
   const familyActions = family.actions
+  /** v4: the family as last rendered, and whether a message's overlay is open (reload guard). */
+  const familyRef = useRef(family)
+  familyRef.current = family
+  const familyOverlayOpen = useRef(false)
+  const onFamilyOverlay = useCallback((open: boolean) => {
+    familyOverlayOpen.current = open
+  }, [])
   const replyRef = useRef(family.reply)
   replyRef.current = family.reply
 
@@ -177,6 +184,12 @@ export function Session({
       channel.items.some((item) => item.status !== 'sent'),
     ),
     profileEdit: identity.editing(),
+    messageAction: messageFamilyBusy({
+      editing: familyRef.current.editing,
+      reply: familyRef.current.reply,
+      pinsOpen: familyRef.current.pinsOpen,
+      overlayOpen: familyOverlayOpen.current,
+    }),
   }))
   const busyForNews = useCallback(() => reloadBlocker(reloadState.current()) !== null, [])
 
@@ -557,6 +570,7 @@ export function Session({
   const activeChannel = state.channels.find((channel) => channel.id === activeChannelId)
   const nameOf = (userId: number) => state.users[userId]?.name ?? `#${userId}`
   const familyNameOf = (userId: number) => state.users[userId]?.name ?? 'eski üye'
+  const familyUserOf = (userId: number) => state.users[userId]
   const pendingHere = attachments.pending(activeChannelId)
   const addFiles = (files: File[]) => {
     if (activeChannelId !== null) attachments.add(activeChannelId, files)
@@ -623,7 +637,13 @@ export function Session({
           <HashIcon size={20} />
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
           {activeChannel && (
-            <PinsButton family={family} pins={state.pins[activeChannel.id]} channelName={activeChannel.name} nameOf={familyNameOf} />
+            <PinsButton
+              family={family}
+              pins={state.pins[activeChannel.id]}
+              channelName={activeChannel.name}
+              nameOf={familyNameOf}
+              users={state.users}
+            />
           )}
         </header>
 
@@ -661,9 +681,11 @@ export function Session({
               users={state.users}
               family={{
                 nameOf: familyNameOf,
+                userOf: familyUserOf,
                 editingId: family.editing?.messageId ?? null,
                 jump: family.jump,
                 onJumpDone: familyActions.jumpDone,
+                onOverlayChange: onFamilyOverlay,
                 actions: familyActions,
               }}
             />
@@ -679,7 +701,11 @@ export function Session({
               onDraftChange={(value) => {
                 draft.current = value
               }}
-              replyBar={family.reply && <ReplyBar message={family.reply} onCancel={familyActions.cancelReply} />}
+              replyBar={family.reply && <ReplyBar
+                    message={family.reply}
+                    authorName={state.users[family.reply.author.id]?.name}
+                    onCancel={familyActions.cancelReply}
+                  />}
               onEscape={() => {
                 if (!family.reply) return false
                 familyActions.cancelReply()

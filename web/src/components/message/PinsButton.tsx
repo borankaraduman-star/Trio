@@ -1,4 +1,5 @@
 import type { ChannelPins } from '../../store'
+import type { Member } from '../../types'
 import type { MessageFamily } from '../../useMessageFamily'
 import { PinIcon } from './icons'
 import { PinsPanel } from './PinsPanel'
@@ -10,11 +11,14 @@ export function PinsButton({
   pins,
   channelName,
   nameOf,
+  users,
 }: {
   family: MessageFamily
   pins: ChannelPins | undefined
   channelName: string
   nameOf: (userId: number) => string
+  /** v4: current members, so a pin shows its author's current name and avatar. */
+  users?: Record<number, Member>
 }) {
   const { actions, pinsOpen } = family
   return (
@@ -36,6 +40,7 @@ export function PinsButton({
           pins={pins}
           anchor={family.pinsAnchor}
           nameOf={nameOf}
+          users={users}
           onClose={() => actions.setPinsOpen(false)}
           onRetry={actions.reloadPins}
           onUnpin={(message) => actions.togglePin(message)}

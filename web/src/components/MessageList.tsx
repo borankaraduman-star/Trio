@@ -6,7 +6,7 @@ import './message-list-jump.css'
 import type { ChannelMessages, UiMessage } from '../store'
 import { MessageAttachments } from './Attachments'
 import { Avatar } from './Avatar'
-import { resolveAuthor } from '../lib/identity'
+import { namesSignature, resolveAuthor, stablePeople, type People } from '../lib/identity'
 import type { Member, User } from '../types'
 import { MessageFamilyLayer, useRowFamily, type ListFamily, type RowFamily } from './message/MessageFamilyLayer'
 import { MessageActions } from './message/MessageActions'
@@ -36,6 +36,14 @@ const Content = memo(function Content({ text, after }: { text: string; after?: R
   )
 })
 
+/** The other people a row names: the reply's author, who reacted, who pinned. */
+function* namedIn(message: UiMessage): Generator<number> {
+  const reply = message.reply_to
+  if (reply && !reply.deleted) yield reply.author.id
+  for (const reaction of message.reactions ?? []) yield* reaction.user_ids
+  if (message.pinned_by != null) yield message.pinned_by
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   author = message.author,
@@ -56,6 +64,13 @@ const MessageRow = memo(function MessageRow({
   family?: RowFamily
   /** v4: this row is being edited in place. */
   editing?: boolean
+  /**
+   * v4: the current names of the other people this row shows (reply author,
+   * reactors, pinner; lib/identity.ts `namesSignature`). Only there so that a
+   * rename re-renders exactly the rows that show the renamed person; the
+   * names themselves are read through `family`.
+   */
+  names?: string
 }) {
   const time = timeLabel(message.created_at)
   family?.probe(message.key)
@@ -89,7 +104,13 @@ const MessageRow = memo(function MessageRow({
             <time dateTime={message.created_at}>{time}</time>
           </div>
         )}
-        {message.reply_to && family && <ReplyQuote reply={message.reply_to} onJump={family.onJump} />}
+        {message.reply_to && family && (
+          <ReplyQuote
+            reply={message.reply_to}
+            authorName={message.reply_to.deleted ? undefined : family.currentName(message.reply_to.author.id)}
+            onJump={family.onJump}
+          />
+        )}
         {editing && family ? (
           <MessageEditor
             initial={message.pendingEdit ?? message.content}
@@ -172,6 +193,9 @@ export function MessageList({
   const rows = useMemo(() => buildRows(channel.items), [channel.items])
   const { items, hasMore, loadingOlder, loaded } = channel
   const rowFamily = useRowFamily(family, myId)
+  // Names and avatars without presence: somebody coming online re-renders no row.
+  const peopleRef = useRef<People>({})
+  const people = useMemo(() => (peopleRef.current = stablePeople(peopleRef.current, users)), [users])
   const jumpHandled = useRef(0)
 
   const maybeLoadOlder = () => {
@@ -252,12 +276,13 @@ export function MessageList({
             <MessageRow
               key={row.key}
               message={row.message}
-              author={resolveAuthor(row.message.author, users)}
+              author={resolveAuthor(row.message.author, people)}
               showHeader={row.showHeader}
               former={isMember ? !isMember(row.message.author.id) : false}
               onRetry={onRetry}
               family={rowFamily.row}
               editing={family?.editingId === row.message.id && row.message.status === 'sent'}
+              names={family ? namesSignature(namedIn(row.message), people) : ''}
             />
           ),
         )}

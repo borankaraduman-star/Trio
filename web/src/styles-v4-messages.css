@@ -587,6 +587,11 @@ button.reply-quote:hover {
   border-radius: 10px;
 }
 
+.pin-item > .avatar {
+  flex: none;
+  margin: 8px 0 0 4px;
+}
+
 .pin-item + .pin-item {
   border-top: 1px solid var(--trio-border);
 }

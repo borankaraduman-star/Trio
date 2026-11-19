@@ -15,10 +15,11 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
   {
     version: '0.3.0',
     lines: [
-      'Profil fotoğrafı: Ayarlar › Hesap’tan bir görsel seç, kırp ve yükle; herkes hemen görür.',
-      'Adını Ayarlar › Hesap’tan değiştirebilirsin; eski mesajlarında da yeni adın görünür.',
-      'Sunucunun adı ve simgesi artık Ayarlar › Sunucu’dan değiştirilebiliyor.',
-      'Ayarların altında uygulamanın ve sunucunun sürümü yazıyor.',
+      'Profil fotoğrafı ve ad: Ayarlar › Hesap’tan değiştir; eski mesajlarında da yenisi görünür.',
+      'Sunucunun adı ve simgesi Ayarlar › Sunucu’dan değişiyor; Ayarların altında sürüm yazıyor.',
+      'Mesajlara tepki: üstüne gel ya da telefonda basılı tut, bir emoji seç; kimin verdiğini üzerine gelince görürsün.',
+      'Yanıtla: alıntı yanıtın üstünde durur, tıklayınca asıl mesaja gider. Önemli mesajları sabitle; başlıktaki Sabitlenenler hepsini gösterir.',
+      'Kendi mesajını yerinde düzenle (boş yazı kutusunda ↑ son mesajını açar) ya da sil; düzenlenen mesajda “(düzenlendi)” yazar.',
     ],
   },
   {

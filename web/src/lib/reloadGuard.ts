@@ -17,14 +17,36 @@ export interface ReloadState {
   unsentMessages: boolean
   /** v4: the picture cropper is open, or a name (own or the server's) is typed but not saved. */
   profileEdit: boolean
+  /**
+   * v4: a message being edited in place, a reply being composed, or the emoji
+   * picker, the action menu/sheet, the delete confirmation or the pins panel
+   * open (see `messageFamilyBusy`).
+   */
+  messageAction: boolean
 }
 
 export type ReloadBlocker = keyof ReloadState
 
 /** The first thing a reload would lose, or null when it is safe. */
 export function reloadBlocker(state: ReloadState): ReloadBlocker | null {
-  for (const key of ['inCall', 'dialogOpen', 'pendingFiles', 'draft', 'unsentMessages', 'profileEdit'] as const) {
+  for (const key of ['inCall', 'dialogOpen', 'pendingFiles', 'draft', 'unsentMessages', 'profileEdit', 'messageAction'] as const) {
     if (state[key]) return key
   }
   return null
+}
+
+/** What the message family (useMessageFamily, MessageFamilyLayer) has open. */
+export interface MessageFamilyOpen {
+  /** The message being edited in place, or null. */
+  editing: unknown
+  /** The message a reply is being composed to, or null. */
+  reply: unknown
+  pinsOpen: boolean
+  /** The emoji picker, the action menu or sheet, or the delete confirmation. */
+  overlayOpen: boolean
+}
+
+/** Whether a reload would throw away something the person is doing with a message. */
+export function messageFamilyBusy(open: MessageFamilyOpen): boolean {
+  return open.editing != null || open.reply != null || open.pinsOpen || open.overlayOpen
 }

@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type HTMLAttributes, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FamilyActions, JumpRequest } from '../../useMessageFamily'
 import type { UiMessage } from '../../store'
-import type { Message } from '../../types'
+import type { Message, User } from '../../types'
 import { ActionMenu, type MenuChoice } from './ActionMenu'
 import { DeleteConfirm } from './DeleteConfirm'
 import { EmojiPicker } from './EmojiPicker'
@@ -19,9 +19,13 @@ import type { AnchorRect } from './Popover'
 /** Passed down by Session. */
 export interface ListFamily {
   nameOf: (userId: number) => string
+  /** v4: a current member as shown now (name, avatar), or undefined for somebody no longer here. */
+  userOf?: (userId: number) => User | undefined
   editingId: number | null
   jump: JumpRequest | null
   onJumpDone: () => void
+  /** v4: the picker, the menu/sheet or the delete confirmation opened or closed (the reload guard asks). */
+  onOverlayChange?: (open: boolean) => void
   actions: FamilyActions
 }
 
@@ -29,6 +33,8 @@ export interface ListFamily {
 export interface RowFamily {
   meId: number
   nameOf: (userId: number) => string
+  /** The current name of a member, undefined for a former one (then a snapshot is shown). */
+  currentName: (userId: number) => string | undefined
   onAction: (message: Message, kind: ActionKind, anchor: AnchorRect) => void
   onToggleReaction: (message: Message, key: string) => void
   onJump: (messageId: number) => void
@@ -83,6 +89,7 @@ export function useRowFamily(family: ListFamily | undefined, meId: number): RowF
     return {
       meId,
       nameOf: (id) => latest.current?.nameOf(id) ?? `#${id}`,
+      currentName: (id) => latest.current?.userOf?.(id)?.name,
       onAction: (message, kind, anchor) => {
         if (kind === 'react') setOverlay({ kind: 'picker', messageId: message.id, anchor })
         else if (kind === 'menu') setOverlay({ kind: 'menu', messageId: message.id, anchor })
@@ -191,6 +198,12 @@ export function useRowFamily(family: ListFamily | undefined, meId: number): RowF
   useEffect(() => () => {
     if (press.current) clearTimeout(press.current.timer)
   }, [])
+
+  const open = overlay !== null
+  useEffect(() => {
+    latest.current?.onOverlayChange?.(open)
+    return () => latest.current?.onOverlayChange?.(false)
+  }, [open])
 
   return { row, gestures, overlay, setOverlay, reveal }
 }
