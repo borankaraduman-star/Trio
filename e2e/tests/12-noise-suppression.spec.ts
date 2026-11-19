@@ -46,6 +46,22 @@ test('noise suppression: RNNoise runs in the built client; toggling keeps the ca
   await joinVoice(ayse)
   await joinVoice(mehmet)
   await expect(mehmet.page.getByTestId(`remote-audio-${ayse.user.id}`)).toHaveCount(1)
+  // A join is two negotiations, one per side's microphone, taking turns (voice.ts). The
+  // "nothing renegotiates" snapshot below must come after BOTH: Ayşe has Mehmet's audio,
+  // and both connections are stable. On a slow machine the second one was still running
+  // when the snapshot was taken, and its answer read as a renegotiation by the toggle.
+  await expect(ayse.page.getByTestId(`remote-audio-${mehmet.user.id}`)).toHaveCount(1)
+  for (const page of [ayse.page, mehmet.page]) {
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as unknown as { __trioPcs: RTCPeerConnection[] }).__trioPcs
+            .filter((pc) => pc.connectionState !== 'closed')
+            .every((pc) => pc.signalingState === 'stable' && pc.currentRemoteDescription !== null),
+        ),
+      )
+      .toBe(true)
+  }
 
   // Active, from the bundle the server serves: the wasm and the worklet module are local assets.
   await expect(ayse.page.getByTestId('btn-settings')).toHaveAttribute('data-noise', 'active')
