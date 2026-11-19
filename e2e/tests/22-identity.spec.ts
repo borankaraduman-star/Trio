@@ -12,6 +12,7 @@ import {
   closeSettings,
   drawPicture,
   expectDecoded,
+  expectSeen,
   fetchPicture,
   hasExif,
   openSettings,
@@ -89,9 +90,7 @@ test('an avatar: cropped and re-encoded without EXIF, seen by everyone everywher
 
   // In the voice room the speaking ring goes around the picture (the fake microphone beeps).
   await expectHearing(mehmet, ayse)
-  await expect(mehmet.page.locator(`[data-testid="voice-user-${ayse.user.id}"][data-speaking="true"] .avatar.speaking.has-image`)).toBeVisible({
-    timeout: 20_000,
-  })
+  await expectSeen(mehmet.page, `[data-testid="voice-user-${ayse.user.id}"][data-speaking="true"] .avatar.speaking.has-image`)
 
   // The same file again changes nothing: the same URL.
   await apiAvatar(ayse.token, { name: 'again.webp', mimeType: 'image/webp', buffer: stored.bytes })

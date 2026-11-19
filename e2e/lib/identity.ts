@@ -174,3 +174,34 @@ export async function giveAvatars(people: Person[]): Promise<void> {
     await apiAvatar(person.token, { name: 'avatar.png', mimeType: 'image/png', buffer })
   }
 }
+
+/**
+ * That `selector` matched a visible element at SOME moment within `timeout`.
+ * For the speaking ring under the fake microphone: it beeps briefly once a
+ * second and the client shows "speaking" for 300 ms after a loud 100 ms poll,
+ * so the ring is on for a few hundred ms at a time — shorter than the gaps of
+ * a polling `toBeVisible`. A MutationObserver in the page sees every state.
+ */
+export async function expectSeen(page: Page, selector: string, timeout = 20_000): Promise<void> {
+  const handle = await page.evaluateHandle((sel) => {
+    const record = { seen: false }
+    const check = () => {
+      const element = document.querySelector(sel)
+      if (!element) return
+      const box = element.getBoundingClientRect()
+      if (box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== 'hidden') record.seen = true
+    }
+    check()
+    const observer = new MutationObserver(check)
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'data-speaking'] })
+    return { record, stop: () => observer.disconnect() }
+  }, selector)
+  try {
+    await expect
+      .poll(() => handle.evaluate((watch) => watch.record.seen), { timeout, message: `${selector} should show` })
+      .toBe(true)
+  } finally {
+    await handle.evaluate((watch) => watch.stop())
+    await handle.dispose()
+  }
+}
