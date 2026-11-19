@@ -14,11 +14,13 @@ import { ReactionChips } from './message/ReactionChips'
 import { ReplyQuote } from './message/ReplyQuote'
 import { MessageEditor } from './message/MessageEditor'
 import { EditedMark, PinMark } from './message/MessageMarks'
+import { MentionText } from './notify/MentionText'
+import { mentionNamesOf, mentionRowClass, type MentionNames } from '../lib/notify/mentions'
 
 const NEAR_EDGE_PX = 120
 
 /** Message text: plain text nodes and anchors. Never HTML. */
-const Content = memo(function Content({ text, after }: { text: string; after?: ReactNode }) {
+const Content = memo(function Content({ text, after, mention }: { text: string; after?: ReactNode; mention?: MentionNames }) {
   const parts = useMemo(() => linkify(text), [text])
   return (
     <div className="message-content">
@@ -27,6 +29,8 @@ const Content = memo(function Content({ text, after }: { text: string; after?: R
           <a key={index} href={part.href} target="_blank" rel="noopener noreferrer">
             {part.value}
           </a>
+        ) : mention ? (
+          <MentionText key={index} value={part.value} mention={mention} />
         ) : (
           <span key={index}>{part.value}</span>
         ),
@@ -52,7 +56,10 @@ const MessageRow = memo(function MessageRow({
   onRetry,
   family,
   editing = false,
+  mention,
 }: {
+  /** V6: everybody's names and mine, for `@ad` (lib/notify/mentions.ts). */
+  mention?: MentionNames
   message: UiMessage
   /** v4: the author as shown now (current name and avatar), else the message's snapshot. */
   author?: User
@@ -77,7 +84,7 @@ const MessageRow = memo(function MessageRow({
   const sent = message.status === 'sent'
   return (
     <li
-      className={`message${showHeader ? ' with-header' : ''} ${message.status}${message.pinned_at ? ' pinned' : ''}`}
+      className={`message${showHeader ? ' with-header' : ''} ${message.status}${message.pinned_at ? ' pinned' : ''}${mentionRowClass(message.content, message.author.id, mention)}`}
       data-testid="message"
       data-key={message.key}
       data-status={message.status}
@@ -120,6 +127,7 @@ const MessageRow = memo(function MessageRow({
           />
         ) : (message.pendingEdit ?? message.content) !== '' ? (
           <Content
+            mention={mention}
             text={message.pendingEdit ?? message.content}
             after={(message.edited_at || message.pendingEdit !== undefined) && <EditedMark at={message.edited_at ?? null} />}
           />
@@ -199,6 +207,7 @@ export function MessageList({
   const peopleRef = useRef<People>({})
   const people = useMemo(() => (peopleRef.current = stablePeople(peopleRef.current, users)), [users])
   const jumpHandled = useRef(0)
+  const mention = useMemo(() => mentionNamesOf(people, myId), [people, myId])
 
   /** Where the reader is, from the DOM as they see it: bottom or not, and the row being read. */
   const observe = (element: HTMLDivElement) => {
@@ -304,6 +313,7 @@ export function MessageList({
               family={rowFamily.row}
               editing={family?.editingId === row.message.id && row.message.status === 'sent'}
               names={family ? namesSignature(namedIn(row.message), people) : ''}
+              mention={mention}
             />
           ),
         )}

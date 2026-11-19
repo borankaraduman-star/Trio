@@ -1,0 +1,295 @@
+/* CONTRACT-V6-PUSH: notifications settings, the install card, the channel menu,
+ * mention emphasis. Imported before theme.css; uses its palette variables only. */
+
+/* --- mentions in the message list ----------------------------------------- */
+
+.message.mentions-me {
+  background: rgb(238 153 127 / 7%);
+  box-shadow: inset 2px 0 0 rgb(238 153 127 / 70%);
+}
+
+.message.mentions-me:hover {
+  background: rgb(238 153 127 / 11%);
+}
+
+.mention {
+  font-weight: 600;
+  color: var(--trio-text, #f2f1ed);
+  border-radius: 4px;
+  padding: 0 2px;
+  background: rgb(160 166 178 / 16%);
+}
+
+.mention.mention-me {
+  color: var(--trio-coral, #ee997f);
+  background: rgb(238 153 127 / 16%);
+}
+
+/* --- Ayarlar › Bildirimler -------------------------------------------------- */
+
+.notify-state {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.notify-state-denied,
+.notify-state-ios-needs-home-screen,
+.notify-state-unsupported,
+.notify-state-insecure {
+  padding: 10px 12px;
+  border: 1px solid var(--trio-border);
+  border-radius: 10px;
+  background: var(--trio-base);
+  color: var(--trio-text);
+}
+
+.notify-section > .primary {
+  margin-bottom: 10px;
+}
+
+.notify-error {
+  color: var(--trio-danger) !important;
+}
+
+p.notify-error {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+
+.notify-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 4px 0 12px;
+}
+
+.notify-test .settings-hint {
+  flex: 1 1 200px;
+  margin: 0;
+}
+
+.notify-devices,
+.notify-levels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.notify-device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--trio-border);
+  border-radius: 10px;
+  background: var(--trio-base);
+}
+
+.notify-device-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--trio-text);
+}
+
+.notify-device-name .settings-hint {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.notify-here-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  vertical-align: 1px;
+  color: var(--trio-base);
+  background: var(--trio-online);
+}
+
+.notify-levels li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notify-levels label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--trio-text);
+}
+
+.notify-levels select,
+.notify-quiet select,
+.notify-quiet input[type='time'] {
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--trio-border);
+  border-radius: 8px;
+  background: var(--trio-raised);
+  color: var(--trio-text);
+  font: inherit;
+  font-size: 14px;
+  color-scheme: dark;
+}
+
+.notify-levels select {
+  flex: 0 0 auto;
+  width: 9.5rem;
+}
+
+.notify-quiet {
+  margin: 12px 0 0;
+  padding: 10px 12px 4px;
+  border: 1px solid var(--trio-border);
+  border-radius: 10px;
+}
+
+.notify-quiet legend {
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.notify-quiet-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 4px 0 8px;
+}
+
+.notify-quiet-times label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.notify-quiet-times .notify-tz {
+  flex: 1 1 180px;
+}
+
+.notify-quiet-times .notify-tz select {
+  width: 100%;
+}
+
+/* --- the channel's context menu --------------------------------------------- */
+
+.channel-notify-menu {
+  position: fixed;
+  z-index: 60;
+  padding: 6px;
+  border: 1px solid var(--trio-border);
+  border-radius: 12px;
+  background: var(--trio-raised);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+}
+
+.channel-notify-title {
+  padding: 4px 8px 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-notify-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--trio-text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.channel-notify-menu button:hover,
+.channel-notify-menu button:focus-visible {
+  background: var(--trio-border);
+}
+
+.channel-notify-menu .check {
+  display: inline-block;
+  width: 16px;
+  color: var(--trio-coral);
+}
+
+/* --- "Ana ekrana ekle" ----------------------------------------------------- */
+
+.install-card {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 35;
+  width: min(360px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  padding: 14px 16px 12px;
+  border: 1px solid var(--trio-border);
+  border-radius: 16px;
+  background: var(--trio-raised);
+  color: var(--trio-text);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 50%);
+}
+
+.install-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.install-card-head img {
+  border-radius: 10px;
+}
+
+.install-card h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.install-card p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.install-steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.install-glyph {
+  vertical-align: -3px;
+  color: #5ea2ff;
+}
+
+.install-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

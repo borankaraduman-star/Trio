@@ -11,6 +11,7 @@ import { AccountSection, type AccountProps } from './AccountSection'
 import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
 import { GameShareSetting } from './GameActivity'
+import { NotificationsSection } from './notify/NotificationsSection'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -331,6 +332,7 @@ export function SettingsDialog({
           />
         )}
         <GameShareSetting />
+        <NotificationsSection />
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
         {serverSettings && <ServerSection settings={serverSettings} />}

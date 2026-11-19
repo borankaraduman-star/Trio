@@ -51,6 +51,8 @@ import { PinsButton } from './message/PinsButton'
 import { ReplyBar } from './message/ReplyBar'
 import { FamilyNotice } from './message/FamilyNotice'
 import { activityStore, GameForwarder, gameShare, gameStatusBridge } from '../gameActivity'
+import { notifyHub } from '../lib/notify/notifyHub'
+import { NotifyBridge } from './notify/NotifyBridge'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -130,13 +132,10 @@ export function Session({
         deafened: () => engine.getSnapshot().deafened,
         nameOf: (id) => namesRef.current.user(id),
         channelName: (id) => namesRef.current.channel(id),
+        // V6: through the service worker, with the push's tags (lib/notify/notifyHub.ts).
         notify: (title, body, tag, silent) => {
-          if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-          try {
-            new Notification(title, { body, tag, silent })
-          } catch {
-            // Some browsers only allow notifications from a service worker.
-          }
+          const voice = /^trio-voice-(\d+)$/.exec(tag)
+          void notifyHub.local(voice ? 'voice' : 'ring', voice ? Number(voice[1]) : null, title, body, { silent })
         },
       }),
   )
@@ -322,6 +321,7 @@ export function Session({
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
       activityStore.handleEvent(event as unknown as { type: string } & Record<string, unknown>)
       if (event.type === 'ready') gameForwarder.onReady()
+      if (event.type === 'ready') notifyHub.connected()
       engine.handleEvent(event)
       alerts.handleEvent(event, (channelId) => (before.voice[channelId] ?? []).map((p) => p.user_id))
       familyActions.onEvent(event, before)
@@ -367,22 +367,9 @@ export function Session({
         engine.handleReady()
       } else if (event.type === 'message.new') {
         const { message } = event
-        if (
-          message.author.id !== before.me.id &&
-          !isViewing() &&
-          typeof Notification !== 'undefined' &&
-          Notification.permission === 'granted'
-        ) {
-          const channel = before.channels.find((c) => c.id === message.channel_id)
-          try {
-            new Notification(`${message.author.name} — #${channel?.name ?? ''}`, {
-              body: message.content.slice(0, 200),
-              tag: `trio-${message.channel_id}`,
-            })
-          } catch {
-            // Some browsers only allow notifications from a service worker.
-          }
-        }
+        // V6: one path with the pushes (skipped when this device gets them pushed).
+        const channel = before.channels.find((c) => c.id === message.channel_id)
+        notifyHub.localMessage(message, channel?.name ?? '')
       }
     }
 
@@ -572,15 +559,8 @@ export function Session({
   )
 
   const askNotifications = useCallback(() => {
-    if (typeof Notification === 'undefined') return
-    try {
-      const result = Notification.requestPermission(() => setCanAskNotifications(notificationsAskable()))
-      if (result && typeof result.then === 'function') {
-        void result.then(() => setCanAskNotifications(notificationsAskable())).catch(() => undefined)
-      }
-    } catch {
-      setCanAskNotifications(false)
-    }
+    // V6: asks (in the click) and subscribes this device to pushes when it can.
+    void notifyHub.enableHere().finally(() => setCanAskNotifications(notificationsAskable()))
   }, [])
 
   const selectChannel = useCallback((channelId: number) => {
@@ -891,6 +871,18 @@ export function Session({
         />
       )}
 
+      <NotifyBridge
+        token={token}
+        myId={state.me.id}
+        ready={state.ready}
+        channels={state.channels}
+        users={state.users}
+        activeChannelId={activeChannelId}
+        send={(event) => socket.send(event)}
+        onSelectChannel={selectChannel}
+        onOpenDrawer={() => setDrawerOpen(true)}
+        onUnauthorized={onLogout}
+      />
       <WhatsNewCard ready={state.ready} busy={busyForNews} paused={calls.incoming !== null} />
 
       <div hidden>
