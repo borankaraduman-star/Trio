@@ -352,6 +352,16 @@ describe('voice', () => {
     })
   })
 
+  it('marks a participant reconnecting during the grace and clears it on resume (V4 A1)', () => {
+    let state = server(ready(), { type: 'voice.state', channel_id: 20, user_id: 2, ...flags, reconnecting: true })
+    expect(state.voice[20][0].reconnecting).toBe(true)
+    state = server(state, { type: 'voice.joined', channel_id: 20, user_id: 2, ...flags, reconnecting: false })
+    expect(state.voice[20]).toEqual([{ user_id: 2, ...flags }])
+    state = server(state, { type: 'voice.state', channel_id: 20, user_id: 2, ...flags, reconnecting: true })
+    state = server(state, { type: 'voice.state', channel_id: 20, user_id: 2, ...flags, muted: true })
+    expect(state.voice[20][0].reconnecting).toBeUndefined()
+  })
+
   it('leaves the state untouched for frames the engine owns', () => {
     const before = ready()
     expect(server(before, { type: 'voice.peers', channel_id: 20, peers: [2] })).toBe(before)

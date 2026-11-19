@@ -189,6 +189,11 @@ function cameraFlag(event: { camera?: unknown }): { camera?: boolean } {
   return typeof event.camera === 'boolean' ? { camera: event.camera } : {}
 }
 
+/** V4 A1: only a real `true` marks a participant as reconnecting. */
+function reconnectingFlag(event: { reconnecting?: unknown }): { reconnecting?: boolean } {
+  return event.reconnecting === true ? { reconnecting: true } : {}
+}
+
 function reduceServer(state: AppState, event: ServerEvent, now: number, viewing: boolean): AppState {
   switch (event.type) {
     case 'ready': {
@@ -340,6 +345,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           deafened: event.deafened,
           screensharing: event.screensharing,
           ...cameraFlag(event),
+          ...reconnectingFlag(event),
         },
       ]
       return { ...state, voice }
@@ -372,6 +378,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
                   deafened: event.deafened,
                   screensharing: event.screensharing,
                   ...cameraFlag(event),
+                  ...reconnectingFlag(event),
                 }
               : participant,
           ),

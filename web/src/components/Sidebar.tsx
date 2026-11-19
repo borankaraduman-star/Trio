@@ -196,8 +196,10 @@ export function Sidebar(props: SidebarProps) {
                       return (
                         <li
                           key={participant.user_id}
-                          className="voice-user"
+                          className={`voice-user${participant.reconnecting ? ' reconnecting' : ''}`}
                           data-testid={`voice-user-${participant.user_id}`}
+                          data-reconnecting={participant.reconnecting === true}
+                          title={participant.reconnecting ? 'Yeniden bağlanıyor…' : undefined}
                           data-muted={participant.muted}
                           data-deafened={participant.deafened}
                           data-screensharing={participant.screensharing}

@@ -41,6 +41,11 @@ export interface VoiceParticipant {
   screensharing: boolean
   /** v2: always sent by the server; missing = false. */
   camera?: boolean
+  /**
+   * V4 A1: their connection dropped and the server holds their place for a
+   * 10 s grace before `voice.left`. Missing (older servers) = false.
+   */
+  reconnecting?: boolean
 }
 
 /** v2: which of a peer's outgoing streams is the camera and which the screen. */

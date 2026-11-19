@@ -675,3 +675,8 @@ textarea:focus,
   border-radius: 6px;
   background: var(--trio-raised);
 }
+
+/* V4 A1: a participant whose connection dropped, held for the server's grace. */
+.voice-user.reconnecting {
+  opacity: 0.45;
+}

@@ -74,8 +74,18 @@ test('voice: three people hear each other; mute, deafen and hang-up propagate', 
   await expectHearing(mehmet, ayse)
   await expectHearing(ayse, zeynep)
 
-  // Closing a tab mid-call removes that user for the others.
+  // Closing a tab mid-call: the server holds her place for a 10 s grace
+  // (CONTRACT-V4 A1), shown dimmed as reconnecting, then removes her.
+  // (Hanging up, above, sends voice.leave and stays immediate.)
+  const closed = Date.now()
   await zeynep.context.close()
+  for (const viewer of [ayse, mehmet]) {
+    await expect(row(viewer, zeynep)).toHaveAttribute('data-reconnecting', 'true')
+  }
+  expect(Date.now() - closed).toBeLessThan(10_000)
+  for (const viewer of [ayse, mehmet]) {
+    await expect(viewer.page.locator('[data-testid^="voice-user-"]')).toHaveCount(2, { timeout: 15_000 })
+  }
   await expectRoom([ayse, mehmet], [ayse, mehmet])
   await expect(ayse.page.getByTestId(`remote-audio-${zeynep.user.id}`)).toHaveCount(0)
   await expectHearing(ayse, mehmet)
