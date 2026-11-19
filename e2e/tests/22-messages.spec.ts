@@ -235,9 +235,14 @@ test('reactions: the limit is a quiet notice; a reaction far up does not move an
   // Zeynep reads far up in the history.
   await scrollUpTo(zeynep.page, exactRow(zeynep.page, 'geçmiş 20'))
   const reading = exactRow(zeynep.page, 'geçmiş 30')
-  await reading.evaluate((element) => {
+  await expect(zeynep.page.locator('.list-note', { hasText: 'Eski mesajlar yükleniyor' })).toHaveCount(0)
+  await reading.evaluate(async (element) => {
     const list = element.closest<HTMLElement>('[data-testid="message-list"]')!
+    const heard = new Promise((resolve) => list.addEventListener('scroll', resolve, { once: true }))
+    const from = list.scrollTop
     list.scrollTop += element.getBoundingClientRect().top - list.getBoundingClientRect().top - 40
+    // As a person's scroll: the list hears the scroll event (and records what is being read) first.
+    if (list.scrollTop !== from) await heard
   })
   const before = await rowTop(zeynep, 'geçmiş 30')
   // Above her view, in her view, and at the bottom.
