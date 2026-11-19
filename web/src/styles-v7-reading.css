@@ -133,3 +133,28 @@
     min-height: 44px;
   }
 }
+
+/* --- the device code's QR -------------------------------------------------------- */
+.device-code-qr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.device-code-qr .qr-code {
+  flex: none;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.device-code-qr .link-code-help {
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .device-code-qr {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

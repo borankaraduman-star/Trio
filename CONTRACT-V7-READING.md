@@ -160,3 +160,21 @@ before (unread per device in `localStorage`).
 - On `channel.deleted` a client forgets the channel: its messages, unread,
   marks, pins, typing, divider and this tab's draft; when it was open the
   first remaining text channel opens.
+
+## 7. A device code as a QR
+
+- Where a device code is shown (Ayarlar › Hesap › Cihaz ekle) a QR is drawn
+  beside it (`data-testid="link-code-qr"`), encoding
+  `<origin>/#cihaz=<code>` (`lib/deviceLink.ts`). It is generated in the page
+  (`qrcode-generator`, MIT, bundled; error correction M; an SVG of dark
+  modules on white with a four-module quiet zone): no image is fetched and
+  nothing leaves the device.
+- The code is in the FRAGMENT, never the query string: a browser does not send
+  it to the server, so it is in no access log or proxy (CONTRACT-V3 §2's code
+  is a credential for ten minutes).
+- Opening such a link: the page reads `#cihaz=` (or `#device=`) ONCE on load,
+  normalises it (case, spaces and dashes; a value that cannot be a code is
+  dropped) and removes it from the address bar at once (`history.replaceState`,
+  other fragment keys such as `#davet=` kept). Signed out, the join screen
+  opens on "Zaten hesabım var" with the code filled in; the person still taps
+  "Giriş yap" (nothing is redeemed without a tap). Signed in, it is dropped.
