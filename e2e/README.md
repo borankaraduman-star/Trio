@@ -58,8 +58,15 @@ a wider font and moves what sits under a finger at 390 px. Both can be
 switched on locally, for any spec or shard:
 
 ```bash
-TRIO_E2E_CI_FONTS=1 TRIO_E2E_CPU_THROTTLE=4 taskset -c 0,1 npx playwright test --shard=3/4
+TRIO_E2E_CI_FONTS=1 TRIO_E2E_CPU_THROTTLE=2 npx playwright test --shard=3/4
 ```
+
+Measured on 19 November 2026, a GitHub runner took about as long per shard as
+this 4-core machine (shard 2: 11.9 min there, 11.5 here), so the fonts are the
+difference that matters; a throttle of 2 is a little slower than a runner and
+is what the whole suite passes with. `TRIO_E2E_CPU_THROTTLE=4` under
+`taskset -c 0,1` is a stress test well beyond a runner: there three media-heavy
+specs (14, 24, 13) miss their real-time windows.
 
 `TRIO_E2E_CI_FONTS=1` points the browser's fontconfig at `fixtures/fonts-ci.conf`
 (the machine's fonts minus Inter); `TRIO_E2E_CPU_THROTTLE=N` slows the main
