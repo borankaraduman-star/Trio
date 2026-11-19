@@ -116,6 +116,7 @@ Chromium 153 facts the specs depend on, measured here:
 | `23-messages` | CONTRACT-V4 B for all three: edit in place (Enter/Esc, the "(düzenlendi)" mark, up-arrow edits the last message, only the author may edit or delete); delete (gone for everybody, its file 404s, the quota comes back); reactions aggregated and toggled, names in the tooltip, a reaction re-renders only its own row, the 20-key limit as a quiet notice, a reaction far up does not move a reader; a reply's quote for everybody, a jump to an older page, the quote following the target's edit and deletion; pins newest first, jump and unpin, the 50-pin limit; a reconnect in the middle converging; the long-press sheet and picker at 390 px |
 | `24-identity-screenshots` | `13-avatars.png`, `14-profile-settings.png`, `14b-avatar-cropper.png` |
 | `25-message-screenshots` | `11-reactions-reply.png`, `12-pins.png`, `15-mobile-sheet.png` (with the three avatars) |
+| `26-scroll-anchor` | a scroll followed by a render in the same task (before the browser's scroll event) keeps the reader where they scrolled, at the bottom and up in history; two people reacting in bursts above, in and below the view while the reader's avatar pictures arrive late, under 6x CPU throttling, at 1280 and 390 px, move the row being read by 0 px |
 
 ## Screenshots
 
