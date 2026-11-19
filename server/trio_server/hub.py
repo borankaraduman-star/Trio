@@ -104,6 +104,8 @@ class VoiceMember:
     deafened: bool = False
     screensharing: bool = False
     camera: bool = False
+    # CONTRACT-V6-VOICE: the member is away (auto-AFK); missing on the wire = false.
+    afk: bool = False
     # App-clock time the grace ends; None when not reconnecting.
     grace_until: float | None = None
     # The client's random id for this call (``voice.join {session}``), or None.
@@ -119,6 +121,7 @@ class VoiceMember:
             "deafened": self.deafened,
             "screensharing": self.screensharing,
             "camera": self.camera,
+            "afk": self.afk,
             "reconnecting": self.reconnecting,
         }
 
@@ -374,6 +377,7 @@ class Hub:
         screensharing: bool = False,
         resume: bool = False,
         session: str | None = None,
+        afk: bool = False,
     ) -> None:
         """Leave wherever the user was, then join, bound to ``conn``.
 
@@ -416,6 +420,7 @@ class Hub:
             camera=camera,
             screensharing=screensharing,
             session=session,
+            afk=afk,
         )
         members[user_id] = member
         self.voice_of[user_id] = channel_id
@@ -444,11 +449,13 @@ class Hub:
         deafened: bool,
         screensharing: bool,
         camera: bool = False,
+        afk: bool = False,
     ) -> None:
         channel_id = self.voice_of[user_id]
         member = self.voice[channel_id][user_id]
         member.muted, member.deafened = muted, deafened
         member.screensharing, member.camera = screensharing, camera
+        member.afk = afk
         self.broadcast(
             {"type": "voice.state", "channel_id": channel_id, "user_id": user_id, **member.flags()}
         )

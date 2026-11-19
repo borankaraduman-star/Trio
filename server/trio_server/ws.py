@@ -261,6 +261,7 @@ class Session:
         camera = _bool(frame, "camera", default=False)
         screensharing = _bool(frame, "screensharing", default=False)
         resume = _bool(frame, "resume", default=False)
+        afk = _bool(frame, "afk", default=False)
         session = frame.get("session")
         if session is not None and not (
             isinstance(session, str) and 1 <= len(session) <= VOICE_SESSION_MAX
@@ -275,6 +276,7 @@ class Session:
             screensharing=screensharing,
             resume=resume,
             session=session,
+            afk=afk,
         )
 
     async def on_voice_ring(self, frame: dict[str, Any]) -> None:
@@ -311,8 +313,9 @@ class Session:
         deafened = _bool(frame, "deafened")
         screensharing = _bool(frame, "screensharing")
         camera = _bool(frame, "camera", default=False)
+        afk = _bool(frame, "afk", default=False)
         self._own_voice_channel()
-        self.hub.voice_state(self.user["id"], muted, deafened, screensharing, camera)
+        self.hub.voice_state(self.user["id"], muted, deafened, screensharing, camera, afk)
 
     async def on_signal(self, frame: dict[str, Any]) -> None:
         to = frame.get("to")

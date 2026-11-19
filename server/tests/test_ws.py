@@ -93,6 +93,7 @@ def test_ready_carries_who_is_in_voice(trio, three):
                         "deafened": False,
                         "screensharing": False,
                         "camera": False,
+                        "afk": False,
                         "reconnecting": False,
                     }
                 ]
@@ -309,6 +310,7 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "deafened": False,
             "screensharing": False,
             "camera": False,
+            "afk": False,
             "reconnecting": False,
             "resumed": False,
         }
@@ -331,6 +333,7 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "deafened": True,
             "screensharing": False,
             "camera": False,
+            "afk": False,
             "reconnecting": False,
             "resumed": False,
         }
@@ -353,6 +356,7 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "deafened": False,
             "screensharing": True,
             "camera": False,
+            "afk": False,
             "reconnecting": False,
         }
         for sock in (a, b, c):
@@ -420,6 +424,7 @@ def test_joining_again_from_another_channel_leaves_the_old_one_first(trio, three
             "deafened": False,
             "screensharing": False,
             "camera": False,
+            "afk": False,
             "reconnecting": False,
             "resumed": False,
         }

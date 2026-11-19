@@ -50,6 +50,7 @@ def test_a_resume_inside_the_grace_keeps_the_member_without_voice_left(trio, thr
             "deafened": False,
             "screensharing": False,
             "camera": False,
+            "afk": False,
             "reconnecting": True,
         }
         expect(a, "presence")  # Berk had no other socket
@@ -84,6 +85,7 @@ def test_a_resume_inside_the_grace_keeps_the_member_without_voice_left(trio, thr
                 "deafened": False,
                 "screensharing": True,
                 "camera": True,
+                "afk": False,
                 "reconnecting": False,
                 "resumed": True,
             }
