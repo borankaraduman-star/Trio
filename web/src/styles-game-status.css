@@ -45,3 +45,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The member list is narrow: let the line take two lines there, so the zone
+   (the interesting part) is not the part cut off. */
+.member .game-activity {
+  align-items: flex-start;
+}
+
+.member .game-activity-class {
+  margin-top: 5px;
+}
+
+.member .game-activity-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
