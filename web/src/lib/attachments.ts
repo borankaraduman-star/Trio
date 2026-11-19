@@ -24,6 +24,14 @@ export function attachmentKind(contentType: string): AttachmentKind {
   return 'file'
 }
 
+/**
+ * CONTRACT-V6-OPS §4: a file its uploader deleted arrives as `{id, filename,
+ * deleted: true}` (no type, size or url) and is shown as "dosya silindi".
+ */
+export function isDeletedAttachment(attachment: { deleted?: boolean }): boolean {
+  return attachment.deleted === true
+}
+
 const UNITS = ['KB', 'MB', 'GB'] as const
 
 /** "512 B", "1,5 KB", "12 MB", "1,2 GB" — Turkish decimal comma, 1024 steps. */
@@ -59,8 +67,8 @@ export function uploadErrorMessage(code: string): string {
     case 'INVALID_UPLOAD':
       return 'Dosya yüklenemedi (boş ya da geçersiz).'
     case 'QUOTA_EXCEEDED':
-      // A lifetime figure: files cannot be deleted, so only the admin can make room.
-      return 'Yükleme kotan doldu; bu dosya sığmıyor. Kota yüklediğin tüm dosyaların toplamıdır, sunucuyu yöneten kişi artırabilir.'
+      // V6-OPS: files can be deleted now (Ayarlar › Depolama), which gives the bytes back.
+      return 'Yükleme kotan doldu; bu dosya sığmıyor. Ayarlar › Depolama’dan eski dosyalarını silerek yer açabilirsin.'
     case 'UPLOAD_IN_PROGRESS':
       return 'Başka bir sekmede ya da cihazda yükleme sürüyor. O bitince bu dosyayı yeniden ekle.'
     case 'STORAGE_FULL':

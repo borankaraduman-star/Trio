@@ -99,6 +99,10 @@ class IceProvider:
         self._cached_until = 0.0
         self._failed_until = 0.0
         self._lock = asyncio.Lock()
+        # The last call to Cloudflare, for the owner's overview (CONTRACT-V6-OPS
+        # §2): {"ok", "at" (app clock), "detail" (an error's type and status)}.
+        # Never the answer or the token.
+        self.last_call: dict[str, Any] | None = None
 
     def _stun(self) -> list[dict[str, Any]]:
         return [{"urls": list(self._settings.stun_urls)}] if self._settings.stun_urls else []
@@ -147,11 +151,13 @@ class IceProvider:
                 if isinstance(exc, httpx.HTTPStatusError):
                     detail += f" status={exc.response.status_code}"
                 logger.warning("ice.cloudflare.failed %s; answering without TURN", detail)
+                self.last_call = {"ok": False, "at": self._now(), "detail": detail}
                 self._cached = None
                 self._failed_until = self._now() + FAILURE_BACKOFF_SECONDS
                 return None
             self._cached = servers
             self._cached_until = self._now() + CACHE_SECONDS
+            self.last_call = {"ok": True, "at": self._now(), "detail": None}
             return servers
 
     async def _fetch(self) -> list[dict[str, Any]]:
