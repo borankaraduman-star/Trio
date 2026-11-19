@@ -76,3 +76,60 @@
 .jump-to-bottom-count {
   min-width: 1ch;
 }
+
+/* --- a channel's menu and its two dialogs ---------------------------------------- */
+.channel-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.channel-notify-menu .channel-menu-danger {
+  color: var(--red);
+}
+
+.channel-notify-menu button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  background: transparent;
+}
+
+.channel-dialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.channel-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 20px 18px;
+}
+
+.channel-dialog-body p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.channel-dialog-body input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-strong);
+  font: inherit;
+}
+
+.channel-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .channel-dialog-actions button {
+    min-height: 44px;
+  }
+}

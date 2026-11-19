@@ -57,6 +57,8 @@ import { NotifyBridge } from './notify/NotifyBridge'
 import { MediaButton, MediaGallery } from './media/MediaGallery'
 import { useDrafts } from '../useDrafts'
 import { useReadSync } from '../useReadSync'
+import { ChannelMenu } from './reading/ChannelMenu'
+import { channelApi, channelErrorMessage } from '../lib/channelApi'
 import { failedSend } from '../lib/sendFailure'
 import type { Recording } from '../lib/voiceRecorder'
 // CONTRACT-V6-VOICE: share profiles, watching, volumes, gate, AFK, shortcuts, the people strip.
@@ -638,6 +640,36 @@ export function Session({
     [token],
   )
 
+  // V7-READING §6: the channel row's menu.
+  const renameChannel = useCallback(
+    async (channelId: number, name: string): Promise<string | null> => {
+      try {
+        const { channel } = await channelApi.rename(token, channelId, name)
+        dispatch({ type: 'server', event: { type: 'channel.updated', channel }, now: Date.now(), viewing: isViewing() })
+        return null
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) onLogout()
+        return channelErrorMessage(error)
+      }
+    },
+    [token, onLogout],
+  )
+  const deleteChannel = useCallback(
+    async (channelId: number, confirmName: string): Promise<string | null> => {
+      try {
+        await channelApi.remove(token, channelId, confirmName)
+        // The broadcast says the same; whichever comes second changes nothing.
+        dispatch({ type: 'server', event: { type: 'channel.deleted', channel_id: channelId }, now: Date.now(), viewing: isViewing() })
+        draftsRef.current.clear(channelId)
+        return null
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) onLogout()
+        return channelErrorMessage(error)
+      }
+    },
+    [token, onLogout],
+  )
+
   const askNotifications = useCallback(() => {
     // V6: asks (in the click) and subscribes this device to pushes when it can.
     void notifyHub.enableHere().finally(() => setCanAskNotifications(notificationsAskable()))
@@ -995,6 +1027,13 @@ export function Session({
         />
       )}
 
+      <ChannelMenu
+        channels={state.channels}
+        voiceMembers={state.voice}
+        isOwner={(state.me as { is_owner?: boolean }).is_owner === true}
+        onRename={renameChannel}
+        onDelete={deleteChannel}
+      />
       <NotifyBridge
         token={token}
         myId={state.me.id}

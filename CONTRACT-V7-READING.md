@@ -117,3 +117,46 @@ before (unread per device in `localStorage`).
   text (the reload guard reads the text, not the focus). Push-to-talk's
   in-page key is ignored while a text field has the focus (as before); the
   desktop app's global key is not.
+
+## 6. Renaming and deleting a channel
+
+    PATCH  /api/channels/{id}  {name}           → 200 {"channel": {id, name, kind}}
+           422 INVALID_CHANNEL (name 1–32, the join/create rules) · 404 NOT_FOUND
+    DELETE /api/channels/{id}  {confirm_name}   → 204
+           403 FORBIDDEN          not the owner (CONTRACT-V6-OPS §1)
+           422 CONFIRM_MISMATCH   `confirm_name` is not exactly the channel's name
+           409 CHANNEL_IN_USE     a voice channel somebody is listed in (a member in
+                                  their reconnect grace counts)
+           409 LAST_TEXT_CHANNEL  the only text channel left
+           404 NOT_FOUND
+    both: 429 RATE_LIMITED past 20 renames and deletes per user per minute
+
+    server → everyone   channel.updated {channel}
+    server → everyone   channel.deleted {channel_id}
+
+- **Who**: renaming is anybody's, like creating a channel (three friends; the
+  name is shown, nothing is lost). Deleting is the OWNER's only, because a text
+  channel takes its messages with it. The typed name (`confirm_name`) is a
+  guard against a slip, not a secret: unlike V6-OPS's destructive actions it
+  does not ask for the invite code (nothing about the account is at stake, and
+  a backup restores the data).
+- Renaming to the same name answers 200 and broadcasts nothing.
+- Deleting runs in ONE transaction: the channel's reactions, pins, links,
+  attachment rows, messages, read state and the channel itself. The files and
+  their previews are unlinked after the commit (a crash in between leaves
+  files without rows, swept at the next start). Every user's push preference
+  for the channel is dropped (`push_prefs`), and the voice "room opened"
+  cool-down for it is forgotten. The last voice channel may be deleted; the
+  seed channels are only made for an empty database.
+- The client: right click, the context-menu key or a long press (touch, 450
+  ms; the click that ends the press is swallowed, `lib/pressEnd.ts`) on a
+  channel row in the sidebar opens the channel menu (`data-testid=
+  "channel-notify-menu"`): the notification levels when push is available
+  (V6-PUSH §6; voice rooms have no "Yalnız @ben"), "Yeniden adlandır"
+  (`channel-rename`), and for the owner "Kanalı sil" (`channel-delete`),
+  disabled with the reason when the server would refuse (somebody in the
+  voice room, the last text channel). Deleting a text channel needs its name
+  typed (`channel-delete-input`); a voice channel needs only the button.
+- On `channel.deleted` a client forgets the channel: its messages, unread,
+  marks, pins, typing, divider and this tab's draft; when it was open the
+  first remaining text channel opens.
