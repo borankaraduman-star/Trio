@@ -120,7 +120,8 @@ export function VoiceMessage({ attachment, voice }: { attachment: Attachment; vo
         ))}
       </div>
       <span className="voice-time" data-testid="voice-time">
-        {formatDuration((playing || position > 0 ? position : duration) * 1000)}
+        {/* The length is rounded (1,98 s reads 0:02); the time while playing counts whole seconds. */}
+        {formatDuration(playing || position > 0 ? position * 1000 : Math.round(duration) * 1000)}
       </span>
       <button
         type="button"
