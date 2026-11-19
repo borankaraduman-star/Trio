@@ -58,6 +58,10 @@ class FrameError(Exception):
         self.extra = extra
 
 
+# ``voice.join {session}``: the client's random id for one call (CONTRACT-V4 A1).
+VOICE_SESSION_MAX = 64
+
+
 def _signal_target(text: str) -> int | None:
     """The ``to`` of an over-sized ``signal`` frame, so the sender knows which
     negotiation was lost (CONTRACT-V3 §6). The text is at most ``WS_MAX_SIZE``
@@ -254,6 +258,11 @@ class Session:
         camera = _bool(frame, "camera", default=False)
         screensharing = _bool(frame, "screensharing", default=False)
         resume = _bool(frame, "resume", default=False)
+        session = frame.get("session")
+        if session is not None and not (
+            isinstance(session, str) and 1 <= len(session) <= VOICE_SESSION_MAX
+        ):
+            raise FrameError("BAD_REQUEST", "'session' must be a short string")
         self.hub.voice_join(
             self.conn,
             channel_id,
@@ -262,6 +271,7 @@ class Session:
             camera,
             screensharing=screensharing,
             resume=resume,
+            session=session,
         )
 
     async def on_voice_ring(self, frame: dict[str, Any]) -> None:

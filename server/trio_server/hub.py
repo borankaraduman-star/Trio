@@ -105,6 +105,8 @@ class VoiceMember:
     camera: bool = False
     # App-clock time the grace ends; None when not reconnecting.
     grace_until: float | None = None
+    # The client's random id for this call (``voice.join {session}``), or None.
+    session: str | None = None
 
     @property
     def reconnecting(self) -> bool:
@@ -178,7 +180,16 @@ class Hub:
             "channels": list(self.channels.values()),
             "voice": {
                 str(channel["id"]): [
-                    {"user_id": uid, **member.flags()}
+                    {
+                        "user_id": uid,
+                        **member.flags(),
+                        # Only to the member themselves: which call holds their place.
+                        **(
+                            {"session": member.session}
+                            if uid == user_id and member.session is not None
+                            else {}
+                        ),
+                    }
                     for uid, member in self.voice.get(channel["id"], {}).items()
                 ]
                 for channel in self.channels.values()
@@ -354,17 +365,24 @@ class Hub:
         *,
         screensharing: bool = False,
         resume: bool = False,
+        session: str | None = None,
     ) -> None:
         """Leave wherever the user was, then join, bound to ``conn``.
 
         A ``resume`` into the channel where the user is reconnecting takes the
-        membership over without ``voice.left`` (CONTRACT-V4 A1); every other
-        join, resume or not, first leaves wherever the user was.
+        membership over without ``voice.left`` (CONTRACT-V4 A1). So does a
+        resume carrying the ``session`` of the current membership even while
+        that one still has a connection: the server has not noticed yet that
+        it is dead (a half-open socket), and the client is the same call.
+        Every other join, resume or not, first leaves wherever the user was.
         """
         user_id = conn.user_id
         current = self.voice_of.get(user_id)
+        existing = self.voice[channel_id].get(user_id) if current == channel_id else None
         taking_over = (
-            resume and current == channel_id and self.voice[channel_id][user_id].reconnecting
+            resume
+            and existing is not None
+            and (existing.reconnecting or (session is not None and existing.session == session))
         )
         if taking_over:
             self._cancel_grace(user_id)
@@ -384,7 +402,12 @@ class Hub:
             }
         )
         member = VoiceMember(
-            conn=conn, muted=muted, deafened=deafened, camera=camera, screensharing=screensharing
+            conn=conn,
+            muted=muted,
+            deafened=deafened,
+            camera=camera,
+            screensharing=screensharing,
+            session=session,
         )
         members[user_id] = member
         self.voice_of[user_id] = channel_id

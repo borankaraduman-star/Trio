@@ -335,3 +335,72 @@ def test_ring_rules_and_the_limit(trio, three):
         a.send_json({"type": "voice.ring", "channel_id": VOICE})
         assert expect(b, "voice.ring")["from"] == ali["id"]
         quiet(b)
+
+
+# -- the call's session (half-open sockets, another tab) ---------------------------
+
+
+def test_the_own_entry_in_ready_carries_the_session_and_nobody_elses_does(trio, three):
+    ali, berk, _ = three
+    with trio.ws(ali) as a:
+        join(a, session="s-ali")
+        with trio.ws(berk) as b:
+            expect(a, "presence")
+            join(b, session="s-berk")
+            expect(a, "voice.joined")
+            with trio.ws(ali) as a2:
+                entries = {e["user_id"]: e for e in a2.ready["voice"][str(VOICE)]}
+                assert entries[ali["id"]]["session"] == "s-ali"
+                assert "session" not in entries[berk["id"]]
+
+
+def test_a_resume_with_the_same_session_takes_over_a_connection_still_open(trio, three):
+    """The client saw its socket die; the server has not noticed yet."""
+    ali, berk, _ = three
+    with trio.ws(berk) as b:
+        old = trio.ws(ali)
+        a = old.__enter__()
+        expect(b, "presence")
+        join(a, session="call-1")
+        expect(b, "voice.joined")
+        join(b)
+        expect(a, "voice.joined")
+        with trio.ws(ali) as a2:
+            a2.send_json(
+                {"type": "voice.join", "channel_id": VOICE, "resume": True, "session": "call-1"}
+            )
+            assert expect(a2, "voice.peers")["peers"] == [berk["id"]]
+            joined = expect(b, "voice.joined")  # no voice.left before it
+            assert joined["user_id"] == ali["id"] and joined["resumed"] is True
+            assert joined["reconnecting"] is False
+            expect(a2, "voice.joined")
+            # The old socket finally closes: the membership is a2's, no grace starts.
+            old.__exit__(None, None, None)
+            quiet(b)
+            a2.send_json({"type": "signal", "to": berk["id"], "data": {"x": 1}})
+            assert expect(b, "signal")["from"] == ali["id"]
+
+
+def test_a_resume_with_another_session_is_an_ordinary_join(trio, three):
+    """Another tab took the place: a resume from the first one must not take it back quietly."""
+    ali, berk, _ = three
+    with trio.ws(ali) as a, trio.ws(berk) as b:
+        drain(a, "presence")
+        join(a, session="tab-2")
+        expect(b, "voice.joined")
+        join(b)
+        expect(a, "voice.joined")
+        with trio.ws(ali) as a2:
+            a2.send_json(
+                {"type": "voice.join", "channel_id": VOICE, "resume": True, "session": "tab-1"}
+            )
+            assert expect(b, "voice.left")["user_id"] == ali["id"]
+            assert expect(b, "voice.joined")["resumed"] is True
+
+
+@pytest.mark.parametrize("bad", [5, "", "x" * 65, ["s"]])
+def test_session_must_be_a_short_string(trio, three, bad):
+    ali, _, _ = three
+    with trio.ws(ali) as a:
+        a.send_json({"type": "voice.join", "channel_id": VOICE, "session": bad})
+        expect_error(a, "BAD_REQUEST")

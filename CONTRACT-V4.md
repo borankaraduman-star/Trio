@@ -93,6 +93,21 @@ call. New rule:
   was never in voice is an ordinary join (with `resumed: true` echoed).
 - Presence is independent: the last socket closing still broadcasts
   `presence {online: false}` while the member is in the grace.
+- **`session`** (added with the client, round 3): `voice.join` may carry
+  `session`, a string of 1–64 characters the client picks at random for one
+  call and repeats on every resume of it (anything else → `BAD_REQUEST`). The
+  server keeps it on the membership and shows it only to the member
+  themselves: their own entry in `ready.voice` carries `session`. A `resume`
+  whose `session` equals the current membership's takes that membership over
+  like a resume inside the grace (no `voice.left`, `voice.joined {resumed:
+  true}`) even if the old connection is still open — the client saw its socket
+  die before the server did (a half-open TCP connection can look alive to the
+  server for tens of seconds). The old connection closing later starts no
+  grace. A resume with a different `session` (another tab or device of the
+  same user took the place) stays an ordinary join. The client uses its own
+  `ready.voice` entry to tell the two apart before it resumes: listed with
+  another `session` and not `reconnecting` → the call moved elsewhere, and
+  this tab stops without taking it back.
 
 e2e: kill and restart the server with three people in voice — receiver stats
 show audio never stopped on any pair (bytes keep increasing across the
