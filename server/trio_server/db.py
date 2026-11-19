@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS links_backfill (
     id           INTEGER PRIMARY KEY CHECK (id = 1),
     done_through INTEGER NOT NULL
 );
+-- v7 (CONTRACT-V7-READING): how far each user has read each text channel.
+CREATE TABLE IF NOT EXISTS read_state (
+    user_id              INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id           INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    last_read_message_id INTEGER NOT NULL,
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (user_id, channel_id)
+);
 """
 
 # v3 columns on tables an older database already has. CREATE TABLE IF NOT

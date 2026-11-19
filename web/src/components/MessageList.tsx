@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { buildRows, dayLabel, timeLabel } from '../lib/grouping'
 import { linkify } from '../lib/linkify'
 import { captureAnchor, restoreAnchor, type Anchor } from '../lib/scrollAnchor'
@@ -16,6 +16,8 @@ import { MessageEditor } from './message/MessageEditor'
 import { EditedMark, PinMark } from './message/MessageMarks'
 import { MentionText } from './notify/MentionText'
 import { mentionNamesOf, mentionRowClass, type MentionNames } from '../lib/notify/mentions'
+import { countNewSince, dividerPlace, MAX_LANDING_PAGES, newestSentId } from '../lib/newMessages'
+import { JumpToBottom, NewMessagesDivider } from './reading/NewMessages'
 
 const NEAR_EDGE_PX = 120
 
@@ -176,7 +178,10 @@ export function MessageList({
   isMember,
   users,
   family,
+  divider = null,
 }: {
+  /** V7-READING: the channel's mark when it was opened with something unread ("Yeni mesajlar"). */
+  divider?: number | null
   channel: ChannelMessages
   /** v4: current members, so a row shows its author's current name and avatar. */
   users?: Record<number, Member>
@@ -207,6 +212,29 @@ export function MessageList({
   const peopleRef = useRef<People>({})
   const people = useMemo(() => (peopleRef.current = stablePeople(peopleRef.current, users)), [users])
   const jumpHandled = useRef(0)
+  // V7-READING: open at the first unread message (once, when the list mounts with a divider).
+  // Decided at the first render that has messages (null until then): on a
+  // reload the divider arrives with that same first page.
+  const landing = useRef<boolean | null>(null)
+  const landingPages = useRef(0)
+  const place = useMemo(
+    () => (divider === null ? null : dividerPlace(items, divider, hasMore)),
+    [items, divider, hasMore],
+  )
+  const dividerKey = place?.kind === 'row' ? place.key : null
+  /** Scrolled away from the newest message; and the newest id there was when that happened. */
+  const [away, setAway] = useState(false)
+  const awayBase = useRef(0)
+  /** Set by the landing: the first time away counts from the divider, not from the newest. */
+  const landedBase = useRef<number | null>(null)
+  const syncAway = () => {
+    const isAway = !stickToBottom.current
+    if (isAway && !away) {
+      awayBase.current = landedBase.current ?? newestSentId(items)
+    }
+    landedBase.current = null
+    setAway(isAway)
+  }
   const mention = useMemo(() => mentionNamesOf(people, myId), [people, myId])
 
   /** Where the reader is, from the DOM as they see it: bottom or not, and the row being read. */
@@ -247,7 +275,34 @@ export function MessageList({
     const before = previous.current
     const ownNew = last !== undefined && last.key !== before.lastKey && last.author.id === myId
 
-    if (stickToBottom.current || ownNew) {
+    if (landing.current === null && loaded) landing.current = divider !== null
+    if (landing.current === true) {
+      const row = dividerKey === null ? null : element.querySelector<HTMLElement>('[data-testid="new-messages-divider"]')
+      if (row) {
+        landing.current = false
+        element.scrollTop += row.getBoundingClientRect().top - element.getBoundingClientRect().top - 8
+        observe(element)
+        landedBase.current = divider
+      } else if (place?.kind === 'older' && hasMore && landingPages.current < MAX_LANDING_PAGES) {
+        if (!loadingOlder) {
+          landingPages.current += 1
+          onLoadOlder()
+        }
+      } else {
+        // Out of reach (or nothing after the mark): the oldest loaded, or the bottom.
+        landing.current = false
+        if (place?.kind === 'older') {
+          element.scrollTop = 0
+          observe(element)
+          landedBase.current = divider
+        } else {
+          element.scrollTop = element.scrollHeight
+          stickToBottom.current = true
+        }
+      }
+    } else if (landing.current === null) {
+      // Still loading the first page: nothing to place yet.
+    } else if (stickToBottom.current || ownNew) {
       element.scrollTop = element.scrollHeight
       stickToBottom.current = true
     } else if (anchor.current) {
@@ -268,15 +323,17 @@ export function MessageList({
     }
     anchor.current = captureAnchor(element)
     observedTop.current = element.scrollTop
+    syncAway()
     // A page that does not fill the view cannot be scrolled to ask for more.
-    maybeLoadOlder()
+    if (landing.current !== true) maybeLoadOlder()
   })
 
   const onScroll = () => {
     const element = scroller.current
     if (!element) return
     observe(element)
-    maybeLoadOlder()
+    syncAway()
+    if (landing.current !== true) maybeLoadOlder()
   }
 
   return (
@@ -303,18 +360,21 @@ export function MessageList({
               <span>{dayLabel(row.date)}</span>
             </li>
           ) : (
+            [
+              row.message.key === dividerKey && <NewMessagesDivider key="new-messages-divider" />,
             <MessageRow
               key={row.key}
               message={row.message}
               author={resolveAuthor(row.message.author, people)}
-              showHeader={row.showHeader}
+              showHeader={row.showHeader || row.message.key === dividerKey}
               former={isMember ? !isMember(row.message.author.id) : false}
               onRetry={onRetry}
               family={rowFamily.row}
               editing={family?.editingId === row.message.id && row.message.status === 'sent'}
               names={family ? namesSignature(namedIn(row.message), people) : ''}
               mention={mention}
-            />
+            />,
+            ]
           ),
         )}
       </ol>
@@ -330,6 +390,19 @@ export function MessageList({
         >
           Yeni mesajlar var — en yeniye git
         </button>
+      )}
+      {away && !channel.behind && loaded && (
+        <JumpToBottom
+          count={countNewSince(items, awayBase.current, myId)}
+          onClick={() => {
+            const element = scroller.current
+            if (!element) return
+            stickToBottom.current = true
+            element.scrollTop = element.scrollHeight
+            observe(element)
+            syncAway()
+          }}
+        />
       )}
       {family && <MessageFamilyLayer family={family} items={items} myId={myId} rowFamily={rowFamily} />}
     </div>

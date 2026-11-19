@@ -1,0 +1,160 @@
+/* CONTRACT-V7-READING: the "Yeni mesajlar" line, the jump to the newest, the
+   composer on touch, the channel menu's dialogs and the device-code QR. */
+
+/* --- "Yeni mesajlar" ------------------------------------------------------------ */
+.new-messages-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 6px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.new-messages-divider::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--red);
+  opacity: 0.8;
+}
+
+.new-messages-divider span {
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: var(--red);
+  color: #1a1012;
+}
+
+/* --- jump to the newest ----------------------------------------------------------- */
+/* A dock of no height at the end of the list: sticky to the bottom of the
+   view, so it costs the list no space and never changes where "bottom" is. */
+.jump-to-bottom-dock {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  z-index: 3;
+}
+
+.jump-to-bottom {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-input);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+}
+
+.jump-to-bottom:hover {
+  background: var(--bg-active);
+}
+
+.jump-to-bottom.has-new {
+  background: var(--accent);
+  border-color: transparent;
+  color: #1a1012;
+}
+
+.jump-to-bottom.has-new:hover {
+  background: var(--accent-hover);
+}
+
+.jump-to-bottom-count {
+  min-width: 1ch;
+}
+
+/* --- a channel's menu and its two dialogs ---------------------------------------- */
+.channel-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.channel-notify-menu .channel-menu-danger {
+  color: var(--red);
+}
+
+.channel-notify-menu button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  background: transparent;
+}
+
+.channel-dialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.channel-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+}
+
+.channel-dialog-body p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.channel-dialog-body input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-strong);
+  font: inherit;
+}
+
+.channel-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .channel-dialog-actions button {
+    min-height: 44px;
+  }
+}
+
+/* --- the device code's QR -------------------------------------------------------- */
+.device-code-qr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.device-code-qr .qr-code {
+  flex: none;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.device-code-qr .link-code-help {
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .device-code-qr {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

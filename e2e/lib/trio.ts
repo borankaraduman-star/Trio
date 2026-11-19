@@ -379,7 +379,8 @@ export async function bulkSend(person: Person, channelId: number, count: number,
         }),
       )
       for (let i = 1; i <= total; i++) {
-        ws.send(JSON.stringify({ type: 'message.send', channel_id: channel, content: `${text} ${i}`, nonce: `bulk-${i}` }))
+        // The prefix in the nonce too: a second batch by the same person must not be a replay of the first.
+        ws.send(JSON.stringify({ type: 'message.send', channel_id: channel, content: `${text} ${i}`, nonce: `bulk-${text}-${i}` }))
       }
       await done
       ws.close()
@@ -436,6 +437,9 @@ export async function linkedDevice(
 /** Type a message through the composer and wait for the server to confirm it. */
 export async function sendThroughUi(person: Person, text: string): Promise<void> {
   await person.page.getByTestId('composer').fill(text)
-  await person.page.getByTestId('composer').press('Enter')
+  const composer = person.page.getByTestId('composer')
+  // V7-READING §4: a touch-first device sends with the button, Enter is a newline.
+  if ((await composer.getAttribute('data-enter')) === 'newline') await person.page.getByTestId('composer-send').click()
+  else await composer.press('Enter')
   await expect(person.page.getByTestId('message').filter({ hasText: text }).last()).toHaveAttribute('data-status', 'sent')
 }

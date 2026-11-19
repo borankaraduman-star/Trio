@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { clearAuth, clearInviteCode, loadAuth, saveAuth, saveInviteCode, saveLastName, type Auth } from './api'
 import { takeInviteFromLocation } from './lib/inviteLink'
+import { takeDeviceCodeFromLocation } from './lib/deviceLink'
 import { JoinScreen } from './components/JoinScreen'
 import { Session } from './components/Session'
 import { clearStoredState } from './store'
@@ -17,6 +18,8 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null)
   // An invite link's code, read (and taken out of the address bar) on load, signed in or not.
   const [linkInvite, setLinkInvite] = useState(takeInviteFromLocation)
+  // V7-READING §7: a device code's link (`#cihaz=`), the same way.
+  const [linkDeviceCode, setLinkDeviceCode] = useState(takeDeviceCodeFromLocation)
 
   const onJoined = useCallback((next: Auth, inviteCode: string | null) => {
     saveAuth(next)
@@ -26,6 +29,7 @@ export function App() {
     setNotice(null)
     // Used once: a later sign-out does not bring the link's code back.
     setLinkInvite(null)
+    setLinkDeviceCode(null)
     setAuth(next)
   }, [])
 
@@ -63,7 +67,7 @@ export function App() {
         // Keyed by token: a different account never inherits the previous one's state.
         <Session key={auth.token} auth={auth} onSignedOut={onSignedOut} onSessionEnded={onSessionEnded} />
       ) : (
-        <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} linkInvite={linkInvite} />
+        <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} linkInvite={linkInvite} linkDeviceCode={linkDeviceCode} />
       )}
     </>
   )

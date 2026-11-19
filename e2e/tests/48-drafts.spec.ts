@@ -7,7 +7,7 @@
 import type { Page } from '@playwright/test'
 import { freshServer } from '../lib/server'
 import { api, expect, expectConnected, GENEL, personViaApi, test, threePeople, type ContextOptions } from '../lib/trio'
-import { barAction, longPress, personBehindSwitch, row, send, Switch } from '../lib/messages'
+import { barAction, longPress, personBehindSwitch, row, send, submitComposer, Switch } from '../lib/messages'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -65,7 +65,7 @@ for (const width of [1280, 390] as const) {
 
     // Sending: a reply, and the draft is gone (also after a reload).
     await composer.fill('Bence Göreme, çünkü balonlar orada')
-    await composer.press('Enter')
+    await submitComposer(page)
     const sent = row(mehmet.page, 'balonlar orada')
     await expect(sent).toHaveCount(1)
     await expect(sent.getByTestId('reply-quote')).toContainText('Cumartesi Göreme')

@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react'
 import type { Channel, ClientEvent, Member } from '../../types'
 import { notifyHub } from '../../lib/notify/notifyHub'
 import { onViewingChange } from '../../lib/viewing'
-import { ChannelNotifyMenu } from './ChannelNotifyMenu'
 import { InstallCard } from './InstallCard'
 
 /**
@@ -76,7 +75,6 @@ export function NotifyBridge(props: {
   return (
     <>
       <InstallCard />
-      <ChannelNotifyMenu />
     </>
   )
 }

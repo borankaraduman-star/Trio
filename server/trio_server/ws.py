@@ -10,6 +10,7 @@ from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from trio_server import reading
 from trio_server.activity import ActivityError, parse_activity
 from trio_server.db import (
     Database,
@@ -122,6 +123,7 @@ class Session:
             "activity.set": self.on_activity_set,
             "activity.clear": self.on_activity_clear,
             "client.viewing": self.on_client_viewing,
+            "channel.read": self.on_channel_read,
         }
 
     async def handle_text(self, text: str) -> None:
@@ -363,6 +365,34 @@ class Session:
         if self.hub.notify is not None:
             self.hub.notify.set_viewing(self.conn, viewing, channel_id)
 
+    # -- CONTRACT-V7-READING: how far I have read -----------------------------
+
+    async def on_channel_read(self, frame: dict[str, Any]) -> None:
+        channel_id = self._text_channel(frame)
+        message_id = frame.get("message_id")
+        if not is_int(message_id) or message_id < 1:
+            raise FrameError("BAD_REQUEST", "'message_id' must be a message id")
+        reads = self.hub.reads
+        if not reads.allow(str(self.user["id"])):
+            raise FrameError("RATE_LIMITED", "too many channel.read frames", request="channel.read")
+        async with self.db.write_lock:
+            if channel_id not in self.hub.channels:
+                return  # deleted while we waited for the lock
+            moved = await reading.advance(self.db, self.user["id"], channel_id, message_id)
+            if moved is None:
+                return
+            mark, unread = moved
+            # Only the user's OTHER connections: nobody else is ever told.
+            frame_out = {
+                "type": "channel.read",
+                "channel_id": channel_id,
+                "message_id": mark,
+                "unread": unread,
+            }
+            for conn in self.hub.conns.get(self.user["id"], ()):
+                if conn is not self.conn:
+                    conn.send(frame_out)
+
     # -- CONTRACT-V5: game status ---------------------------------------------
 
     async def on_activity_set(self, frame: dict[str, Any]) -> None:
@@ -402,7 +432,15 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
     conn = Connection(user_id=user["id"], ws=ws, token_hash=token_hash)
     conn.start()
-    hub.connect(conn)
+    # CONTRACT-V7-READING: read under the lock every message is stored under,
+    # and registered before it is released, so no message falls in between.
+    async with db.write_lock:
+        if user["id"] not in hub.users:
+            conn.stop()
+            await ws.close(code=CLOSE_UNAUTHORIZED, reason="unauthorized")
+            return
+        conn.read_state = await reading.snapshot(db, hub, user["id"])
+        hub.connect(conn)
     session = Session(conn, user, hub, db, ws.app.state.now)
     try:
         while not conn.closed:

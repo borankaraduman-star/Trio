@@ -7,6 +7,7 @@ import { PendingAttachments } from './Attachments'
 import { PaperclipIcon } from './icons2'
 import { VoiceRecordButton } from './media/VoiceRecordButton'
 import type { Recording } from '../lib/voiceRecorder'
+import { enterSends, focusWouldInterrupt, isTouchFirst } from '../lib/touchInput'
 
 /** v2: the composer's attachment side (CONTRACT-V2 §2). */
 export interface ComposerAttachments {
@@ -52,7 +53,10 @@ export function Composer({
   initialText = '',
   onTextChange,
   voice,
+  focusOnMount = false,
 }: {
+  /** V7-READING §5: the channel was switched to on purpose: take the focus (never on touch). */
+  focusOnMount?: boolean
   channelName: string
   onSend: (content: string) => void
   onTyping: () => void
@@ -109,6 +113,14 @@ export function Composer({
     if (focusSignal) ref.current?.focus({ preventScroll: true })
   }, [focusSignal])
 
+  // V7-READING: read once per mount; a phone rotating does not change its keyboard.
+  const [touchFirst] = useState(isTouchFirst)
+  useEffect(() => {
+    if (!focusOnMount || touchFirst || focusWouldInterrupt(document)) return
+    ref.current?.focus({ preventScroll: true })
+    // Only when the composer mounts (each channel has its own).
+  }, [])
+
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {
     const element = ref.current
@@ -136,7 +148,20 @@ export function Composer({
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter confirms an IME composition (Japanese, Korean…) and must not send then.
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+    // V7-READING §4: on a touch-first device Enter is the newline key.
+    if (
+      enterSends(
+        {
+          key: event.key,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey,
+          isComposing: event.nativeEvent.isComposing,
+        },
+        touchFirst,
+      )
+    ) {
       event.preventDefault()
       send()
     } else if (event.key === 'Escape' && onEscape?.()) {
@@ -220,6 +245,8 @@ export function Composer({
         aria-invalid={length.over > 0}
         placeholder={`Mesaj yaz… (#${channelName})`}
         aria-label="Mesaj yaz"
+        enterKeyHint={touchFirst ? 'enter' : 'send'}
+        data-enter={touchFirst ? 'newline' : 'send'}
         onChange={(event) => {
           setText(event.target.value)
           textReport.current?.(event.target.value)

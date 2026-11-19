@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, type LinkCode } from '../api'
 import { formatCountdown, formatLinkCode, secondsLeft } from '../lib/linkCode'
 import { ProfileFields, type ProfileProps } from './ProfileFields'
+import { DeviceCodeQr } from './reading/DeviceCodeQr'
 
 export interface AccountProps {
   name: string
@@ -131,6 +132,7 @@ export function AccountSection({ account, onSignOut }: { account: AccountProps; 
             <p className="link-code-help">
               Diğer cihazda giriş ekranında <strong>“Zaten hesabım var”</strong> seçip bu kodu yaz.
             </p>
+            <DeviceCodeQr code={code.code} />
           </div>
         )}
         {code && !live && (

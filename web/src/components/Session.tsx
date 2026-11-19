@@ -56,6 +56,9 @@ import { notifyHub } from '../lib/notify/notifyHub'
 import { NotifyBridge } from './notify/NotifyBridge'
 import { MediaButton, MediaGallery } from './media/MediaGallery'
 import { useDrafts } from '../useDrafts'
+import { useReadSync } from '../useReadSync'
+import { ChannelMenu } from './reading/ChannelMenu'
+import { channelApi, channelErrorMessage } from '../lib/channelApi'
 import { failedSend } from '../lib/sendFailure'
 import type { Recording } from '../lib/voiceRecorder'
 // CONTRACT-V6-VOICE: share profiles, watching, volumes, gate, AFK, shortcuts, the people strip.
@@ -83,6 +86,12 @@ function newNonce(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** V7-READING §5: once per switch, for the composer of the channel switched to. */
+function takeComposerFocus(flag: { current: boolean | number }, channelId: number): boolean {
+  if (flag.current === true) flag.current = channelId
+  return flag.current === channelId
 }
 
 function notificationsAskable(): boolean {
@@ -221,6 +230,8 @@ export function Session({
   replyRef.current = family.reply
   // V6: a draft per channel (text and reply), across channel switches and reloads.
   const drafts = useDrafts(state.activeChannelId, family.reply, familyActions, stateRef)
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
   const [galleryOpen, setGalleryOpen] = useState(false)
 
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -399,8 +410,11 @@ export function Session({
           })
         }
         setTooMany(false)
-        probeUnread(textIds.filter((id) => id !== active))
+        // V7-READING: a server that keeps read state already said what is unread.
+        if (event.read_state === undefined) probeUnread(textIds.filter((id) => id !== active))
         engine.handleReady()
+      } else if (event.type === 'channel.deleted') {
+        draftsRef.current.clear(event.channel_id)
       } else if (event.type === 'message.new') {
         const { message } = event
         // V6: one path with the pushes (skipped when this device gets them pushed).
@@ -462,6 +476,9 @@ export function Session({
   useEffect(() => {
     saveLastRead(state.lastRead)
   }, [state.lastRead])
+
+  // V7-READING: tell the server how far this device has read (at most every READ_SEND_MS).
+  useReadSync(socket, state, stateRef, dispatch)
 
   const unreadTotal = totalUnread(state)
   useEffect(() => {
@@ -545,6 +562,7 @@ export function Session({
         },
       })
       delete lastTypingSent.current[channelId]
+      dispatch({ type: 'divider.clear', channelId })
       setSendNotice(null)
       if (reply) familyActions.cancelReply()
       drafts.clear(channelId)
@@ -627,12 +645,45 @@ export function Session({
     [token],
   )
 
+  // V7-READING §6: the channel row's menu.
+  const renameChannel = useCallback(
+    async (channelId: number, name: string): Promise<string | null> => {
+      try {
+        const { channel } = await channelApi.rename(token, channelId, name)
+        dispatch({ type: 'server', event: { type: 'channel.updated', channel }, now: Date.now(), viewing: isViewing() })
+        return null
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) onLogout()
+        return channelErrorMessage(error)
+      }
+    },
+    [token, onLogout],
+  )
+  const deleteChannel = useCallback(
+    async (channelId: number, confirmName: string): Promise<string | null> => {
+      try {
+        await channelApi.remove(token, channelId, confirmName)
+        // The broadcast says the same; whichever comes second changes nothing.
+        dispatch({ type: 'server', event: { type: 'channel.deleted', channel_id: channelId }, now: Date.now(), viewing: isViewing() })
+        draftsRef.current.clear(channelId)
+        return null
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) onLogout()
+        return channelErrorMessage(error)
+      }
+    },
+    [token, onLogout],
+  )
+
   const askNotifications = useCallback(() => {
     // V6: asks (in the click) and subscribes this device to pushes when it can.
     void notifyHub.enableHere().finally(() => setCanAskNotifications(notificationsAskable()))
   }, [])
 
+  /** V7-READING §5: the next composer to mount was asked for (a channel switch). */
+  const focusComposer = useRef<boolean | number>(false)
   const selectChannel = useCallback((channelId: number) => {
+    if (channelId !== stateRef.current.activeChannelId) focusComposer.current = true
     dispatch({ type: 'channel.select', channelId })
     setDrawerOpen(false)
   }, [])
@@ -877,6 +928,7 @@ export function Session({
               onJumpToLatest={() => void loadLatest(activeChannel.id, { jump: true })}
               onAtBottomChange={(value) => (atBottom.current = value)}
               onRetry={retryMessage}
+              divider={state.divider?.channelId === activeChannel.id ? state.divider.after : null}
               isMember={state.ready ? (userId) => userId in state.users : undefined}
               users={state.users}
               family={{
@@ -915,6 +967,7 @@ export function Session({
               onEditLast={familyActions.editLast}
               focusSignal={family.composerFocus}
               initialText={drafts.textOf(activeChannel.id)}
+              focusOnMount={takeComposerFocus(focusComposer, activeChannel.id)}
               onTextChange={(text) => drafts.setText(activeChannel.id, text)}
               voice={{ onRecorded: sendVoice, onError: setSendNotice }}
               attachments={{
@@ -1009,6 +1062,13 @@ export function Session({
         />
       )}
 
+      <ChannelMenu
+        channels={state.channels}
+        voiceMembers={state.voice}
+        isOwner={(state.me as { is_owner?: boolean }).is_owner === true}
+        onRename={renameChannel}
+        onDelete={deleteChannel}
+      />
       <NotifyBridge
         token={token}
         myId={state.me.id}
