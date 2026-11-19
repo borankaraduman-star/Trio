@@ -21,7 +21,8 @@ The wire protocol and every behaviour rule are in `CONTRACT.md` (v1),
 suppression, desktop bridge), `CONTRACT-V3.md` (quotas, sessions, device
 linking, limits), `CONTRACT-V4.md` (calls that survive a restart, ring,
 connection test, messages family, identity), `CONTRACT-V5.md` (game status) and
-`CONTRACT-V6-OPS.md` (the owner, backups, deleting files, the client error log). Read the relevant one before changing either side; change
+`CONTRACT-V6-OPS.md` (the owner, backups, deleting files, the client error log),
+`CONTRACT-V6-PUSH.md` (Web Push, notification preferences, the service worker). Read the relevant one before changing either side; change
 the contract in the same commit as the code.
 
 ## Production is live and auto-deploys from `main`
@@ -120,7 +121,9 @@ the deploy) → dispatch the release.
 
 ## Not verified yet
 
-Real microphones/cameras and the sound of noise suppression on speech, and
+Web Push (CONTRACT-V6-PUSH) has never received a real push: the e2e suite
+uses a fake push service and CDP-delivered pushes; FCM, Mozilla, WNS and
+Apple's service, and an iPhone home-screen app, are untested. Real microphones/cameras and the sound of noise suppression on speech, and
 the speaking ring's threshold on real speech; Safari and Firefox; the desktop
 installers actually running on Windows and macOS and their global
 push-to-talk hook; the Cloudflare TURN call against real keys. Game status:

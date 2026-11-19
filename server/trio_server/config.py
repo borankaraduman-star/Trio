@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 DEFAULT_STUN_URLS = ("stun:stun.l.google.com:19302",)
+_TEST_PUSH_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
+# Set by Railway in every deployment: a test-only setting is refused there.
+PRODUCTION_MARKERS = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID")
 
 
 class ConfigError(RuntimeError):
@@ -37,6 +41,13 @@ class Settings:
     # the client address is the N-th entry from the right. 0 = ignore the
     # header and use the socket peer.
     trusted_proxy_hops: int = 1
+    # CONTRACT-V6-PUSH: the VAPID ``sub`` claim (mailto: or https:); empty = the
+    # app's own https origin as seen when the device subscribed.
+    push_subject: str | None = None
+    # TEST ONLY (CONTRACT-V6-PUSH §8): an http://127.0.0.1:<port> origin whose
+    # endpoints are accepted without the push-service allowlist and the DNS
+    # checks, so the e2e suite can run a fake push service. Refused on Railway.
+    test_push_service: str | None = None
     # CONTRACT-V6-OPS §1: the owner's user name (matched like a join); None =
     # the active user with the lowest id.
     owner: str | None = None
@@ -54,6 +65,14 @@ class Settings:
             raise ConfigError("TRIO_DISK_RESERVE_MB must not be negative")
         if not 0 <= self.trusted_proxy_hops <= 10:
             raise ConfigError("TRIO_TRUSTED_PROXY_HOPS must be between 0 and 10")
+        if self.push_subject is not None and not (
+            self.push_subject.startswith(("mailto:", "https://")) and " " not in self.push_subject
+        ):
+            raise ConfigError("TRIO_PUSH_SUBJECT must be a mailto: or https: URI")
+        if self.test_push_service is not None and not _TEST_PUSH_ORIGIN.match(
+            self.test_push_service
+        ):
+            raise ConfigError("TRIO_TEST_PUSH_SERVICE must be http://127.0.0.1:<port>")
 
     @property
     def max_upload_bytes(self) -> int:
@@ -80,7 +99,8 @@ class Settings:
             f"max_upload_mb={self.max_upload_mb}, user_quota_mb={self.user_quota_mb}, "
             f"disk_reserve_mb={self.disk_reserve_mb}, "
             f"trusted_proxy_hops={self.trusted_proxy_hops}, "
-            f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r})"
+            f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r}, "
+            f"test_push_service={self.test_push_service!r})"
         )
 
     @classmethod
@@ -106,6 +126,10 @@ class Settings:
         else:
             stun = DEFAULT_STUN_URLS
 
+        test_push = optional("TRIO_TEST_PUSH_SERVICE")
+        if test_push is not None and any(env.get(m) for m in PRODUCTION_MARKERS):
+            raise ConfigError("TRIO_TEST_PUSH_SERVICE is for tests and is refused on Railway")
+
         return cls(
             invite_code=env.get("TRIO_INVITE_CODE", ""),
             db_path=optional("TRIO_DB_PATH") or "./trio.db",
@@ -121,5 +145,7 @@ class Settings:
             user_quota_mb=integer("TRIO_USER_QUOTA_MB", 1024),
             disk_reserve_mb=integer("TRIO_DISK_RESERVE_MB", 200),
             trusted_proxy_hops=integer("TRIO_TRUSTED_PROXY_HOPS", 1),
+            push_subject=optional("TRIO_PUSH_SUBJECT"),
+            test_push_service=test_push,
             owner=optional("TRIO_OWNER"),
         )

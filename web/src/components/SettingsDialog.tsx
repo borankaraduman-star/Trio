@@ -12,6 +12,7 @@ import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
 import { DownloadLink } from './DownloadLink'
 import { GameShareSetting } from './GameActivity'
+import { NotificationsSection } from './notify/NotificationsSection'
 import { OpsSettings } from './owner/OpsSettings'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
@@ -333,6 +334,7 @@ export function SettingsDialog({
           />
         )}
         <GameShareSetting />
+        <NotificationsSection />
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
         {serverSettings && <ServerSection settings={serverSettings} />}

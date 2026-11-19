@@ -138,3 +138,14 @@ and `33-message-screenshots` 11, 12 and 15.
 The chat history is typed through the UI and then re-dated in the SQLite
 file (yesterday evening / the last minutes, Europe/Istanbul) so that a day
 separator appears.
+
+## Push notifications (specs 55–59, CONTRACT-V6-PUSH)
+
+Chromium here cannot reach FCM, so no real push is ever received. `lib/push.ts`
+runs a fake push service on 127.0.0.1 (the server is started with the
+test-only `TRIO_TEST_PUSH_SERVICE`), gives the page a stand-in
+`PushManager.subscribe` that returns a subscription to it with keys the test
+holds, decrypts what the server sends, and drives the service worker with CDP
+`ServiceWorker.deliverPushMessage`. Specs 56–58 use Chromium's new headless
+mode (`channel: 'chromium'`): the headless shell reports the notification
+permission as "denied" and cannot show notifications.

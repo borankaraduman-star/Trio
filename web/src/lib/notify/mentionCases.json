@@ -1,0 +1,25 @@
+{
+  "about": "Shared by server/tests/test_v6_push_rules.py and web/src/lib/notify/mentions.test.ts: both implementations must agree on every case. spans are substrings of the NFC text, in order.",
+  "cases": [
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@ayşe naber", "mentioned": [1], "everyone": false, "spans": ["@ayşe"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@AYŞE bak", "mentioned": [1], "everyone": false, "spans": ["@AYŞE"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@IŞIL geliyor musun", "mentioned": [3], "everyone": false, "spans": ["@IŞIL"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@İŞİL", "mentioned": [3], "everyone": false, "spans": ["@İŞİL"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@isil", "mentioned": [], "everyone": false, "spans": [] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "yaz ali@mehmet.com", "mentioned": [], "everyone": false, "spans": [] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "selam@Ayşe", "mentioned": [], "everyone": false, "spans": [] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@Mehmetcik", "mentioned": [], "everyone": false, "spans": [] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "tamam @Mehmet, sonra", "mentioned": [2], "everyone": false, "spans": ["@Mehmet"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "(@Ayşe)", "mentioned": [1], "everyone": false, "spans": ["@Ayşe"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@herkes toplantı 9'da", "mentioned": [], "everyone": true, "spans": ["@herkes"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@HERKES", "mentioned": [], "everyone": true, "spans": ["@HERKES"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@herkesçe", "mentioned": [], "everyone": false, "spans": [] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "＠Ayşe", "mentioned": [1], "everyone": false, "spans": ["＠Ayşe"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@Ayşe", "mentioned": [1], "everyone": false, "spans": ["@Ayşe"] },
+    { "names": { "1": "Ayşe", "2": "Mehmet", "3": "Işıl" }, "text": "@Ayşe ve @Mehmet", "mentioned": [1, 2], "everyone": false, "spans": ["@Ayşe", "@Mehmet"] },
+    { "names": { "4": "Ali", "5": "Ali Veli" }, "text": "@Ali Veli gel", "mentioned": [5], "everyone": false, "spans": ["@Ali Veli"] },
+    { "names": { "4": "Ali", "5": "Ali Veli" }, "text": "@ali ve @ali veli", "mentioned": [4, 5], "everyone": false, "spans": ["@ali", "@ali veli"] },
+    { "names": { "4": "Ali", "5": "Ali Veli" }, "text": "@Ali_", "mentioned": [], "everyone": false, "spans": [] },
+    { "names": { "4": "Ali", "5": "Ali Veli" }, "text": "@", "mentioned": [], "everyone": false, "spans": [] }
+  ]
+}

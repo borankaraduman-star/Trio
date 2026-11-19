@@ -9,6 +9,7 @@ import './styles-v4-voice.css'
 import './styles-v4-identity.css'
 import './styles-v4-messages.css'
 import './styles-game-status.css'
+import './styles-v6-push.css'
 import './styles-v6-ops.css'
 import './theme.css'
 

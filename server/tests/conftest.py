@@ -70,7 +70,13 @@ def quiet(sock: Any) -> None:
 def make_trio(tmp_path) -> Iterator[Callable[..., Trio]]:
     opened: list[TestClient] = []
 
-    def factory(*, http_transport: Any = None, disk_free: Any = None, **overrides: Any) -> Trio:
+    def factory(
+        *,
+        http_transport: Any = None,
+        disk_free: Any = None,
+        push_resolver: Any = None,
+        **overrides: Any,
+    ) -> Trio:
         clock = Clock()
         values: dict[str, Any] = {
             "invite_code": INVITE,
@@ -79,7 +85,11 @@ def make_trio(tmp_path) -> Iterator[Callable[..., Trio]]:
         }
         values.update(overrides)
         app = create_app(
-            Settings(**values), now=clock, http_transport=http_transport, disk_free=disk_free
+            Settings(**values),
+            now=clock,
+            http_transport=http_transport,
+            disk_free=disk_free,
+            push_resolver=push_resolver,
         )
         client = TestClient(app)
         client.__enter__()
