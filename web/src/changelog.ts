@@ -27,11 +27,12 @@ export const CHANGELOG: readonly ChangelogEntry[] = [
   },
   {
     version: '0.4.0',
-    title: 'Mesajlar',
+    title: 'Mesajlar ve oyun durumu',
     lines: [
       'Mesajlara tepki: üstüne gel ya da telefonda basılı tut, bir emoji seç; kimin verdiğini üzerine gelince görürsün.',
       'Yanıtla: alıntı yanıtın üstünde durur, tıklayınca asıl mesaja gider. Önemli mesajları sabitle; başlıktaki Sabitlenenler hepsini gösterir.',
       'Kendi mesajını yerinde düzenle (boş yazı kutusunda ↑ son mesajını açar) ya da sil; düzenlenen mesajda “(düzenlendi)” yazar.',
+      'Oyun durumu: Trio masaüstü uygulamasıyla oynadığın oyunun adı, adının altında görünür (Ayarlar › Oyun durumu’ndan kapatılır). WoW’da seviye ve bölge için TrioDurum eklentisi gerekir; bu kısım deneysel.',
     ],
   },
   {

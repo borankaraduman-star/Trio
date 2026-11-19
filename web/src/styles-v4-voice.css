@@ -284,9 +284,11 @@
 }
 
 /* A1: a participant in the server's grace — dimmed (theme.css) and said in
-   words, since the title alone is not seen on a phone. */
-.voice-user.reconnecting .voice-user-name::after {
-  content: ' · bağlanıyor…';
+   words, since the title alone is not seen on a phone. Beside the icons, not
+   after the name: a long name is cut with "…" and took the words with it. */
+.voice-user.reconnecting .voice-user-icons::before {
+  content: 'bağlanıyor…';
   color: var(--trio-muted, #a0a6b2);
   font-size: 0.85em;
+  white-space: nowrap;
 }

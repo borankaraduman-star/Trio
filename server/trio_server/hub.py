@@ -22,6 +22,7 @@ from typing import Any
 
 from starlette.websockets import WebSocket
 
+from trio_server.activity import ActivityBoard
 from trio_server.nonces import NonceCache
 from trio_server.ratelimit import SlidingWindow
 from trio_server.version import VERSION
@@ -140,6 +141,8 @@ class Hub:
         self.voice_of: dict[int, int] = {}  # user id -> channel id
         # (user id, nonce) -> the message a send stored (CONTRACT-V3 §10).
         self.nonces = NonceCache()
+        # CONTRACT-V5: game status, presence-like and in memory only.
+        self.activity = ActivityBoard(self.broadcast, now)
 
     def load(self, users: list[dict[str, Any]], channels: list[dict[str, Any]]) -> None:
         self.users = {u["id"]: u for u in users}
@@ -195,12 +198,14 @@ class Hub:
                 for channel in self.channels.values()
                 if channel["kind"] == "voice"
             },
+            "activity": self.activity.snapshot(),
         }
 
     def connect(self, conn: Connection) -> None:
         """Register a connection: ``ready`` to it, ``presence`` to the others."""
         first = not self.conns.get(conn.user_id)
         self.conns.setdefault(conn.user_id, set()).add(conn)
+        self.activity.user_online(conn.user_id)
         conn.send(self.ready_frame(conn.user_id))
         if first:
             frame = {"type": "presence", "user_id": conn.user_id, "online": True}
@@ -223,6 +228,7 @@ class Hub:
                 self.voice_leave(conn.user_id)
         if conn.user_id not in self.conns:
             self.broadcast({"type": "presence", "user_id": conn.user_id, "online": False})
+            self.activity.user_offline(conn.user_id)
 
     def connection_count(self, user_id: int) -> int:
         return len(self.conns.get(user_id, ()))
@@ -251,6 +257,7 @@ class Hub:
         current = {u["id"]: u for u in users}
         for user_id in [uid for uid in self.users if uid not in current]:
             del self.users[user_id]
+            self.activity.clear(user_id)
             self.broadcast({"type": "user.removed", "user_id": user_id})
         for user in users:
             if user["id"] not in self.users:
@@ -343,6 +350,7 @@ class Hub:
         for task in self._grace_tasks.values():
             task.cancel()
         self._grace_tasks.clear()
+        self.activity.close()
 
     def voice_leave(self, user_id: int) -> None:
         self._cancel_grace(user_id)

@@ -13,7 +13,9 @@ import * as path from "node:path";
 import {
   app,
   BrowserWindow,
+  clipboard,
   desktopCapturer,
+  dialog,
   ipcMain,
   Menu,
   nativeImage,
@@ -33,6 +35,9 @@ import { ConfigStore } from "./config";
 import { checkHealth } from "./health";
 import { PttController } from "./ptt";
 import { badgeBitmap } from "./badge";
+import { GameConfigStore, GameService, diagnosticsText } from "./gameService";
+import { listProcesses } from "./processList";
+import { autodetect, flavoursIn, type Flavour } from "./wowFolder";
 import { badgeText, parseUnread } from "../shared/title";
 import {
   isExternalOpenable,
@@ -49,6 +54,7 @@ import {
 const STATIC_DIR = path.join(__dirname, "..", "static");
 const CONNECT_URL = `${LOCAL_ORIGIN}/connect.html`;
 const PICKER_URL = `${LOCAL_ORIGIN}/picker.html`;
+const GAME_URL = `${LOCAL_ORIGIN}/game.html`;
 
 /** Files the local scheme serves; anything else is a 404. */
 const STATIC_FILES: Record<string, string> = {
@@ -56,6 +62,8 @@ const STATIC_FILES: Record<string, string> = {
   "connect.js": "text/javascript; charset=utf-8",
   "picker.html": "text/html; charset=utf-8",
   "picker.js": "text/javascript; charset=utf-8",
+  "game.html": "text/html; charset=utf-8",
+  "game.js": "text/javascript; charset=utf-8",
   "local.css": "text/css; charset=utf-8",
   "icon.png": "image/png",
 };
@@ -94,6 +102,13 @@ let serverOrigin: string | null = null;
 /** Shown once on the connect page (e.g. after the stored server failed to load). */
 let connectNotice: string | null = null;
 let unread = 0;
+// CONTRACT-V5: game status. Detection runs only while the page subscribes or
+// the "Oyun durumu" window is open.
+let gameService: GameService | null = null;
+let gameWindow: BrowserWindow | null = null;
+let pageWantsGame = false;
+/** Folders the game window was shown and may pick from (nothing else is accepted). */
+let offeredFolders = new Set<string>();
 
 const ptt = new PttController((down) => {
   const wc = mainWindow?.webContents;
@@ -124,6 +139,7 @@ function onReady(): void {
   installPermissionHandlers(ses);
   installDisplayMediaHandler(ses);
   installIpc();
+  installGameStatus();
   buildAppMenu();
   createTray();
   createMainWindow();
@@ -137,6 +153,7 @@ app.on("before-quit", () => {
 
 app.on("will-quit", () => {
   ptt.dispose();
+  gameService?.stop();
 });
 
 app.on("window-all-closed", () => {
@@ -272,7 +289,12 @@ function createMainWindow(): void {
   wc.on("did-start-navigation", (details) => {
     // A new document: the old page's PTT key is gone with it. The web client
     // sets it again when it loads.
-    if (details.isMainFrame && !details.isSameDocument) ptt.setKey(null);
+    if (details.isMainFrame && !details.isSameDocument) {
+      ptt.setKey(null);
+      // The page subscribes again when it loads (CONTRACT-V5 §5).
+      pageWantsGame = false;
+      updateGameRunning();
+    }
   });
 
   wc.on("page-title-updated", (_event, title) => updateUnread(parseUnread(title)));
@@ -361,6 +383,7 @@ function createTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Trio'yu göster", click: () => showMainWindow() },
+      { label: "Oyun durumu…", click: () => showGameWindow() },
       { type: "separator" },
       { label: "Çıkış", click: () => quit() },
     ]),
@@ -380,6 +403,7 @@ function buildAppMenu(): void {
   const isMac = process.platform === "darwin";
   const trioMenu: MenuItemConstructorOptions[] = [
     { label: "Sunucuyu değiştir…", click: () => showConnectPage() },
+    { label: "Oyun durumu…", click: () => showGameWindow() },
     { type: "separator" },
     {
       label: "Yeniden yükle",
@@ -638,4 +662,157 @@ async function listSources(): Promise<unknown> {
     audio: pending.audioRequested && LOOPBACK_SUPPORTED,
     platform: process.platform,
   };
+}
+
+// ------------------------------------------------------------ game status
+
+function sendGameStatus(): void {
+  const wc = mainWindow?.webContents;
+  if (!pageWantsGame || !gameService || !wc || wc.isDestroyed()) return;
+  if (!isSameOrigin(wc.getURL(), serverOrigin)) return;
+  wc.send("trio:game-status", gameService.status);
+}
+
+function updateGameRunning(): void {
+  if (!gameService) return;
+  const wanted = pageWantsGame || (gameWindow !== null && !gameWindow.isDestroyed());
+  if (wanted) gameService.start();
+  else gameService.stop();
+}
+
+/** The game window's top frame, on the local page. */
+function fromGameWindow(event: IpcMainInvokeEvent): boolean {
+  const frame = event.senderFrame;
+  return (
+    gameWindow !== null &&
+    !gameWindow.isDestroyed() &&
+    event.sender === gameWindow.webContents &&
+    frame !== null &&
+    frame.parent === null &&
+    isSameOrigin(frame.url, LOCAL_ORIGIN)
+  );
+}
+
+function offer(flavours: Flavour[]): Flavour[] {
+  for (const f of flavours) offeredFolders.add(f.path);
+  return flavours;
+}
+
+function gameState(): unknown {
+  if (!gameService) return null;
+  return {
+    folder: gameService.folder,
+    flavours: gameService.folder ? offer(flavoursIn(gameService.folder)) : [],
+    customGames: gameService.customGames,
+    diagnostics: gameService.diagnostics(),
+    now: Date.now(),
+    platform: process.platform,
+    pageListening: pageWantsGame,
+  };
+}
+
+function installGameStatus(): void {
+  gameService = new GameService({
+    config: new GameConfigStore(app.getPath("userData")),
+    listProcesses,
+    onStatus: () => sendGameStatus(),
+  });
+
+  ipcMain.on("trio:game-subscribe", (event) => {
+    if (!fromServerPage(event)) return;
+    pageWantsGame = true;
+    updateGameRunning();
+    sendGameStatus();
+  });
+  ipcMain.on("trio:game-resend", (event) => {
+    if (fromServerPage(event)) sendGameStatus();
+  });
+  ipcMain.on("trio:game-unsubscribe", (event) => {
+    if (!fromServerPage(event)) return;
+    pageWantsGame = false;
+    updateGameRunning();
+  });
+
+  ipcMain.handle("trio:game-state", (event) => (fromGameWindow(event) ? gameState() : null));
+
+  ipcMain.handle("trio:game-autodetect", (event) => {
+    if (!fromGameWindow(event)) return null;
+    return offer(autodetect());
+  });
+
+  ipcMain.handle("trio:game-choose-folder", async (event) => {
+    if (!fromGameWindow(event) || !gameWindow) return null;
+    const result = await dialog.showOpenDialog(gameWindow, {
+      title: "World of Warcraft klasörünü seç",
+      properties: ["openDirectory"],
+    });
+    const chosen = result.canceled ? undefined : result.filePaths[0];
+    if (!chosen) return { flavours: [] };
+    const flavours = offer(flavoursIn(chosen));
+    if (flavours.length === 1) gameService?.setFolder((flavours[0] as Flavour).path);
+    return { flavours };
+  });
+
+  ipcMain.handle("trio:game-use-folder", (event, folder: unknown) => {
+    if (!fromGameWindow(event) || typeof folder !== "string" || !offeredFolders.has(folder)) return false;
+    gameService?.setFolder(folder);
+    return true;
+  });
+
+  ipcMain.handle("trio:game-running", async (event) => {
+    if (!fromGameWindow(event) || !gameService) return [];
+    return await gameService.runningNames();
+  });
+
+  ipcMain.handle("trio:game-add", (event, executable: unknown, name: unknown) => {
+    if (!fromGameWindow(event) || typeof executable !== "string" || typeof name !== "string") return false;
+    return gameService?.addGame(executable, name) ?? false;
+  });
+
+  ipcMain.handle("trio:game-remove", (event, executable: unknown) => {
+    if (!fromGameWindow(event) || typeof executable !== "string") return false;
+    gameService?.removeGame(executable);
+    return true;
+  });
+
+  ipcMain.handle("trio:game-copy", (event) => {
+    if (!fromGameWindow(event) || !gameService) return false;
+    clipboard.writeText(diagnosticsText(gameService.diagnostics(), Date.now(), app.getVersion(), process.platform));
+    return true;
+  });
+}
+
+function showGameWindow(): void {
+  if (gameWindow && !gameWindow.isDestroyed()) {
+    gameWindow.show();
+    gameWindow.focus();
+    return;
+  }
+  offeredFolders = new Set();
+  gameWindow = new BrowserWindow({
+    width: 720,
+    height: 760,
+    minWidth: 480,
+    minHeight: 480,
+    title: "Oyun durumu",
+    backgroundColor: "#111318",
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "game-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      webviewTag: false,
+    },
+  });
+  gameWindow.setMenu(null);
+  gameWindow.once("ready-to-show", () => gameWindow?.show());
+  gameWindow.on("closed", () => {
+    gameWindow = null;
+    updateGameRunning();
+  });
+  updateGameRunning();
+  void gameWindow.loadURL(GAME_URL);
 }

@@ -10,6 +10,7 @@ from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from trio_server.activity import ActivityError, parse_activity
 from trio_server.db import (
     Database,
     InvalidAttachmentError,
@@ -118,6 +119,8 @@ class Session:
             "voice.state": self.on_voice_state,
             "signal": self.on_signal,
             "voice.ring": self.on_voice_ring,
+            "activity.set": self.on_activity_set,
+            "activity.clear": self.on_activity_clear,
         }
 
     async def handle_text(self, text: str) -> None:
@@ -324,6 +327,22 @@ class Session:
         if to == self.user["id"] or target is None or target[0] != channel_id:
             raise FrameError("NOT_IN_VOICE", "that user is not in your voice channel")
         target[1].conn.send({"type": "signal", "from": self.user["id"], "data": data})
+
+    # -- CONTRACT-V5: game status ---------------------------------------------
+
+    async def on_activity_set(self, frame: dict[str, Any]) -> None:
+        if not self.hub.activity.allow(self.user["id"]):
+            raise FrameError("RATE_LIMITED", "at most 30 activity changes per minute")
+        try:
+            activity = parse_activity(frame, self.now())
+        except ActivityError as exc:
+            raise FrameError("INVALID_ACTIVITY", str(exc)) from None
+        self.hub.activity.set(self.user["id"], activity)
+
+    async def on_activity_clear(self, frame: dict[str, Any]) -> None:
+        if not self.hub.activity.allow(self.user["id"]):
+            raise FrameError("RATE_LIMITED", "at most 30 activity changes per minute")
+        self.hub.activity.clear(self.user["id"])
 
 
 async def websocket_endpoint(ws: WebSocket) -> None:

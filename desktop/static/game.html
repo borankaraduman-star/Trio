@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Oyun durumu</title>
+  <link rel="stylesheet" href="local.css">
+</head>
+<body>
+  <main class="game">
+    <h1>Oyun durumu</h1>
+    <p class="hint">Trio, çalışan oyunu ve (World of Warcraft'ta TrioDurum eklentisiyle) karakterinin seviyesini ve bölgesini arkadaşlarına gösterir. Kapatmak için Trio'da Ayarlar › “Oyun durumumu paylaş”.</p>
+
+    <section class="block">
+      <h2>Şu an</h2>
+      <div id="status" class="status" data-testid="game-status">…</div>
+      <div id="listening" class="hint"></div>
+    </section>
+
+    <section class="block">
+      <h2>World of Warcraft klasörü</h2>
+      <div id="folder" class="mono">(seçilmedi)</div>
+      <div class="row left">
+        <button class="btn" id="choose" type="button">Klasör seç…</button>
+        <button class="btn secondary" id="detect" type="button">Otomatik bul</button>
+      </div>
+      <ul id="flavours" class="list"></ul>
+      <div class="hint">Oyunun kurulu olduğu klasör ya da içindeki sürüm klasörü (ör. <span class="mono">_forever_</span>, <span class="mono">_retail_</span>). İçinde <span class="mono">Logs</span> ve <span class="mono">WTF</span> olan klasör.</div>
+    </section>
+
+    <section class="block">
+      <h2>Tanılama</h2>
+      <dl id="diag" class="diag"></dl>
+      <div class="row left">
+        <button class="btn" id="copy" type="button">Kopyala</button>
+        <span id="copied" class="hint" role="status" aria-live="polite"></span>
+      </div>
+      <div class="hint">Kopyalanan metinde sohbetinden hiçbir şey ve seçtiğin klasör dışında hiçbir yol yoktur.</div>
+    </section>
+
+    <section class="block">
+      <h2>Oyunlar</h2>
+      <div class="hint">Yerleşik listede: World of Warcraft (Wow.exe, WowClassic.exe, WowB.exe, WowT.exe), Counter-Strike 2, VALORANT, League of Legends, Rocket League, Dota 2, GTA V ve birkaç tane daha. Listede olmayan bir oyunu (ör. WoW Forever'ın programı) aşağıdan ekle.</div>
+      <ul id="custom" class="list"></ul>
+      <h3>Şu an çalışanlardan ekle</h3>
+      <div class="row left">
+        <button class="btn secondary" id="loadRunning" type="button">Çalışan programları göster</button>
+      </div>
+      <div id="addForm" hidden>
+        <label for="exe">Program</label>
+        <select id="exe"></select>
+        <label for="gameName">Görünecek ad</label>
+        <input id="gameName" type="text" maxlength="64" placeholder="WoW Forever">
+        <div class="row left">
+          <button class="btn" id="add" type="button">Ekle</button>
+          <span id="addMessage" class="hint" role="status" aria-live="polite"></span>
+        </div>
+        <div class="hint">Program adları yalnızca bu pencerede görünür; hiçbir yere gönderilmez. Arkadaşların yalnızca eklediğin oyunun adını görür, o oyun çalışırken.</div>
+      </div>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>

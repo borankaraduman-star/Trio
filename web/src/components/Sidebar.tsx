@@ -19,6 +19,7 @@ import { ServerMark } from './ServerMark'
 import { EmptyState } from './EmptyState'
 import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
 import { heldCameraTitle, RingButton, TurnHint, type RingButtonProps } from './VoiceExtras'
+import { GameActivityLine } from './GameActivity'
 
 export interface SidebarProps {
   open: boolean
@@ -221,6 +222,7 @@ export function Sidebar(props: SidebarProps) {
                             speaking={speaking.has(participant.user_id)}
                           />
                           <span className="voice-user-name">{name}</span>
+                          <GameActivityLine userId={participant.user_id} testid={`voice-activity-${participant.user_id}`} />
                           <span className="voice-user-icons">
                             {/* The server's grace says more than ICE does (and ICE waits for it). */}
                             {mine && !participant.reconnecting && (
