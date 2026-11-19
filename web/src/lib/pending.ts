@@ -17,6 +17,17 @@ export interface PendingAttachment {
   waiting?: boolean
   attachment: Attachment | null
   error: string | null
+  // --- V6 (CONTRACT-V6-MEDIA) ---
+  /** The picture is being made smaller (or looked at) before it is queued. */
+  preparing?: boolean
+  /** The picked file's size, when what is sent is a smaller copy (`size` is then the copy's). */
+  originalSize?: number
+  /** A smaller copy is sent. */
+  downsized?: boolean
+  /** "Orijinali gönder" would change what is sent (the chip offers it). */
+  reducible?: boolean
+  /** A voice message: sent by itself as soon as it is uploaded. */
+  voice?: boolean
 }
 
 export type PendingState = Record<number, PendingAttachment[]>
@@ -29,6 +40,10 @@ export type PendingAction =
   | { type: 'done'; localId: string; attachment: Attachment }
   | { type: 'error'; localId: string; error: string }
   | { type: 'remove'; localId: string }
+  /** V6: the picture was prepared; it is queued now under this name and size. */
+  | { type: 'prepared'; localId: string; name: string; size: number; originalSize: number; downsized: boolean; reducible: boolean }
+  /** V6: prepared again ("Orijinali gönder" changed): back to waiting, nothing uploaded counts. */
+  | { type: 'reprepare'; localId: string }
   /** The uploaded ones were sent: drop them from the channel. */
   | { type: 'taken'; channelId: number; localIds: string[] }
 
@@ -81,6 +96,22 @@ export function pendingReducer(state: PendingState, action: PendingAction): Pend
       }))
     case 'error':
       return mapItem(state, action.localId, (item) => ({ ...item, status: 'error', error: action.error }))
+    case 'prepared':
+      return mapItem(state, action.localId, (item) => ({
+        ...item,
+        preparing: false,
+        name: action.name,
+        size: action.size,
+        originalSize: action.downsized ? action.originalSize : undefined,
+        downsized: action.downsized,
+        reducible: action.reducible,
+      }))
+    case 'reprepare':
+      return mapItem(state, action.localId, (item) =>
+        item.status === 'error'
+          ? item
+          : { ...item, status: 'queued', preparing: true, progress: 0, attachment: null, waiting: false },
+      )
     case 'remove': {
       for (const [key, list] of Object.entries(state)) {
         if (list.some((item) => item.localId === action.localId)) {

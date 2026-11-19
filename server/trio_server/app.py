@@ -39,6 +39,14 @@ from trio_server.downloads import DownloadConfig, register_download_routes
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
+from trio_server.media_routes import (
+    UPLOAD_EXTRA_PARTS,
+    prepare_previews_dir,
+    register_media_routes,
+    remove_previews,
+    unreferenced_previews,
+    upload_extras,
+)
 from trio_server.message_routes import EDIT_LIMIT, REACTION_LIMIT, register_message_routes
 from trio_server.notify import Notifier
 from trio_server.owner import OwnerAwareHub, register_owner_routes, with_owner_flag
@@ -179,6 +187,7 @@ def create_app(
                 return
             await db.delete_attachments(stale)
         _remove(*(upload_dir / attachment_id for attachment_id in stale))
+        remove_previews(upload_dir, stale)
         logger.info("uploads.swept count=%s", len(stale))
 
     async def sweep_unreferenced_files() -> None:
@@ -189,7 +198,10 @@ def create_app(
         like an attachment id are considered (not ``*.part``, not the
         profile subdirectories).
         """
-        stray = _unreferenced_files(upload_dir, await db.all_attachment_ids())
+        known = await db.all_attachment_ids()
+        stray = _unreferenced_files(upload_dir, known)
+        # V6-MEDIA: a preview goes with its file, also when the file was deleted (a tombstone row).
+        stray += unreferenced_previews(upload_dir, await db.live_attachment_ids())
         stray += unreferenced_profile_files(
             upload_dir, await db.avatar_files(), await db.server_icon()
         )
@@ -226,7 +238,10 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _prepare_upload_dir(upload_dir)
         prepare_profile_dirs(upload_dir)
+        prepare_previews_dir(upload_dir)
         await db.open()
+        # V6: the links of messages from before V6 (or since the last start).
+        await db.backfill_links()
         hub.load(await db.list_users(), await db.list_channels())
         hub.server = await db.get_server()
         vapid = await push_store.ensure()
@@ -469,6 +484,7 @@ def create_app(
                 settings.max_upload_bytes,
                 quota_bytes=remaining,
                 space_left=space_left,
+                extra_parts=UPLOAD_EXTRA_PARTS,
             )
         except ApiError as exc:
             if exc.status == 507:
@@ -478,6 +494,10 @@ def create_app(
         try:
             partial.replace(final)
             content_type = sniff_content_type(received.head, received.filename)
+            # V6: preview, dimensions, voice marker (media_routes.upload_extras).
+            extras = upload_extras(
+                received, content_type, final, upload_dir, attachment_id, remaining
+            )
             async with db.write_lock:
                 attachment = await db.create_attachment(
                     attachment_id,
@@ -486,12 +506,15 @@ def create_app(
                     content_type,
                     received.size,
                     now(),
+                    **extras,
                 )
         except StorageFullError:
             _remove(partial, final)
+            remove_previews(upload_dir, [attachment_id])
             raise storage_full() from None
         except BaseException:
             _remove(partial, final)
+            remove_previews(upload_dir, [attachment_id])
             raise
         logger.info("upload.stored user=%s size=%s", user["id"], received.size)
         return {"attachment": attachment}
@@ -567,6 +590,8 @@ def create_app(
             "reactions_per_minute": REACTION_LIMIT,
         },
     )
+
+    register_media_routes(app, db=db, hub=hub, upload_dir=upload_dir, current_user=current_user)
 
     app.add_api_websocket_route("/ws", websocket_endpoint)
 

@@ -49,7 +49,18 @@ def test_upload_ok(trio):
     response = upload(trio, ali, PNG, "kedi resmi.png", mime="text/html")
     assert response.status_code == 201, response.text
     attachment = response.json()["attachment"]
-    assert set(attachment) == {"id", "filename", "content_type", "size", "url"}
+    assert set(attachment) == {
+        "id",
+        "filename",
+        "content_type",
+        "size",
+        "url",
+        # V6 (CONTRACT-V6-MEDIA)
+        "preview_url",
+        "width",
+        "height",
+        "voice",
+    }
     assert len(attachment["id"]) == 43
     assert attachment["filename"] == "kedi resmi.png"
     # Decided from the bytes, not from what the client claimed.
@@ -466,7 +477,7 @@ def test_leftover_partial_files_are_removed_on_start(make_trio, tmp_path):
     uploads.mkdir()
     (uploads / ("Z" * 43 + ".part")).write_bytes(b"half")
     make_trio(upload_dir=str(uploads))
-    assert sorted(os.listdir(uploads)) == ["avatars", "icons"]
+    assert sorted(os.listdir(uploads)) == ["avatars", "icons", "previews"]
 
 
 # -- a database created by v1 ------------------------------------------------------

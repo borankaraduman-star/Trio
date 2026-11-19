@@ -162,6 +162,25 @@ class Session:
         self.conn.send({"type": "pong"})
 
     async def on_message_send(self, frame: dict[str, Any]) -> None:
+        """V6: every error answering a ``message.send`` names the send's
+        ``nonce`` (when it is a usable one), so a client with two sends in
+        flight fails the right row. A frame without a nonce gets the bare
+        error, as before."""
+        nonce = frame.get("nonce")
+        named = nonce if isinstance(nonce, str) and len(nonce) <= NONCE_MAX else None
+        try:
+            await self._message_send(frame)
+        except FrameError as exc:
+            if named is not None:
+                exc.extra = {**exc.extra, "nonce": named}
+            raise
+        except Exception:
+            if named is None:
+                raise
+            logger.exception("ws.frame.failed user=%s", self.user["id"])
+            raise FrameError("INTERNAL", "internal error", nonce=named) from None
+
+    async def _message_send(self, frame: dict[str, Any]) -> None:
         channel_id = self._text_channel(frame)
         nonce = frame.get("nonce")
         if nonce is not None and not (isinstance(nonce, str) and len(nonce) <= NONCE_MAX):

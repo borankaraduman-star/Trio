@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -11,6 +12,8 @@ from typing import Any
 from urllib.parse import quote
 
 import aiosqlite
+
+from trio_server.links import links_to_store
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -87,6 +90,23 @@ CREATE TABLE IF NOT EXISTS server_profile (
     icon TEXT                 -- "<hash>.<ext>" under <uploads>/icons/, or NULL
 );
 INSERT OR IGNORE INTO server_profile (id, name) VALUES (1, 'Trio');
+-- v6 (CONTRACT-V6-MEDIA): every http(s) link of every message, as the
+-- client's linkify finds them (trio_server/links.py). Rewritten on edit, gone
+-- with the message.
+CREATE TABLE IF NOT EXISTS links (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    channel_id INTEGER NOT NULL,
+    position   INTEGER NOT NULL,             -- order within the message
+    url        TEXT NOT NULL                 -- the text as written
+);
+CREATE INDEX IF NOT EXISTS idx_links_channel ON links (channel_id, message_id, position);
+CREATE INDEX IF NOT EXISTS idx_links_message ON links (message_id);
+-- v6: how far the one-time indexing of messages written before v6 has got.
+CREATE TABLE IF NOT EXISTS links_backfill (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    done_through INTEGER NOT NULL
+);
 """
 
 # v3 columns on tables an older database already has. CREATE TABLE IF NOT
@@ -114,6 +134,11 @@ UPGRADE_COLUMNS = {
     },
     "attachments": {
         "deleted_at": "ALTER TABLE attachments ADD COLUMN deleted_at TEXT",
+        "width": "ALTER TABLE attachments ADD COLUMN width INTEGER",
+        "height": "ALTER TABLE attachments ADD COLUMN height INTEGER",
+        "preview_type": "ALTER TABLE attachments ADD COLUMN preview_type TEXT",
+        "preview_size": "ALTER TABLE attachments ADD COLUMN preview_size INTEGER",
+        "voice": "ALTER TABLE attachments ADD COLUMN voice TEXT",
     },
 }
 
@@ -168,16 +193,31 @@ def _user(user_id: int, name: str, avatar: str | None) -> dict[str, Any]:
     return {"id": user_id, "name": name, "avatar_url": avatar_url(user_id, avatar)}
 
 
+def preview_url(attachment_id: str) -> str:
+    return f"/api/previews/{attachment_id}"
+
+
 def _attachment(row: sqlite3.Row) -> dict[str, Any]:
     if row["deleted_at"] is not None:
         # CONTRACT-V6-OPS §4: what is left of a file its uploader deleted.
         return {"id": row["id"], "filename": row["filename"], "deleted": True}
+    keys = row.keys()
+    # v6 fields (CONTRACT-V6-MEDIA); every key is always present, null when unknown.
+    voice = row["voice"] if "voice" in keys else None
     return {
         "id": row["id"],
         "filename": row["filename"],
         "content_type": row["content_type"],
         "size": row["size"],
         "url": attachment_url(row["id"], row["filename"]),
+        "preview_url": (
+            preview_url(row["id"])
+            if "preview_type" in keys and row["preview_type"] is not None
+            else None
+        ),
+        "width": row["width"] if "width" in keys else None,
+        "height": row["height"] if "height" in keys else None,
+        "voice": json.loads(voice) if voice else None,
     }
 
 
@@ -210,6 +250,10 @@ class PinLimitError(Exception):
 
 
 EXCERPT_CHARS = 140
+# V6: the types the gallery's "Medya" tab lists.
+MEDIA_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "video/mp4", "video/webm"}
+)
 # Every column a Message is built from; the joins are the same everywhere.
 _MESSAGE_COLUMNS = (
     "m.id, m.channel_id, m.content, m.created_at, m.edited_at, m.reply_to_id, m.rev, "
@@ -487,6 +531,8 @@ class Database:
                 "UPDATE attachments SET message_id = ?, position = ? WHERE id = ?",
                 [(message_id, pos, att_id) for pos, att_id in enumerate(attachment_ids)],
             )
+            for sql, params in link_statements(message_id, channel_id, content):
+                await self.conn.execute(sql, params)
             await self.conn.commit()
         except BaseException as exc:
             await self.conn.rollback()
@@ -648,6 +694,7 @@ class Database:
                     "UPDATE messages SET content = ?, edited_at = ? WHERE id = ?",
                     (content, edited_at, message_id),
                 ),
+                *link_statements(message_id, row["channel_id"], content),
             )
         message = await self.get_message(message_id)
         assert message is not None  # noqa: S101
@@ -674,6 +721,7 @@ class Database:
             [
                 ("DELETE FROM reactions WHERE message_id = ?", (message_id,)),
                 ("DELETE FROM pins WHERE message_id = ?", (message_id,)),
+                ("DELETE FROM links WHERE message_id = ?", (message_id,)),
                 ("DELETE FROM attachments WHERE message_id = ?", (message_id,)),
                 ("DELETE FROM messages WHERE id = ?", (message_id,)),
             ]
@@ -827,13 +875,33 @@ class Database:
         content_type: str,
         size: int,
         created_ts: float,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+        preview_type: str | None = None,
+        preview_size: int | None = None,
+        voice: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """The caller holds ``write_lock``."""
+        """The caller holds ``write_lock``. The keyword fields are V6's."""
         try:
             await self.conn.execute(
                 "INSERT INTO attachments (id, uploader_id, filename, content_type, size, "
-                "created_at, created_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (attachment_id, uploader_id, filename, content_type, size, utc_now(), created_ts),
+                "created_at, created_ts, width, height, preview_type, preview_size, voice) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    attachment_id,
+                    uploader_id,
+                    filename,
+                    content_type,
+                    size,
+                    utc_now(),
+                    created_ts,
+                    width,
+                    height,
+                    preview_type,
+                    preview_size,
+                    json.dumps(voice, separators=(",", ":")) if voice is not None else None,
+                ),
             )
             await self.conn.commit()
         except BaseException as exc:
@@ -841,19 +909,15 @@ class Database:
             if is_disk_full(exc):
                 raise StorageFullError from exc
             raise
-        return {
-            "id": attachment_id,
-            "filename": filename,
-            "content_type": content_type,
-            "size": size,
-            "url": attachment_url(attachment_id, filename),
-        }
+        found = await self.get_attachment(attachment_id)
+        assert found is not None  # noqa: S101 - written just above, under the lock
+        return found
 
     async def stored_bytes(self, uploader_id: int) -> int:
         """Everything ``uploader_id`` has stored, on a message or not."""
         (row,) = await self._all(
-            "SELECT coalesce(sum(size), 0) AS n FROM attachments "
-            "WHERE uploader_id = ? AND deleted_at IS NULL",
+            "SELECT coalesce(sum(size + coalesce(preview_size, 0)), 0) AS n "
+            "FROM attachments WHERE uploader_id = ? AND deleted_at IS NULL",
             (uploader_id,),
         )
         return int(row["n"])
@@ -878,3 +942,136 @@ class Database:
             [(i,) for i in attachment_ids],
         )
         await self.conn.commit()
+
+    # -- v6: the channel's media, files and links (CONTRACT-V6-MEDIA) ---------
+
+    async def preview_of(self, attachment_id: str) -> str | None:
+        """The preview's content type, or None when the attachment has none."""
+        rows = await self._all(
+            "SELECT preview_type FROM attachments WHERE id = ? AND deleted_at IS NULL",
+            (attachment_id,),
+        )
+        return rows[0]["preview_type"] if rows else None
+
+    async def channel_attachments(
+        self,
+        channel_id: int,
+        media: bool,
+        before: tuple[int, int] | None,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Attachments on the channel's messages, newest message first (within
+        one message in its own order), images and videos (``media``) or
+        everything else; voice messages in neither. ``before`` is the
+        (message id, position) of the last item already shown."""
+        marks = _marks(MEDIA_TYPES)
+        kind = f"a.content_type {'IN' if media else 'NOT IN'} ({marks})"
+        params: list[Any] = [channel_id, *sorted(MEDIA_TYPES)]
+        where = ""
+        if before is not None:
+            where = " AND (a.message_id < ? OR (a.message_id = ? AND a.position > ?))"
+            params += [before[0], before[0], before[1]]
+        # Only "?" placeholders and fixed text are formatted into the statement.
+        sql = (
+            "SELECT a.*, m.created_at AS message_created_at, u.id AS author_id, "  # noqa: S608
+            "u.name AS author_name, u.avatar AS author_avatar "
+            "FROM attachments a JOIN messages m ON m.id = a.message_id "
+            "JOIN users u ON u.id = m.author_id "
+            "WHERE m.channel_id = ? AND a.voice IS NULL AND a.deleted_at IS NULL "
+            f"AND {kind}{where} "
+            "ORDER BY a.message_id DESC, a.position ASC LIMIT ?"
+        )
+        rows = await self._all(sql, (*params, limit + 1))
+        items = [
+            {
+                "attachment": _attachment(r),
+                "message_id": r["message_id"],
+                "position": r["position"],
+                "author": _user(r["author_id"], r["author_name"], r["author_avatar"]),
+                "created_at": r["message_created_at"],
+            }
+            for r in rows[:limit]
+        ]
+        return items, len(rows) > limit
+
+    async def channel_links(
+        self, channel_id: int, before: tuple[int, int] | None, limit: int
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Links posted in the channel, newest message first."""
+        params: list[Any] = [channel_id]
+        where = ""
+        if before is not None:
+            where = " AND (l.message_id < ? OR (l.message_id = ? AND l.position > ?))"
+            params += [before[0], before[0], before[1]]
+        sql = (
+            "SELECT l.url, l.message_id, l.position, m.content, m.created_at, "  # noqa: S608
+            "u.id AS author_id, u.name AS author_name, u.avatar AS author_avatar "
+            "FROM links l JOIN messages m ON m.id = l.message_id "
+            "JOIN users u ON u.id = m.author_id "
+            f"WHERE l.channel_id = ?{where} ORDER BY l.message_id DESC, l.position ASC LIMIT ?"
+        )
+        rows = await self._all(sql, (*params, limit + 1))
+        items = [
+            {
+                "url": r["url"],
+                "message_id": r["message_id"],
+                "position": r["position"],
+                "author": _user(r["author_id"], r["author_name"], r["author_avatar"]),
+                "created_at": r["created_at"],
+                "excerpt": r["content"][:EXCERPT_CHARS],
+            }
+            for r in rows[:limit]
+        ]
+        return items, len(rows) > limit
+
+    async def live_attachment_ids(self) -> set[str]:
+        """Attachments whose file still exists (not deleted by the uploader, V6-OPS §4)."""
+        rows = await self._all("SELECT id FROM attachments WHERE deleted_at IS NULL")
+        return {r["id"] for r in rows}
+
+    async def backfill_links(self, batch: int = 500) -> int:
+        """Index the links of every message written since the last start (all
+        of them, the first time a v6 server opens an older database). Batches
+        of ``batch`` messages, one transaction each; re-indexing a message is
+        idempotent, so an interrupted run simply continues. The messages sent
+        while the server runs are indexed when sent and edited; this only
+        covers what the database already held. Returns how many were read."""
+        total = 0
+        while True:
+            rows = await self._all("SELECT done_through FROM links_backfill WHERE id = 1")
+            done = rows[0]["done_through"] if rows else 0
+            page = await self._all(
+                "SELECT id, channel_id, content FROM messages WHERE id > ? ORDER BY id LIMIT ?",
+                (done, batch),
+            )
+            if not page:
+                return total
+            statements: list[tuple[str, tuple[Any, ...]]] = []
+            for r in page:
+                statements += link_statements(r["id"], r["channel_id"], r["content"])
+            statements.append(
+                (
+                    "INSERT INTO links_backfill (id, done_through) VALUES (1, ?) "
+                    "ON CONFLICT (id) DO UPDATE SET done_through = excluded.done_through",
+                    (page[-1]["id"],),
+                )
+            )
+            await self._write(statements)
+            total += len(page)
+
+
+def link_statements(
+    message_id: int, channel_id: int, content: str
+) -> list[tuple[str, tuple[Any, ...]]]:
+    """The statements that make the links table say what ``content`` links to."""
+    statements: list[tuple[str, tuple[Any, ...]]] = [
+        ("DELETE FROM links WHERE message_id = ?", (message_id,))
+    ]
+    for position, url in enumerate(links_to_store(content)):
+        statements.append(
+            (
+                "INSERT INTO links (message_id, channel_id, position, url) VALUES (?, ?, ?, ?)",
+                (message_id, channel_id, position, url),
+            )
+        )
+    return statements

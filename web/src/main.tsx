@@ -11,6 +11,7 @@ import './styles-v4-messages.css'
 import './styles-game-status.css'
 import './styles-v6-push.css'
 import './styles-v6-ops.css'
+import './styles-v6-media.css'
 import './theme.css'
 
 const root = document.getElementById('root')

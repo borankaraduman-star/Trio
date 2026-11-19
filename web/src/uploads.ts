@@ -1,6 +1,14 @@
 import { ApiError } from './api'
 import type { Attachment } from './types'
 
+/** V6 (CONTRACT-V6-MEDIA): the optional parts beside `file`. */
+export interface UploadExtras {
+  /** A small picture of an image (≤ 640 px, ≤ 200 KB). */
+  preview?: Blob | null
+  /** Makes the file a voice message. */
+  voice?: { duration_ms: number; waveform: readonly number[] } | null
+}
+
 export interface UploadHandle {
   promise: Promise<Attachment>
   /** Cancels the upload; `promise` then rejects with code `ABORTED`. */
@@ -28,6 +36,7 @@ export function uploadFile(
   file: Blob,
   filename: string,
   onProgress: (fraction: number) => void,
+  extras: UploadExtras = {},
 ): UploadHandle {
   const xhr = new XMLHttpRequest()
   const promise = new Promise<Attachment>((resolve, reject) => {
@@ -67,6 +76,11 @@ export function uploadFile(
     xhr.onabort = () => reject(new ApiError(0, 'ABORTED', 'aborted'))
     const form = new FormData()
     form.append('file', file, filename)
+    if (extras.preview) form.append('preview', extras.preview, extras.preview.type === 'image/jpeg' ? 'preview.jpg' : 'preview.webp')
+    if (extras.voice) {
+      form.append('voice_duration_ms', String(Math.round(extras.voice.duration_ms)))
+      form.append('voice_waveform', extras.voice.waveform.join(','))
+    }
     xhr.send(form)
   })
   return { promise, abort: () => xhr.abort() }

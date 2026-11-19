@@ -20,6 +20,7 @@ from trio_server.config import Settings
 from trio_server.db import Database, attachment_url, is_disk_full, utc_iso
 from trio_server.errors import ApiError
 from trio_server.hub import Hub
+from trio_server.media_routes import remove_previews
 from trio_server.ratelimit import SlidingWindow
 from trio_server.uploads import ATTACHMENT_ID, storage_full
 
@@ -45,8 +46,9 @@ def register_storage_routes(
 
     async def usage(user_id: int) -> dict[str, int]:
         async with db.conn.execute(
-            "SELECT coalesce(sum(size), 0), count(*) FROM attachments "
-            "WHERE uploader_id = ? AND deleted_at IS NULL",
+            # V6-MEDIA: a file's preview counts in the quota with it.
+            "SELECT coalesce(sum(size + coalesce(preview_size, 0)), 0), count(*) "
+            "FROM attachments WHERE uploader_id = ? AND deleted_at IS NULL",
             (user_id,),
         ) as cur:
             used, files = await cur.fetchone()
@@ -130,5 +132,6 @@ def register_storage_routes(
         # a file no row names, which the next start sweeps.
         with contextlib.suppress(FileNotFoundError):
             (upload_dir / attachment_id).unlink()
+        remove_previews(upload_dir, [attachment_id])  # V6-MEDIA: its preview goes with it
         logger.info("attachment.deleted user=%s", user["id"])
         return {"storage": await usage(user["id"]), "message": message}

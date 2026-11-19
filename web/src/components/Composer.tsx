@@ -5,6 +5,8 @@ import './composer-length.css'
 import type { PendingAttachment } from '../lib/pending'
 import { PendingAttachments } from './Attachments'
 import { PaperclipIcon } from './icons2'
+import { VoiceRecordButton } from './media/VoiceRecordButton'
+import type { Recording } from '../lib/voiceRecorder'
 
 /** v2: the composer's attachment side (CONTRACT-V2 §2). */
 export interface ComposerAttachments {
@@ -19,6 +21,9 @@ export interface ComposerAttachments {
   onAdd: (files: File[]) => void
   onRemove: (localId: string) => void
   onDismissNotice: () => void
+  /** V6: "Orijinali gönder" (per device). */
+  sendOriginal?: boolean
+  onToggleOriginal?: (value: boolean) => void
 }
 
 /** Clipboard files, with a timestamped name for the nameless ones (screenshots). */
@@ -44,6 +49,9 @@ export function Composer({
   onEscape,
   onEditLast,
   focusSignal,
+  initialText = '',
+  onTextChange,
+  voice,
 }: {
   channelName: string
   onSend: (content: string) => void
@@ -59,8 +67,17 @@ export function Composer({
   onEditLast?: () => boolean
   /** v4: a change of this number moves the focus into the box. */
   focusSignal?: number
+  /** V6: the channel's saved draft (lib/drafts.ts). */
+  initialText?: string
+  /** V6: every change of the text, for the draft. */
+  onTextChange?: (text: string) => void
+  /** V6: voice messages; the microphone shows while the box is empty. */
+  voice?: { onRecorded: (recording: Recording) => void; onError: (message: string) => void }
 }) {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(initialText)
+  const [recording, setRecording] = useState(false)
+  const textReport = useRef(onTextChange)
+  textReport.current = onTextChange
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   // v2: content may be empty when an uploaded attachment goes with it; nothing
@@ -105,6 +122,7 @@ export function Composer({
     if (!canSend) return
     onSend(content)
     setText('')
+    textReport.current?.('')
   }
 
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -156,9 +174,15 @@ export function Composer({
       )}
       {replyBar}
       {attachments && (
-        <PendingAttachments items={attachments.items} files={attachments.files} onRemove={attachments.onRemove} />
+        <PendingAttachments
+          items={attachments.items}
+          files={attachments.files}
+          onRemove={attachments.onRemove}
+          sendOriginal={attachments.sendOriginal}
+          onToggleOriginal={attachments.onToggleOriginal}
+        />
       )}
-    <div className="composer">
+    <div className={`composer${recording ? ' recording' : ''}`}>
       {attachments && (
         <>
           <button
@@ -198,11 +222,15 @@ export function Composer({
         aria-label="Mesaj yaz"
         onChange={(event) => {
           setText(event.target.value)
+          textReport.current?.(event.target.value)
           if (event.target.value.trim()) onTyping()
         }}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
       />
+      {voice && (text === '' || recording) && (
+        <VoiceRecordButton onRecorded={voice.onRecorded} onError={voice.onError} onActiveChange={setRecording} />
+      )}
       <button
         type="button"
         className="primary"
