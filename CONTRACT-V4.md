@@ -1,0 +1,181 @@
+# Trio — contract, fourth layer (adds to v1–v3; where they differ, this wins)
+
+Chosen from a four-lens product council (chat/social, voice/desktop,
+mobile/ops, "only because it is ours"). Everything here is additive on the
+wire: a client that predates it keeps working, and a new client must work
+against a server that predates it for the length of one deploy.
+
+Three parts, independent enough to be built in parallel:
+**A** voice survives a signalling drop, versions, self-test, calling friends
+into voice; **B** the message family (edit, delete, reactions, reply, pin);
+**C** identity (avatars, server name).
+
+---
+
+## A1. A voice call survives a signalling drop
+
+Media is peer to peer; the server only relays signalling. Today the client
+closes every peer connection when the websocket drops, so each deploy cuts the
+call. New rule:
+
+- When the websocket drops while in voice, the client KEEPS its peer
+  connections, tracks and audio elements, shows a thin banner
+  ("Sunucuya yeniden bağlanılıyor… ses sürüyor"), and holds any action that
+  needs signalling (camera, screen share, device changes that renegotiate,
+  ICE restart) — the buttons show a waiting state and the action runs after
+  resume, or is dropped with a notice after 30 s.
+- On reconnect the client sends `voice.join {channel_id, muted, deafened,
+  camera, screensharing, resume: true}`.
+- Server: a `voice.join` with `resume: true` is an ordinary join (it has no
+  memory of the call after a restart) and broadcasts `voice.joined` with
+  `resumed: true`; `voice.peers` to the joiner carries `resumed: true` too.
+- A client that receives `voice.joined {resumed: true}` for a peer it ALREADY
+  has a live connection to (connectionState `connected` or `connecting`) keeps
+  that connection and does not create a new one. The joiner, on `voice.peers
+  {resumed: true}`, keeps live connections to listed peers, creates
+  connections only to listed peers it has none for, and closes connections to
+  peers not listed.
+- Turn-taking state (CLAUDE.md, "never let an SDP rollback happen") is reset
+  per kept peer on resume: no offer is in flight across a drop; a negotiation
+  that was pending when the socket dropped is abandoned on both sides
+  (rollback is NOT used — if a side is in `have-local-offer` when the socket
+  comes back, that peer connection is closed and recreated; this is the one
+  case where a kept connection is replaced).
+- If the socket is not back within 30 s, the client falls back to today's
+  behaviour (close everything, rejoin on reconnect).
+- If only ONE side dropped (its network blipped; the server and the others
+  stayed), the server has already broadcast `voice.left` for it: the others
+  close that peer as today. The resuming side then joins normally. (Keeping
+  the call through a one-sided blip would need the server to delay
+  `voice.left`; add a 10 s grace: the server marks the member `reconnecting`
+  — broadcast `voice.state {…, reconnecting: true}` — and only broadcasts
+  `voice.left` if the user's voice-bound connection has not been replaced by a
+  `voice.join {resume: true}` within 10 s. During the grace the others keep
+  the peer connection and show the participant dimmed.)
+
+e2e: kill and restart the server with three people in voice — receiver stats
+show audio never stopped on any pair (bytes keep increasing across the
+restart), and afterwards camera/screen toggles work.
+
+## A2. Versions
+
+- Build: the web bundle embeds `__TRIO_VERSION__` (package.json version) and
+  `__TRIO_BUILD__` (short commit or build time). `GET /api/health` gains
+  `{"ok": true, "version": "<server version>"}`; `ready` gains
+  `server_version`.
+- Settings footer shows "Trio <version> (<build>)".
+- The reload-on-new-build check (already shipped) stays the mechanism that
+  moves a stale tab; after such a reload — and on the first open after an
+  update — a small "Yenilikler" card lists the entries of `web/src/changelog.ts`
+  (Turkish, newest first, each with a version) newer than the version this
+  device last acknowledged (`localStorage` `trio.seenVersion`).
+
+## A3. Connection self-test (Ayarlar › Bağlantı testi)
+
+All client-side. Shows: microphone level meter; "kendini duy" loopback toggle;
+TURN status from a throwaway `RTCPeerConnection` built with `/api/ice`
+(`relay candidate received` → "TURN çalışıyor"; none within 5 s →
+"TURN yok veya ulaşılamıyor"; no TURN server in the list → "TURN
+yapılandırılmamış"); while in voice, per peer: connection type (doğrudan /
+aktarma) from the selected candidate pair, round-trip time, inbound packet
+loss; a "Raporu kopyala" button producing plain text with no token, no IP
+addresses and no names beyond the three display names. When the ICE list has
+no TURN server, a quiet persistent hint appears in the voice panel for
+everyone ("TURN ayarlı değil: bazı ağlarda ses bağlanmayabilir").
+
+## A4. Calling friends into voice
+
+    client → server   voice.ring {channel_id}
+    server → others   voice.ring {channel_id, from: user_id}
+
+- Only from a user who is in that voice channel; at most one per user per
+  30 s (`error` `RATE_LIMITED` otherwise); delivered to every online user not
+  already in that channel.
+- Receiver: a ringtone (short, looped up to 20 s), a band "X seni <kanal>
+  odasına çağırıyor — Katıl / Kapat", and a browser Notification when the page
+  is not being viewed. Deafened or "rahatsız etme" (a new local setting) →
+  band only, no sound.
+- Cue sounds (local, small bundled files, one master "Sesler" volume + off
+  switch in settings): self mute/unmute, self deafen/undeafen, someone joined
+  my room, someone left my room, ring. No sound for my own join echo.
+- "X ses odasına girdi": when a room goes from empty to one person, users who
+  are online but not viewing the app get a Notification (same permission as
+  messages); no sound if "rahatsız etme".
+
+---
+
+## B. The message family
+
+One broadcast for every later change to a message:
+
+    server → everyone   message.updated {message: Message}
+    server → everyone   message.deleted {channel_id, message_id}
+
+`Message` gains (all optional/empty by default so old clients ignore them):
+`edited_at` (ISO or null), `reply_to` (`{id, author: {id, name}, excerpt}` or
+null — excerpt = first 140 chars of the target's content, or
+"📎 <filename>" for an attachment-only message, resolved by the server at
+read time; if the target was deleted: `{id, deleted: true}`),
+`reactions` (`[{key, count, user_ids}]`, ordered by first use),
+`pinned_at`, `pinned_by` (or null).
+
+    PATCH  /api/messages/{id}        {content}          author only, any age
+           → 200 {message}   422 INVALID_MESSAGE   403 FORBIDDEN   404
+           (attachments cannot be changed; content may become empty only if
+            attachments remain)
+    DELETE /api/messages/{id}                            author only
+           → 204; the row is removed, its attachments' files are deleted from
+           disk and the bytes return to the uploader's quota; reactions and
+           pin go with it; replies to it show "silinmiş mesaj".
+    PUT    /api/messages/{id}/reactions/{key}            anyone → 200 {message}
+    DELETE /api/messages/{id}/reactions/{key}            own reaction → 200 {message}
+    PUT    /api/messages/{id}/pin                        anyone → 200 {message}
+    DELETE /api/messages/{id}/pin                        anyone → 200 {message}
+    GET    /api/channels/{id}/pins                       → 200 {messages: [...]} newest pin first
+
+- A reaction `key` is a free string, 1–64 bytes, URL-encoded in the path:
+  either one emoji grapheme cluster or `:name:` (reserved for custom emoji,
+  a later layer — the server stores any key matching `^:[a-z0-9_]{1,32}:$`
+  without knowing the emoji). At most 20 distinct keys per message
+  (`409 REACTION_LIMIT`). Idempotent.
+- Reply: `message.send` gains `reply_to: <message id>` (must be in the same
+  channel, else `error` `INVALID_REPLY`).
+- At most 50 pins per channel (`409 PIN_LIMIT`).
+- Rate limits per user: 30 edits/deletes and 120 reaction changes per minute
+  (`429 RATE_LIMITED`).
+- Schema: new tables/columns created on startup; a database from v3 upgrades
+  on boot (test from the previous shape — CLAUDE.md).
+- History pages include all the new fields.
+
+Client: hover/long-press actions on a message (tepki, yanıtla, düzenle, sil,
+sabitle); edit in place (Esc cancels, Enter saves, "düzenlendi" mark); delete
+asks once; a small emoji picker (a built-in set of ~80 common emoji grouped,
+recent first — no third-party picker service); reaction chips under the
+message, mine highlighted, tooltip lists names; quoted reply preview above the
+message, click scrolls to the original (loading older pages if needed);
+"Sabitlenenler" panel from the channel header. Up-arrow in an empty composer
+edits my last message. Works at 390 px (long-press sheet). The message row
+must not re-layout the scroll position when reactions arrive.
+
+---
+
+## C. Identity
+
+- `User` gains `avatar_url` (or null). `PUT /api/me/avatar` multipart `file`
+  (png/jpeg/webp, ≤ 2 MB; the CLIENT crops to a square and scales to 256 px
+  before upload; the server verifies type and dimensions ≤ 512 px and
+  re-serves it from `/api/avatars/<user id>/<hash>.<ext>`, no auth, immutable
+  caching, `Content-Security-Policy: sandbox`) → 200 `{user}`;
+  `DELETE /api/me/avatar` → 200 `{user}`. Avatars do not count toward the
+  upload quota. Broadcast `user.updated {user}` to everyone; `ready.users` and
+  message authors carry `avatar_url`.
+- `PATCH /api/me {name}` renames (same validation and uniqueness as join;
+  30 days of old messages need no rewrite — authors are joined by id) →
+  `user.updated`.
+- Server profile: `GET /api/server` → `{name, icon_url}`; `PATCH /api/server
+  {name}` and `PUT /api/server/icon` by any member (three friends; no roles) →
+  broadcast `server.updated {server}`; `ready` gains `server`. The name shows
+  in the sidebar header next to the brand mark and in the page title.
+- Client: avatars wherever initials are shown today (messages, members, voice
+  participants with the speaking ring around the avatar, stage tiles when the
+  camera is off); initials remain the fallback.
