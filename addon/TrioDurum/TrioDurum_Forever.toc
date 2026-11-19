@@ -1,0 +1,9 @@
+## Interface: 16001, 120105, 11507, 50503
+## Title: TrioDurum
+## Notes: Trio için oyun durumu: seviye ve bölge. Yalnızca kendine fısıldar.
+## Author: Trio
+## Version: 0.1.0
+## SavedVariables: TrioDurumDB
+## DefaultState: enabled
+
+TrioDurum.lua
