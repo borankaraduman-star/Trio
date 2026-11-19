@@ -36,8 +36,18 @@
 
 /* --- the dot on the settings button --------------------------------------------- */
 
-[data-testid='btn-settings'] {
+[data-testid='btn-settings'],
+.drawer-toggle {
   position: relative;
+}
+
+/* On a phone the settings button is inside the closed drawer: the menu button
+   carries the dot too, bottom-left (the unread dot is top-right). */
+.drawer-toggle .ops-dot {
+  top: auto;
+  right: auto;
+  bottom: 4px;
+  left: 4px;
 }
 
 .ops-dot {
@@ -289,11 +299,11 @@
 }
 
 .ops-person {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  column-gap: 10px;
-  padding: 8px 0;
+  gap: 4px 10px;
+  padding: 10px 0;
 }
 
 .ops-person + .ops-person {
@@ -301,13 +311,17 @@
 }
 
 .ops-person > .dot {
+  position: static; /* .dot is an avatar badge elsewhere */
+  flex: none;
   width: 9px;
   height: 9px;
+  border: 0;
   border-radius: 50%;
 }
 
 .ops-person-text {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
 }
@@ -335,18 +349,32 @@
   font-weight: 600;
 }
 
+/* Under the name, aligned with it (past the dot). */
 .ops-person-actions {
-  grid-column: 2;
   display: flex;
+  flex-basis: 100%;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
+  padding-left: 19px;
 }
 
 .ops-person-actions .ghost {
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 34px;
+  padding: 5px 12px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+  background: var(--trio-raised, #232730);
   font-size: 13px;
+}
+
+.ops-person-actions .ghost:hover {
+  border-color: var(--trio-muted, #a0a6b2);
+}
+
+.ops-person-actions .ghost.danger-text {
+  border-color: rgb(228 119 127 / 45%);
+  background: transparent;
 }
 
 .ops-link-code {
@@ -419,9 +447,9 @@
   z-index: 60;
 }
 
-.ops-confirm {
+.modal.ops-confirm {
   width: min(400px, 100%);
-  padding: 20px;
+  padding: 22px 22px 20px;
 }
 
 .ops-confirm h2 {
