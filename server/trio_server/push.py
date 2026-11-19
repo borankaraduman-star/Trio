@@ -107,6 +107,10 @@ class EndpointError(ValueError):
     pass
 
 
+class PrivateAddressError(EndpointError):
+    """An allowed name that resolved to a non-public address (not "gone": DNS can recover)."""
+
+
 async def system_resolver(host: str, port: int) -> list[str]:
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
@@ -176,7 +180,7 @@ async def resolve_target(endpoint: str, resolver: Resolver, test_service: str | 
     host = parts.hostname or ""
     addresses = await resolver(host, 443)
     if not addresses or not all(public_address(a) for a in addresses):
-        raise EndpointError("endpoint resolves to a non-public address")
+        raise PrivateAddressError("endpoint resolves to a non-public address")
     address = addresses[0].split("%", 1)[0]
     netloc = f"[{address}]" if ":" in address else address
     path = parts.path or "/"
@@ -365,6 +369,8 @@ class Outcome:
     error: str | None = None
     retry_after: float | None = None
     gone: bool = False
+    # Not worth retrying (a refused address, a payload or key problem).
+    final: bool = False
 
 
 @dataclass
@@ -415,6 +421,7 @@ class PushSender:
         self._tasks: list[asyncio.Task[None]] = []
         self._timers: set[asyncio.TimerHandle] = set()
         self.dropped = 0
+        self.retry_delays: tuple[float, ...] = RETRY_DELAYS
         # Each finished delivery: (subscription id, Outcome). Tests and logs read it.
         self.on_outcome: Callable[[int, Outcome], None] | None = None
 
@@ -486,9 +493,11 @@ class PushSender:
         if outcome.gone:
             logger.info("push.subscription.gone id=%s status=%s", sub_id, outcome.status)
         elif not outcome.ok:
-            retryable = outcome.status is None or outcome.status == 429 or outcome.status >= 500
+            retryable = not outcome.final and (
+                outcome.status is None or outcome.status == 429 or outcome.status >= 500
+            )
             if retryable and item.attempt < MAX_ATTEMPTS:
-                delay = outcome.retry_after or RETRY_DELAYS[item.attempt - 1]
+                delay = outcome.retry_after or self.retry_delays[item.attempt - 1]
                 delay *= 1 + random.random() * 0.2  # noqa: S311 - jitter, not security
                 self._later(
                     delay,
@@ -526,13 +535,16 @@ class PushSender:
             return Outcome(False, error="not started")
         try:
             target = await resolve_target(sub["endpoint"], self.resolver, self.test_service)
+        except PrivateAddressError as exc:
+            logger.warning("push.endpoint.private sub=%s", sub.get("id"))
+            return Outcome(False, error=str(exc), final=True)
         except EndpointError as exc:
             return Outcome(False, error=str(exc), gone=True)
         except OSError:
             return Outcome(False, error="dns")
         data = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(data) > MAX_PLAINTEXT:
-            return Outcome(False, error="payload too large")
+            return Outcome(False, error="payload too large", final=True)
         try:
             body = encrypt(data, b64url_decode(sub["p256dh"]), b64url_decode(sub["auth"]))
         except PushCryptoError:
