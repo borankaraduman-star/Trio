@@ -71,6 +71,8 @@ test('text: unread dot and a new channel appear for everybody', async ({ browser
   const [ayse, mehmet, zeynep] = await threePeople(browser, trio)
 
   // Ayşe creates a channel; everyone sees it.
+  // V7: one "+" asks which kind.
+  await ayse.page.getByTestId('add-channel').click()
   await ayse.page.getByTestId('add-channel-text').click()
   await ayse.page.getByTestId('add-channel-name').fill('oyunlar')
   // Wait for the channel to exist (the POST answers), not just for the click.

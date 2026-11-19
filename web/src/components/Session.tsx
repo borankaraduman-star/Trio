@@ -66,6 +66,11 @@ import { ShareMenu } from './voice/ShareMenu'
 import { stageExtras } from './voice/StageExtras'
 import { useParticipantMenu, VolumeSheet, type VolumeTarget } from './voice/VolumeSheet'
 import { DesktopUpdateBand } from './voice/DesktopVersion'
+// CONTRACT-V7-PHONE: the call bar, presence where the member column is hidden, the collapsible stage.
+import { NO_MEMBERS_QUERY, PHONE_QUERY, useMediaQuery } from '../lib/phone'
+import { CallBar } from './phone/CallBar'
+import { DrawerPresence, PRESENCE_ID, PresencePill } from './phone/Presence'
+import { StageFrame } from './phone/StageFrame'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -702,6 +707,27 @@ export function Session({
     if (activeChannelId !== null) attachments.add(activeChannelId, files)
   }
   const drop = useFileDrop(activeChannel ? addFiles : null)
+  const phone = useMediaQuery(PHONE_QUERY)
+  const noMemberColumn = useMediaQuery(NO_MEMBERS_QUERY)
+  const openPresence = () => {
+    setDrawerOpen(true)
+    requestAnimationFrame(() => document.getElementById(PRESENCE_ID)?.scrollIntoView({ block: 'start' }))
+  }
+  const callBar = phone && (
+    <CallBar
+      voice={voice}
+      me={state.me.id}
+      roomName={voice.channelId === null ? '' : namesRef.current.channel(voice.channelId)}
+      participantCount={voice.channelId === null ? 0 : (state.voice[voice.channelId] ?? []).length}
+      nameOf={nameOf}
+      onToggleMute={() => selfToggle('mute')}
+      onToggleDeafen={() => selfToggle('deafen')}
+      onToggleCamera={() => void engine.toggleCamera()}
+      onToggleScreen={() => void engine.toggleScreen()}
+      onHangup={() => engine.leave()}
+      onOpenRoom={() => setDrawerOpen(true)}
+    />
+  )
 
   return (
     <div className="app">
@@ -738,7 +764,9 @@ export function Session({
         onDismissVoiceError={() => engine.clearError()}
         onRetryMic={() => void engine.retryMic()}
         onAskNotifications={askNotifications}
-        onLogout={() => setLogoutOpen(true)}
+        presence={
+          noMemberColumn ? <DrawerPresence users={state.users} channels={state.channels} voiceMembers={state.voice} /> : undefined
+        }
         server={state.server}
         voiceControls={<ShareMenu engine={engine} voice={voice} nameOf={nameOf} variant="button" />}
         participantMenu={participantMenu}
@@ -777,6 +805,7 @@ export function Session({
           <HashIcon size={20} />
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
           {activeChannel && <MediaButton active={galleryOpen} onClick={() => setGalleryOpen(true)} />}
+          {phone && <PresencePill users={state.users} onOpen={openPresence} />}
           {activeChannel && (
             <PinsButton
               family={family}
@@ -818,6 +847,7 @@ export function Session({
           />
         )}
 
+        <StageFrame enabled={phone} voice={voice} nameOf={nameOf}>
         <CallStage
           remoteScreens={voice.remoteVideo}
           remoteCameras={voice.remoteCamera}
@@ -834,6 +864,7 @@ export function Session({
             nameOf,
           })}
         />
+        </StageFrame>
 
         {activeChannel ? (
           <>
@@ -862,6 +893,7 @@ export function Session({
             <div className="typing-line" data-testid="typing" aria-live="polite">
               {typingLabel(typing)}
             </div>
+            {callBar}
             <Composer
               key={`composer-${activeChannel.id}`}
               channelName={activeChannel.name}
@@ -904,9 +936,12 @@ export function Session({
             />
           </>
         ) : (
+          <>
           <div className="empty">
             {state.ready ? 'Henüz metin kanalı yok. Soldan bir kanal ekle.' : 'Yükleniyor…'}
           </div>
+          {callBar}
+        </>
         )}
       </main>
 

@@ -8,9 +8,7 @@ import {
   HangupIcon,
   HashIcon,
   HeadphonesIcon,
-  LogoutIcon,
   MicIcon,
-  PlusIcon,
   ScreenIcon,
   SpeakerIcon,
 } from './icons'
@@ -21,6 +19,8 @@ import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
 import { heldCameraTitle, RingButton, TurnHint, type RingButtonProps } from './VoiceExtras'
 import { GameActivityLine } from './GameActivity'
 import { BackupDot } from './owner/BackupDot'
+import { ChannelAddButton } from './phone/ChannelAddButton'
+import { screenShareSupported } from '../lib/phone'
 
 export interface SidebarProps {
   open: boolean
@@ -49,7 +49,8 @@ export interface SidebarProps {
   /** V4 A4: the "Çağır" button on my voice room. */
   ring?: RingButtonProps
   onAskNotifications: () => void
-  onLogout: () => void
+  /** V7: who is online, shown where the member column is hidden (CONTRACT-V7-PHONE §2). */
+  presence?: ReactNode
   /** v4: the server's name and icon for the header (default "Trio"). */
   server?: ServerProfile
   /** V6: beside the share button (the share profile menu). */
@@ -131,19 +132,11 @@ export function Sidebar(props: SidebarProps) {
   const inVoice = voice.status !== 'idle'
   const voiceChannel = channels.find((channel) => channel.id === voice.channelId)
 
-  const sectionHeader = (title: string, kind: ChannelKind) => (
+  // V7: one "+" (in the header) asks which kind; the sections only carry titles.
+  // A channel row's own actions (rename, delete) go on the row, not here.
+  const sectionHeader = (title: string) => (
     <div className="section-header">
       <h2 className="section-title">{title}</h2>
-      <button
-        type="button"
-        className="icon-button small"
-        data-testid={`add-channel-${kind}`}
-        title="Kanal ekle"
-        aria-label={kind === 'text' ? 'Metin kanalı ekle' : 'Ses kanalı ekle'}
-        onClick={() => setAdding(adding === kind ? null : kind)}
-      >
-        <PlusIcon size={16} />
-      </button>
     </div>
   )
 
@@ -151,10 +144,11 @@ export function Sidebar(props: SidebarProps) {
     <nav className={props.open ? 'sidebar open' : 'sidebar'} aria-label="Kanallar">
       <header className="sidebar-header">
         <ServerMark server={props.server} />
+        <ChannelAddButton adding={adding} onChoose={setAdding} />
       </header>
 
       <div className="sidebar-scroll">
-        {sectionHeader('Metin kanalları', 'text')}
+        {sectionHeader('Metin kanalları')}
         {adding === 'text' && (
           <AddChannelForm kind="text" onSubmit={props.onCreateChannel} onCancel={() => setAdding(null)} />
         )}
@@ -181,7 +175,7 @@ export function Sidebar(props: SidebarProps) {
           })}
         </ul>
 
-        {sectionHeader('Ses kanalları', 'voice')}
+        {sectionHeader('Ses kanalları')}
         {adding === 'voice' && (
           <AddChannelForm kind="voice" onSubmit={props.onCreateChannel} onCancel={() => setAdding(null)} />
         )}
@@ -195,7 +189,7 @@ export function Sidebar(props: SidebarProps) {
                   type="button"
                   className={mine ? 'channel active' : 'channel'}
                   data-testid={`channel-${channel.id}`}
-                  title={mine ? 'Bu kanaldasın' : 'Katılmak için tıkla'}
+                  title={mine ? 'Bu kanaldasın' : 'Odaya katıl'}
                   onClick={() => props.onJoinVoice(channel.id)}
                 >
                   <SpeakerIcon size={16} />
@@ -251,7 +245,7 @@ export function Sidebar(props: SidebarProps) {
                               </span>
                             )}
                             {participant.muted && (
-                              <span title="Sessizde">
+                              <span title="Sessize alınmış">
                                 <MicIcon size={13} off />
                               </span>
                             )}
@@ -273,6 +267,7 @@ export function Sidebar(props: SidebarProps) {
             )
           })}
         </ul>
+        {props.presence}
       </div>
 
       {voice.error && (
@@ -310,24 +305,29 @@ export function Sidebar(props: SidebarProps) {
               <CameraIcon off={!voice.camera} />
             </button>
           )}
-          <button
-            type="button"
-            className={voice.screensharing ? 'icon-button on' : 'icon-button'}
-            data-testid="btn-screen"
-            aria-pressed={voice.screensharing}
-            title={voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
-            aria-label={voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
-            onClick={props.onToggleScreen}
-          >
-            <ScreenIcon />
-          </button>
-          {props.voiceControls}
+          {/* V7: no share controls where the browser cannot share a screen (most phones). */}
+          {screenShareSupported() && (
+            <>
+              <button
+                type="button"
+                className={voice.screensharing ? 'icon-button on' : 'icon-button'}
+                data-testid="btn-screen"
+                aria-pressed={voice.screensharing}
+                title={voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
+                aria-label={voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
+                onClick={props.onToggleScreen}
+              >
+                <ScreenIcon />
+              </button>
+              {props.voiceControls}
+            </>
+          )}
           <button
             type="button"
             className="icon-button danger"
             data-testid="btn-hangup"
-            title="Ayrıl"
-            aria-label="Ayrıl"
+            title="Görüşmeden ayrıl"
+            aria-label="Görüşmeden ayrıl"
             onClick={props.onHangup}
           >
             <HangupIcon />
@@ -390,16 +390,7 @@ export function Sidebar(props: SidebarProps) {
             <BackupDot />
           </button>
         )}
-        <button
-          type="button"
-          className="icon-button"
-          data-testid="btn-logout"
-          title="Çıkış yap"
-          aria-label="Çıkış yap"
-          onClick={props.onLogout}
-        >
-          <LogoutIcon />
-        </button>
+        {/* V7: signing out is in Ayarlar › Hesap (with its safe-logout dialog), not one tap from here. */}
       </footer>
     </nav>
   )
