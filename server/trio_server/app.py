@@ -7,6 +7,7 @@ import contextlib
 import hmac
 import json
 import logging
+import mimetypes
 import re
 import secrets
 import shutil
@@ -576,6 +577,9 @@ def shell_headers(host: str) -> dict[str, str]:
 
 def _mount_static(app: FastAPI, directory: Path) -> None:
     """Serve the built client, falling back to index.html for client-side routes."""
+    # Not every image's /etc/mime.types knows .webp; without it the client's
+    # WebP artwork would be served as application/octet-stream.
+    mimetypes.add_type("image/webp", ".webp")
     root = directory.resolve()
     if not (root / "index.html").is_file():
         logger.warning("static.missing index.html not found in TRIO_STATIC_DIR")

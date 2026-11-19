@@ -324,3 +324,55 @@ must not re-layout the scroll position when reactions arrive.
 - Client: avatars wherever initials are shown today (messages, members, voice
   participants with the speaking ring around the avatar, stage tiles when the
   camera is off); initials remain the fallback.
+
+### C on the wire, as the server implements it
+
+`User` is `{id, name, avatar_url}` everywhere a user is sent: `POST /api/join`,
+`GET /api/me`, `ready.user`, `ready.users[]` (plus `online`), `user.joined`,
+`user.updated`, message `author`. (`reply_to.author` stays `{id, name}`.)
+`avatar_url` is null or `/api/avatars/<user id>/<32 hex>.<png|jpg|webp>`; the
+hex is the start of the file's SHA-256, so a URL is never reused for other
+bytes. A removed user's messages keep their author's `avatar_url`.
+
+    PUT    /api/me/avatar     multipart, one part `file`  → 200 {user}
+    DELETE /api/me/avatar                                  → 200 {user}  (also with none set)
+    PATCH  /api/me            {name}                       → 200 {user}
+    GET    /api/server                                     → 200 {server: {name, icon_url}}
+    PATCH  /api/server        {name}                       → 200 {server}
+    PUT    /api/server/icon   multipart, one part `file`  → 200 {server}
+    DELETE /api/server/icon                                → 200 {server}
+    GET    /api/avatars/<user id>/<hash>.<ext>             no auth
+    GET    /api/server/icon/<hash>.<ext>                   no auth
+
+Note `GET /api/server` answers `{server: {...}}` (an envelope like `{user}`),
+needs a token like everything but join/health, and the default name is
+`"Trio"`. `icon_url` is null or `/api/server/icon/<32 hex>.<ext>`.
+
+- Image rules (avatar and icon alike): at most 2 MiB (`413 FILE_TOO_LARGE`,
+  counted while streaming); the server reads the bytes, never the part's
+  filename or Content-Type: a well-formed PNG, baseline/progressive JPEG or
+  still WebP (VP8, VP8L, or VP8X without animation), each side 1–512 px, else
+  `422 INVALID_IMAGE`. Not square is accepted (the client crops). The bytes
+  are served exactly as uploaded (no re-encoding, so no metadata is removed:
+  the client's canvas re-encode is what strips EXIF). Missing `file` part /
+  not multipart: `422 INVALID_UPLOAD`; disk full: `507 STORAGE_FULL`.
+- Serving: `Content-Type` from the verified type, `Content-Disposition:
+  inline`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy:
+  sandbox; default-src 'none'`, `Cache-Control: public, max-age=31536000,
+  immutable`. Any other path, an old (replaced) file, or another user's id
+  with somebody's hash: `404 NOT_FOUND`.
+- Uploading the identical file again changes nothing and broadcasts nothing;
+  a different file replaces the old one (the old URL 404s at once). Avatars
+  and the icon do not count towards `TRIO_USER_QUOTA_MB`.
+- Names: `PATCH /api/me` and `PATCH /api/server` use the join's rules
+  (`clean_name`: 1–32 characters after trim, no control/format characters):
+  `422 INVALID_NAME`; a user name held by another user (case-insensitive, the
+  Turkish I/ı rule) → `409 NAME_TAKEN`; changing the case of one's own name is
+  allowed. The name a user leaves becomes free for a newcomer. An unchanged
+  name: 200, no broadcast.
+- Broadcasts (to every socket, the actor's included, queued before the
+  response): `user.updated {user}` after a rename or avatar change;
+  `server.updated {server}` after a name or icon change. `ready` gains
+  `server: {name, icon_url}`.
+- Rate limit: 10 profile changes (rename, avatar put/delete, server name,
+  icon put/delete together) per user per sliding minute → `429 RATE_LIMITED`.
