@@ -51,6 +51,10 @@ import { PinsButton } from './message/PinsButton'
 import { ReplyBar } from './message/ReplyBar'
 import { FamilyNotice } from './message/FamilyNotice'
 import { activityStore, GameForwarder, gameShare, gameStatusBridge } from '../gameActivity'
+import { MediaButton, MediaGallery } from './media/MediaGallery'
+import { useDrafts } from '../useDrafts'
+import { failedSend } from '../lib/sendFailure'
+import type { Recording } from '../lib/voiceRecorder'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -197,6 +201,9 @@ export function Session({
   }, [])
   const replyRef = useRef(family.reply)
   replyRef.current = family.reply
+  // V6: a draft per channel (text and reply), across channel switches and reloads.
+  const drafts = useDrafts(state.activeChannelId, family.reply, familyActions, stateRef)
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [canAskNotifications, setCanAskNotifications] = useState(notificationsAskable)
@@ -222,7 +229,7 @@ export function Session({
     inCall: engine.getSnapshot().status !== 'idle',
     dialogOpen: dialogs.current,
     pendingFiles: anyPendingFiles(),
-    draft: draft.current,
+    draft: draft.current || drafts.anyText(),
     unsentMessages: Object.values(stateRef.current.messages).some((channel) =>
       channel.items.some((item) => item.status !== 'sent'),
     ),
@@ -333,7 +340,17 @@ export function Session({
         if (channelId !== null) engine.handleEvent({ type: 'voice.left', channel_id: channelId, user_id: event.user_id })
       }
 
-      if (event.type === 'error' && SEND_REFUSALS.has(event.code)) {
+      // V6: the error names the send it answers (its nonce): exactly that row fails.
+      const named = event.type === 'error' ? failedSend(event, before.messages) : null
+      if (event.type === 'error' && named) {
+        if (lastSent.current?.nonce === named.nonce) lastSent.current = null
+        sendTimers.clear(named.nonce)
+        dispatch({ type: 'message.failed', channelId: named.channelId, nonce: named.nonce })
+        setSendNotice(
+          sendErrorMessage(event.code) ??
+            (event.code === 'INVALID_REPLY' ? 'Yanıtladığın mesaj artık yok; mesaj gönderilmedi.' : null),
+        )
+      } else if (event.type === 'error' && event.nonce === undefined && SEND_REFUSALS.has(event.code)) {
         // v2: a refused send answers with a bare error frame; fail the message just sent.
         const last = lastSent.current
         if (last && Date.now() - last.at < SEND_TIMEOUT_MS) {
@@ -524,9 +541,44 @@ export function Session({
       delete lastTypingSent.current[channelId]
       setSendNotice(null)
       if (reply) familyActions.cancelReply()
+      drafts.clear(channelId)
       transmit(channelId, content, nonce, sentAttachments, reply?.id)
     },
-    [transmit, attachments, loadLatest, familyActions],
+    [transmit, attachments, loadLatest, familyActions, drafts],
+  )
+
+  /** V6: a recorded voice message: uploaded, then sent by itself as a message. */
+  const sendVoice = useCallback(
+    (recording: Recording) => {
+      const channelId = stateRef.current.activeChannelId
+      if (channelId === null) return
+      attachments.addVoice(
+        channelId,
+        recording.file,
+        { duration_ms: recording.durationMs, waveform: recording.waveform },
+        (localId) => {
+          const attachment = attachments.takeOne(localId)
+          if (!attachment) return
+          const nonce = newNonce()
+          dispatch({
+            type: 'message.optimistic',
+            message: {
+              id: -1,
+              channel_id: channelId,
+              author: stateRef.current.me,
+              content: '',
+              created_at: new Date().toISOString(),
+              attachments: [attachment],
+              key: nonce,
+              nonce,
+              status: 'pending',
+            },
+          })
+          transmit(channelId, '', nonce, [attachment])
+        },
+      )
+    },
+    [attachments, transmit],
   )
 
   const retryMessage = useCallback(
@@ -723,6 +775,7 @@ export function Session({
           </button>
           <HashIcon size={20} />
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
+          {activeChannel && <MediaButton active={galleryOpen} onClick={() => setGalleryOpen(true)} />}
           {activeChannel && (
             <PinsButton
               family={family}
@@ -818,6 +871,9 @@ export function Session({
               }}
               onEditLast={familyActions.editLast}
               focusSignal={family.composerFocus}
+              initialText={drafts.textOf(activeChannel.id)}
+              onTextChange={(text) => drafts.setText(activeChannel.id, text)}
+              voice={{ onRecorded: sendVoice, onError: setSendNotice }}
               attachments={{
                 items: pendingHere,
                 files: attachments.files,
@@ -827,6 +883,8 @@ export function Session({
                 notice: sendNotice ?? attachments.notice,
                 onAdd: addFiles,
                 onRemove: attachments.remove,
+                sendOriginal: attachments.sendOriginal,
+                onToggleOriginal: attachments.setSendOriginal,
                 onDismissNotice: () => {
                   setSendNotice(null)
                   attachments.dismissNotice()
@@ -842,6 +900,20 @@ export function Session({
       </main>
 
       <MemberList users={state.users} />
+
+      {galleryOpen && activeChannel && (
+        <MediaGallery
+          token={token}
+          channelId={activeChannel.id}
+          channelName={activeChannel.name}
+          onClose={() => setGalleryOpen(false)}
+          onJump={(messageId) => {
+            setGalleryOpen(false)
+            familyActions.jumpTo(messageId)
+          }}
+          onUnauthorized={onLogout}
+        />
+      )}
 
       {settingsOpen && (
         <SettingsDialog

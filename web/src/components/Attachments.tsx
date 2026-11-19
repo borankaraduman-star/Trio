@@ -4,6 +4,9 @@ import { attachmentKind, formatSize } from '../lib/attachments'
 import type { PendingAttachment } from '../lib/pending'
 import type { Attachment } from '../types'
 import { CloseIcon, DownloadIcon, FileIcon } from './icons2'
+import { OriginalToggle, PendingSize } from './media/PendingPhoto'
+import { VoiceMessage } from './media/VoiceMessage'
+import { attachmentBoxStyle } from '../lib/imageBox'
 
 /** Full-size image over the page. Esc, the close button or a click outside the image closes it. */
 function Lightbox({ attachment, onClose }: { attachment: Attachment; onClose: () => void }) {
@@ -69,14 +72,15 @@ function ImageAttachment({ attachment }: { attachment: Attachment }) {
     <>
       <button
         type="button"
-        className="attachment-box attachment-image"
+        className={`attachment-box attachment-image${attachmentBoxStyle(attachment) ? ' sized' : ''}`}
+        style={attachmentBoxStyle(attachment) ?? undefined}
         data-testid="attachment-image"
         title={`${attachment.filename} — büyütmek için tıkla`}
         aria-label={`Resmi büyüt: ${attachment.filename}`}
         onClick={() => setOpen(true)}
       >
         <img
-          src={attachment.url}
+          src={attachment.preview_url ?? attachment.url}
           alt={attachment.filename}
           loading="lazy"
           decoding="async"
@@ -118,6 +122,8 @@ function FileAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {
+  // V6: a voice message is a compact player, whatever its audio type.
+  if (attachment.voice) return <VoiceMessage attachment={attachment} voice={attachment.voice} />
   switch (attachmentKind(attachment.content_type)) {
     case 'image':
       return <ImageAttachment attachment={attachment} />
@@ -186,11 +192,16 @@ export function PendingAttachments({
   items,
   files,
   onRemove,
+  sendOriginal = false,
+  onToggleOriginal,
 }: {
   items: readonly PendingAttachment[]
   /** Local files by pending id, for image thumbnails. */
   files?: ReadonlyMap<string, File>
   onRemove: (localId: string) => void
+  /** V6: "Orijinali gönder" (per device) and its switch, shown on a picture it changes. */
+  sendOriginal?: boolean
+  onToggleOriginal?: (value: boolean) => void
 }) {
   if (items.length === 0) return null
   return (
@@ -213,11 +224,18 @@ export function PendingAttachments({
               </span>
               <span className="pending-meta">
                 {item.status === 'queued' &&
-                  (item.waiting ? 'Başka bir yükleme bitince denenecek…' : 'Sırada bekliyor…')}
+                  (item.preparing
+                    ? 'Hazırlanıyor…'
+                    : item.waiting
+                      ? 'Başka bir yükleme bitince denenecek…'
+                      : 'Sırada bekliyor…')}
                 {item.status === 'uploading' && `Yükleniyor… %${percent}`}
-                {item.status === 'done' && formatSize(item.size)}
+                {item.status === 'done' && <PendingSize item={item} />}
                 {item.status === 'error' && (item.error ?? 'Yüklenemedi.')}
               </span>
+              {item.reducible && onToggleOriginal && item.status !== 'error' && (
+                <OriginalToggle checked={sendOriginal} onChange={onToggleOriginal} />
+              )}
               {item.status === 'uploading' && (
                 <span
                   className="pending-progress"

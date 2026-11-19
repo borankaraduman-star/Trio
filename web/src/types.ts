@@ -31,6 +31,20 @@ export interface Attachment {
   size: number
   /** Relative: `/api/files/<id>/<name>`. */
   url: string
+  // --- V6 (CONTRACT-V6-MEDIA): optional, an older server sends none ---
+  /** A small picture of an image for lists (`/api/previews/<id>`), or null. */
+  preview_url?: string | null
+  /** The original's shown size, or null when the server could not tell. */
+  width?: number | null
+  height?: number | null
+  /** Set when the attachment is a voice message. */
+  voice?: VoiceMeta | null
+}
+
+/** V6: a voice message's length and 64-bar waveform (0..255 each). */
+export interface VoiceMeta {
+  duration_ms: number
+  waveform: number[]
 }
 
 export interface Message {
@@ -134,7 +148,8 @@ export type ServerEvent =
   /** V4 A4: somebody in `channel_id` calls me in. */
   | { type: 'voice.ring'; channel_id: number; from: number }
   | { type: 'pong' }
-  | { type: 'error'; code: string; message: string }
+  /** V6: `nonce` when it answers a `message.send` that carried one. */
+  | { type: 'error'; code: string; message: string; nonce?: string }
 
 export type ClientEvent =
   | {

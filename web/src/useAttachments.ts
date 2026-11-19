@@ -8,9 +8,12 @@ import {
   remainingSlots,
   type PendingAttachment,
 } from './lib/pending'
-import type { Attachment } from './types'
+import type { Attachment, VoiceMeta } from './types'
 import { UploadQueue } from './lib/uploadQueue'
 import { uploadFile } from './uploads'
+import { startUpload, type UploadSource } from './lib/mediaUpload'
+import { loadSendOriginal, saveSendOriginal, worthDecoding } from './lib/photoPlan'
+import { preparePhoto } from './lib/photoPrep'
 
 let counter = 0
 function localId(): string {
@@ -35,6 +38,14 @@ export interface AttachmentsApi {
   dismissNotice: () => void
   /** The local file of each pending item, for thumbnails. */
   files: ReadonlyMap<string, File>
+  // --- V6 (CONTRACT-V6-MEDIA) ---
+  /** "Orijinali gönder": pictures go up as picked (per device). */
+  sendOriginal: boolean
+  setSendOriginal: (value: boolean) => void
+  /** A recorded voice message: uploaded at once, then `onUploaded` sends it by itself. */
+  addVoice: (channelId: number, file: File, voice: VoiceMeta, onUploaded: (localId: string) => void) => void
+  /** Takes one uploaded item (a voice message) out of the pending list. */
+  takeOne: (localId: string) => Attachment | null
 }
 
 /**
@@ -52,10 +63,21 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
 
   const [queue] = useState(
     () =>
-      new UploadQueue<File>((file, name, onProgress) => uploadFile(token, file, name, onProgress), {
+      new UploadQueue<UploadSource>(
+        (source, _name, onProgress) =>
+          startUpload((blob, name, progress, extras) => uploadFile(token, blob, name, progress, extras), source, onProgress),
+        {
         onStart: (id) => dispatch({ type: 'start', localId: id }),
         onProgress: (id, progress) => dispatch({ type: 'progress', localId: id, progress }),
-        onDone: (id, attachment) => dispatch({ type: 'done', localId: id, attachment }),
+        onDone: (id, attachment) => {
+          dispatch({ type: 'done', localId: id, attachment })
+          const sent = voiceDone.current.get(id)
+          if (sent) {
+            voiceDone.current.delete(id)
+            // After the reducer has the attachment: the callback takes it.
+            queueMicrotask(() => sent(id))
+          }
+        },
         onWaiting: (id) => dispatch({ type: 'waiting', localId: id }),
         onError: (id, code, status) => {
           if (code === 'ABORTED') return
@@ -66,6 +88,35 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
           dispatch({ type: 'error', localId: id, error: uploadErrorMessage(code) })
         },
       }),
+  )
+  const voiceDone = useRef(new Map<string, (localId: string) => void>())
+  const [sendOriginal, setSendOriginalState] = useState(loadSendOriginal)
+  const sendOriginalRef = useRef(sendOriginal)
+  /** Per item: which preparation is the current one (a toggle starts another). */
+  const generation = useRef(new Map<string, number>())
+
+  /** Make a picture ready (smaller copy, preview) and queue it; the file itself when that fails. */
+  const prepare = useCallback(
+    (id: string, file: File) => {
+      const gen = (generation.current.get(id) ?? 0) + 1
+      generation.current.set(id, gen)
+      void preparePhoto(file, sendOriginalRef.current)
+        .catch(() => ({ blob: file as Blob, name: file.name, preview: null, downsized: false, reducible: false }))
+        .then((prepared) => {
+          if (generation.current.get(id) !== gen || !fileMap.current.has(id)) return
+          dispatch({
+            type: 'prepared',
+            localId: id,
+            name: prepared.name,
+            size: prepared.blob.size,
+            originalSize: file.size,
+            downsized: prepared.downsized,
+            reducible: prepared.reducible,
+          })
+          queue.add(id, { blob: prepared.blob, name: prepared.name, preview: prepared.preview }, prepared.name)
+        })
+    },
+    [queue],
   )
 
   // Leaving the session cancels whatever is still uploading or waiting.
@@ -101,6 +152,7 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
           progress: 0,
           attachment: null,
           error: null,
+          ...(worthDecoding(file) ? { preparing: true } : {}),
         }
         items.push(item)
         starts.push({ item, file })
@@ -109,15 +161,74 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
       if (skipped > 0) problems.push(`Bir mesaja en fazla ${MAX_ATTACHMENTS} dosya eklenebilir.`)
       setNotice(problems.length > 0 ? problems.join(' ') : null)
       dispatch({ type: 'add', items })
-      for (const { item, file } of starts) queue.add(item.localId, file, file.name)
+      for (const { item, file } of starts) {
+        if (item.preparing) prepare(item.localId, file)
+        else queue.add(item.localId, { blob: file, name: file.name }, file.name)
+      }
+    },
+    [queue, prepare],
+  )
+
+  const addVoice = useCallback(
+    (channelId: number, file: File, voice: VoiceMeta, onUploaded: (localId: string) => void) => {
+      const item: PendingAttachment = {
+        localId: localId(),
+        channelId,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: 'queued',
+        progress: 0,
+        attachment: null,
+        error: null,
+        voice: true,
+      }
+      fileMap.current.set(item.localId, file)
+      voiceDone.current.set(item.localId, onUploaded)
+      dispatch({ type: 'add', items: [item] })
+      queue.add(item.localId, { blob: file, name: file.name, voice }, file.name)
     },
     [queue],
+  )
+
+  const takeOne = useCallback((id: string) => {
+    for (const list of Object.values(stateRef.current)) {
+      const item = list.find((entry) => entry.localId === id)
+      if (!item || item.status !== 'done' || !item.attachment) continue
+      fileMap.current.delete(id)
+      dispatch({ type: 'taken', channelId: item.channelId, localIds: [id] })
+      return item.attachment
+    }
+    return null
+  }, [])
+
+  const setSendOriginal = useCallback(
+    (value: boolean) => {
+      if (value === sendOriginalRef.current) return
+      sendOriginalRef.current = value
+      setSendOriginalState(value)
+      saveSendOriginal(value)
+      // Every picture it changes is prepared again; what it had uploaded is left for the sweep.
+      for (const list of Object.values(stateRef.current)) {
+        for (const item of list) {
+          if (!item.reducible || item.voice || item.status === 'error') continue
+          const file = fileMap.current.get(item.localId)
+          if (!file) continue
+          queue.cancel(item.localId)
+          dispatch({ type: 'reprepare', localId: item.localId })
+          prepare(item.localId, file)
+        }
+      }
+    },
+    [queue, prepare],
   )
 
   const remove = useCallback(
     (id: string) => {
       queue.cancel(id)
       fileMap.current.delete(id)
+      generation.current.delete(id)
+      voiceDone.current.delete(id)
       dispatch({ type: 'remove', localId: id })
     },
     [queue],
@@ -125,7 +236,8 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
 
   const take = useCallback((channelId: number) => {
     const list = stateRef.current[channelId] ?? []
-    const ready = list.filter((item) => item.status === 'done')
+    // A voice message is sent by itself (addVoice), never with the typed message.
+    const ready = list.filter((item) => item.status === 'done' && !item.voice)
     for (const item of ready) fileMap.current.delete(item.localId)
     if (ready.length > 0) dispatch({ type: 'taken', channelId, localIds: ready.map((item) => item.localId) })
     return readyAttachments(ready)
@@ -147,5 +259,20 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
   const anyPending = useCallback(() => Object.values(stateRef.current).some((list) => list.length > 0), [])
 
   const dismissNotice = useCallback(() => setNotice(null), [])
-  return { pending, add, remove, take, uploading, failed, anyPending, notice, dismissNotice, files: fileMap.current }
+  return {
+    pending,
+    add,
+    remove,
+    take,
+    uploading,
+    failed,
+    anyPending,
+    notice,
+    dismissNotice,
+    files: fileMap.current,
+    sendOriginal,
+    setSendOriginal,
+    addVoice,
+    takeOne,
+  }
 }
