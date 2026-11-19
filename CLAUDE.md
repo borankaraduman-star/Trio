@@ -12,6 +12,7 @@ Railway. UI text is Turkish; code, comments and commit messages are English.
 | `web/` | the client | Vite, React 18, TypeScript strict, plain CSS |
 | `desktop/` | Electron shell that loads the client from the server's URL | Electron, electron-builder |
 | `e2e/` | Playwright suite: three browsers against the real server | @playwright/test |
+| `addon/` | TrioDurum, the WoW addon behind the game status (CONTRACT-V5) | Lua 5.1, no libraries |
 | `deploy/` | VPS alternative (docker compose + coturn + Caddy) | |
 | `design/` | brief for generated artwork | |
 
@@ -52,6 +53,9 @@ npm run build && npm test
 
 # desktop
 cd desktop && npm ci && npm run typecheck && xvfb-run -a npm test
+
+# WoW addon (syntax + harness with stubbed WoW globals)
+luac5.1 -p addon/TrioDurum/TrioDurum.lua && lua5.1 addon/test/harness.lua
 
 # end to end (builds web, starts the real server itself)
 cd e2e && npm ci && npm test
