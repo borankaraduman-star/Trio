@@ -5,7 +5,8 @@
  * old it does not say) has a newer build waiting. Never in a plain browser.
  */
 
-export const DESKTOP_RELEASES_URL = 'https://github.com/borankaraduman-star/Trio/releases/latest'
+/** The server's own download page (CONTRACT-V6-DOWNLOAD); the desktop app opens it in the system browser. */
+export const DESKTOP_RELEASES_URL = '/indir'
 export const DISMISSED_KEY = 'trio.desktopUpdateDismissed'
 
 interface Parsed {

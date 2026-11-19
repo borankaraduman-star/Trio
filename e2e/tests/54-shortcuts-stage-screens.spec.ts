@@ -233,7 +233,7 @@ test('desktop version: an older app gets the update notice (dismissable per vers
   await expect(band).toContainText(`Masaüstü uygulamasının yeni sürümü var (${serverVersion}).`)
   await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute(
     'href',
-    'https://github.com/borankaraduman-star/Trio/releases/latest',
+    '/indir',
   )
   await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute('target', '_blank')
   await older.page.getByTestId('btn-settings').click()

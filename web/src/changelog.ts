@@ -15,6 +15,38 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.5.0',
+    title: 'Bildirimler ve medya',
+    lines: [
+      'Telefonuna bildirim: Trio kapalıyken de yeni mesajlardan, seni ananlardan ve çağrılardan haberin olur (Ayarlar › Bildirimler; iPhone’da önce Trio’yu ana ekrana ekle).',
+      'Kanal başına bildirim düzeyi (Hepsi / Yalnız @ben / Kapalı), sessiz saatler, @ad ve @herkes ile anma.',
+      'Fotoğraflar gönderilmeden önce küçültülüyor ve konum bilgisi siliniyor; istersen “Orijinali gönder”. Sohbette resimler daha hızlı açılıyor.',
+      'Kanal başlığındaki “Medya” düğmesi: tüm fotoğraflar, videolar, bağlantılar ve dosyalar tek yerde.',
+      'Sesli mesaj: mikrofona basılı tut, konuş, bırak. Yarım kalan mesajın kanal değiştirince ya da sayfa yenilenince kaybolmuyor.',
+    ],
+  },
+  {
+    version: '0.5.0',
+    title: 'Ses ve ekran paylaşımı',
+    lines: [
+      'Ekran paylaşımında profil seç: Oyun (akıcı), Metin (keskin), Film. Paylaşılan ekranı izlemeyi bırakabilirsin; görüntü sana gönderilmez.',
+      'Herkesin sesini ayrı ayarla (%0–200); ayar bu cihazda hatırlanır.',
+      'Giriş hassasiyeti: eşiğin altındaki ses gönderilmez. 10 dakika hareketsiz kalınca AFK görünür ve mikrofonun kapanır.',
+      'Kısayollar: Ctrl+Shift+M / Ctrl+Shift+D; masaüstü uygulamasında pencere arkadayken de çalışan tuşlar.',
+    ],
+  },
+  {
+    version: '0.5.0',
+    title: 'Yönetim, depolama ve indirme',
+    lines: [
+      'Ayarlar › Depolama: ne kadar yer kullandığını gör, eski dosyalarını sil; silinen dosya mesajda “dosya silindi” olarak kalır.',
+      'Sunucu sahibine Ayarlar › Yönetim: kişiler, disk, sunucu ve TURN durumu, yedek indirme, hata kayıtları; kilitlenen arkadaşa cihaz kodu.',
+      'Kalıcı disk bağlı değilse herkes kırmızı bir uyarı görür.',
+      'Masaüstü uygulaması artık sunucunun /indir sayfasından indiriliyor; sayfa Windows/macOS uyarısı çıkarsa ne yapacağını anlatır.',
+      'Masaüstü uygulamasının sürümü Ayarlar’da; yeni sürüm çıkınca haber verilir.',
+    ],
+  },
+  {
     version: '0.4.0',
     title: 'Sesli görüşme',
     lines: [
