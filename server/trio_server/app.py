@@ -38,7 +38,8 @@ from trio_server.db import (
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
-from trio_server.message_routes import register_message_routes
+from trio_server.message_routes import EDIT_LIMIT, REACTION_LIMIT, register_message_routes
+from trio_server.owner import OwnerAwareHub, register_owner_routes, with_owner_flag
 from trio_server.profile_routes import (
     prepare_profile_dirs,
     register_profile_routes,
@@ -137,7 +138,8 @@ def create_app(
     """
     logsafe.install()
     db = Database(settings.db_path)
-    hub = Hub(now)
+    # CONTRACT-V6-OPS: the hub that marks the owner in their ``ready.user``.
+    hub: Hub = OwnerAwareHub(now, settings.owner)
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,
@@ -357,7 +359,7 @@ def create_app(
 
     @app.get("/api/me")
     async def me(user: CurrentUser) -> dict[str, Any]:
-        return {"user": user}
+        return {"user": await with_owner_flag(db, settings, user)}
 
     @app.get("/api/channels")
     async def list_channels(user: CurrentUser) -> dict[str, Any]:
@@ -496,6 +498,30 @@ def create_app(
         current_user=current_user,
         read_json=read_json_object,
         space_left=space_left,
+    )
+
+    # CONTRACT-V6-OPS: the owner's routes, everybody's storage, the client error log.
+    app.state.current_user = current_user
+    register_owner_routes(
+        app,
+        db=db,
+        hub=hub,  # type: ignore[arg-type]
+        settings=settings,
+        now=now,
+        upload_dir=upload_dir,
+        current_user=current_user,
+        read_json=read_json_object,
+        join_guard=join_guard,
+        ice_provider=ice_provider,
+        recheck_tokens=recheck_tokens,
+        free_bytes=free_bytes,
+        limits={
+            "join_attempts_per_address": JOIN_ATTEMPTS,
+            "join_window_seconds": JOIN_WINDOW_SECONDS,
+            "join_global_failures": JOIN_GLOBAL_FAILURES,
+            "message_edits_per_minute": EDIT_LIMIT,
+            "reactions_per_minute": REACTION_LIMIT,
+        },
     )
 
     app.add_api_websocket_route("/ws", websocket_endpoint)

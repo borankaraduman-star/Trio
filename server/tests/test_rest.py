@@ -174,7 +174,10 @@ def test_me(trio):
     user = trio.user("Ali")
     response = trio.client.get("/api/me", headers=user["auth"])
     assert response.status_code == 200
-    assert response.json() == {"user": {"id": user["id"], "name": "Ali", "avatar_url": None}}
+    # The first user is the owner (CONTRACT-V6-OPS §1): only they carry is_owner.
+    assert response.json() == {
+        "user": {"id": user["id"], "name": "Ali", "avatar_url": None, "is_owner": True}
+    }
 
 
 @pytest.mark.parametrize(

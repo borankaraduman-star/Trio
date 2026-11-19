@@ -65,7 +65,13 @@ def test_ready_is_the_first_frame(trio, three):
             "voice",
             "activity",
         }
-        assert ready["user"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
+        # Ali is the first user, so the owner (CONTRACT-V6-OPS §1).
+        assert ready["user"] == {
+            "id": ali["id"],
+            "name": "Ali",
+            "avatar_url": None,
+            "is_owner": True,
+        }
         assert ready["users"] == [
             {"id": ali["id"], "name": "Ali", "avatar_url": None, "online": True},
             {"id": berk["id"], "name": "Berk", "avatar_url": None, "online": False},
