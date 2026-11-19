@@ -5,6 +5,7 @@ import type { Browser, Page } from '@playwright/test'
 import { baseUrl, readState, python } from './server'
 import { expect, personViaApi, type ContextOptions, type Person } from './trio'
 import { settingsTab, type SettingsTab } from './v7phone'
+import { submitComposer } from './messages'
 
 export const PHONE: ContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
 export const DESKTOP: ContextOptions = { viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 }
@@ -51,7 +52,7 @@ export async function sendFiles(person: Person, caption: string, files: { name: 
     await expect(page.getByTestId('pending-attachment').nth(i)).toHaveAttribute('data-status', 'done')
   }
   await page.getByTestId('composer').fill(caption)
-  await page.getByTestId('composer').press('Enter')
+  await submitComposer(page)
   await expect(page.getByTestId('pending-attachment')).toHaveCount(0)
   await expect(page.getByTestId('message').filter({ hasText: caption }).last()).toHaveAttribute('data-status', 'sent')
 }

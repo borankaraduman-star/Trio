@@ -13,7 +13,14 @@ export type JoinMode = 'invite' | 'link'
  * has an account; so, almost always, does somebody opening the desktop app
  * (they found it from the browser, where they are signed in).
  */
-export function initialJoinMode(options: { desktop: boolean; sessionEnded: boolean; inviteLink?: boolean }): JoinMode {
+export function initialJoinMode(options: {
+  desktop: boolean
+  sessionEnded: boolean
+  inviteLink?: boolean
+  deviceLink?: boolean
+}): JoinMode {
+  // V7-READING §7: a device code's QR says it even more plainly.
+  if (options.deviceLink) return 'link'
   // An invite link says plainly what the person came for.
   if (options.inviteLink) return 'invite'
   return options.desktop || options.sessionEnded ? 'link' : 'invite'
@@ -23,7 +30,10 @@ export function JoinScreen({
   onJoined,
   notice,
   linkInvite = null,
+  linkDeviceCode = null,
 }: {
+  /** V7-READING §7: the code of a device link (`#cihaz=…`), already normalised. */
+  linkDeviceCode?: string | null
   /** `inviteCode`: the invite code that worked, null for a device-code join. */
   onJoined: (auth: Auth, inviteCode: string | null) => void
   /** Why the person is back here (their session was ended elsewhere), or null. */
@@ -33,13 +43,18 @@ export function JoinScreen({
 }) {
   const desktop = desktopBridge() !== null
   const [mode, setMode] = useState<JoinMode>(() =>
-    initialJoinMode({ desktop, sessionEnded: Boolean(notice), inviteLink: linkInvite !== null }),
+    initialJoinMode({
+      desktop,
+      sessionEnded: Boolean(notice),
+      inviteLink: linkInvite !== null,
+      deviceLink: linkDeviceCode !== null,
+    }),
   )
   const [name, setName] = useState(() => loadLastName() ?? '')
   const [code, setCode] = useState(linkInvite ?? '')
   /** The code came from the link and is not shown; "değiştir" opens the field. */
   const [codeFromLink, setCodeFromLink] = useState(linkInvite !== null)
-  const [linkCode, setLinkCode] = useState('')
+  const [linkCode, setLinkCode] = useState(() => (linkDeviceCode === null ? '' : tidyLinkCodeInput(linkDeviceCode)))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** A rate limit in force: until when (ms), null for "the server did not say", undefined for none. */

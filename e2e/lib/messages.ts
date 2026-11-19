@@ -21,8 +21,19 @@ export function exactRow(page: Page, text: string): Locator {
 
 export async function send(page: Page, text: string): Promise<void> {
   await page.getByTestId('composer').fill(text)
-  await page.getByTestId('composer').press('Enter')
+  await submitComposer(page)
   await expect(row(page, text).last()).toHaveAttribute('data-status', 'sent')
+}
+
+/**
+ * Send what the composer holds the way the device does: Enter on a desktop,
+ * the "Gönder" button on a touch-first device, where Enter is the newline key
+ * (CONTRACT-V7-READING §4).
+ */
+export async function submitComposer(page: Page): Promise<void> {
+  const composer = page.getByTestId('composer')
+  if ((await composer.getAttribute('data-enter')) === 'newline') await page.getByTestId('composer-send').click()
+  else await composer.press('Enter')
 }
 
 /** Hover the row and press one of its bar's buttons (react, reply, edit, menu). */

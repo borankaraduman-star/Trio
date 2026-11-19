@@ -14,6 +14,7 @@ import './styles-v6-voice.css'
 import './styles-v6-ops.css'
 import './styles-v6-media.css'
 import './styles-v7-phone.css'
+import './styles-v7-reading.css'
 import './theme.css'
 
 const root = document.getElementById('root')
