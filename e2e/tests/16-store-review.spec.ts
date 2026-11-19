@@ -186,13 +186,21 @@ test('a reader deep in history stays where they were through a reconnect, and no
   }
   await expect(messages(page)).toHaveCount(300)
 
-  // Read around the first third.
-  await page.evaluate(() => {
+  // Read around the first third. A programmatic scroll's `scroll` event comes
+  // a frame later; until the list has handled it, it still holds the row it
+  // was showing before, and any render meanwhile (the drop below re-renders
+  // the session) puts THAT row back. A person's scroll is handled long before
+  // they can lose their connection: wait for it here too.
+  await page.evaluate(async () => {
+    const list = document.querySelector('[data-testid="message-list"]')!
+    const handled = new Promise<void>((resolve) => list.addEventListener('scroll', () => resolve(), { once: true }))
     const row = [...document.querySelectorAll('[data-testid="message"]')].find(
       (element) => element.querySelector('.message-content')?.textContent === 'eski 100',
     )!
     row.scrollIntoView({ block: 'start' })
-    document.querySelector('[data-testid="message-list"]')!.scrollTop -= 40
+    list.scrollTop -= 40
+    await handled
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   })
   const before = await offsetInView(page, 'eski 100')
   const loadedBefore = await contents(page)
