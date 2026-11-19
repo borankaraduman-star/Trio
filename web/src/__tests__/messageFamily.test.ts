@@ -246,3 +246,45 @@ describe('lastEditable', () => {
     expect(lastEditable(rows, 3)).toBeNull()
   })
 })
+
+describe('the optimistic send path with replies', () => {
+  const local = (content: string): UiMessage => ({
+    ...msg(-1, { author: ME, content, reply_to: { id: 1, author: BORA, excerpt: 'm1' }, created_at: new Date(5_000).toISOString() }),
+    key: 'n1',
+    nonce: 'n1',
+    status: 'pending',
+  })
+
+  it('the echo replaces the local reply row and keeps its key', () => {
+    let state = reducer(start([msg(1)]), { type: 'message.optimistic', message: local('evet') })
+    state = server(state, { type: 'message.new', message: msg(2, { author: ME, content: 'evet', reply_to: { id: 1, author: BORA, excerpt: 'm1' } }), nonce: 'n1' })
+    expect(items(state).map((item) => [item.key, item.status])).toEqual([
+      ['m1', 'sent'],
+      ['n1', 'sent'],
+    ])
+    expect(byId(state, 2)?.reply_to).toMatchObject({ id: 1, excerpt: 'm1' })
+  })
+
+  it('a lost echo is paired by content when the page brings the reply back', () => {
+    let state = reducer(start([msg(1)]), { type: 'message.optimistic', message: local('evet') })
+    state = reducer(state, { type: 'connection.down' })
+    state = reducer(state, {
+      type: 'messages.loaded',
+      channelId: 10,
+      messages: [msg(1), msg(2, { author: ME, content: 'evet', created_at: new Date(6_000).toISOString(), reply_to: { id: 1, author: BORA, excerpt: 'm1' } })],
+      hasMore: false,
+      mode: 'replace',
+      viewing: true,
+    })
+    expect(items(state).map((item) => [item.key, item.status])).toEqual([
+      ['m1', 'sent'],
+      ['n1', 'sent'],
+    ])
+  })
+
+  it('the local quote of a reply whose target is deleted before the echo turns "deleted"', () => {
+    let state = reducer(start([msg(1)]), { type: 'message.optimistic', message: local('evet') })
+    state = server(state, { type: 'message.deleted', channel_id: 10, message_id: 1 })
+    expect(items(state).find((item) => item.key === 'n1')?.reply_to).toEqual({ id: 1, deleted: true })
+  })
+})
