@@ -161,6 +161,8 @@ test('the people strip: only with a stage, everyone without a camera tile, with 
   await noOverflow(mehmet.page)
   // The strip (the stage with the people under it), at a moment Ayşe's ring is lit.
   await expect(strip.getByTestId(`stage-person-${ayse.user.id}`)).toHaveAttribute('data-speaking', 'true', { timeout: 15_000 })
+  // Zeynep is muted: no ring for her (what is sent is silence).
+  await expect(strip.getByTestId(`stage-person-${zeynep.user.id}`)).toHaveAttribute('data-speaking', 'false')
   await mehmet.page.screenshot({ path: `${SHOTS}/v6-voice-stage-people.png` })
 
   // The share menu, from the caret beside the share button.
