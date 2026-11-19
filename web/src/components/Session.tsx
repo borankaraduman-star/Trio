@@ -41,6 +41,10 @@ import { isViewing, onViewingChange } from '../lib/viewing'
 import { fetchCovering, newestConfirmedId } from '../lib/catchUp'
 import { Sidebar } from './Sidebar'
 import { LogoutDialog } from './LogoutDialog'
+import { replyFields, useMessageFamily } from '../useMessageFamily'
+import { PinsButton } from './message/PinsButton'
+import { ReplyBar } from './message/ReplyBar'
+import { FamilyNotice } from './message/FamilyNotice'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -60,7 +64,7 @@ function notificationsAskable(): boolean {
 }
 
 /** Codes of a refused `message.send` (a bare `error` frame naming no nonce). */
-const SEND_REFUSALS = new Set(['INVALID_ATTACHMENT', 'INVALID_MESSAGE', 'BAD_REQUEST', 'STORAGE_FULL'])
+const SEND_REFUSALS = new Set(['INVALID_ATTACHMENT', 'INVALID_MESSAGE', 'BAD_REQUEST', 'STORAGE_FULL', 'INVALID_REPLY'])
 
 export function Session({
   auth,
@@ -136,6 +140,11 @@ export function Session({
   /** The nonce last handed to the socket, for an `error` frame that names none. */
   const lastSent = useRef<{ channelId: number; nonce: string; at: number } | null>(null)
   const [sendTimers] = useState(() => new SendTimers())
+  // v4: edit, delete, reactions, replies, pins (useMessageFamily.ts).
+  const family = useMessageFamily({ token, dispatch, stateRef, onLogout, onSendTimerDone: (nonce) => sendTimers.clear(nonce) })
+  const familyActions = family.actions
+  const replyRef = useRef(family.reply)
+  replyRef.current = family.reply
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [canAskNotifications, setCanAskNotifications] = useState(notificationsAskable)
@@ -248,6 +257,7 @@ export function Session({
       const before = stateRef.current
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
       engine.handleEvent(event)
+      familyActions.onEvent(event, before)
       if (event.type === 'message.new' && event.nonce !== undefined) sendTimers.clear(event.nonce)
 
       if (event.type === 'user.removed') {
@@ -262,7 +272,10 @@ export function Session({
         if (last && Date.now() - last.at < SEND_TIMEOUT_MS) {
           lastSent.current = null
           dispatch({ type: 'message.failed', channelId: last.channelId, nonce: last.nonce })
-          setSendNotice(sendErrorMessage(event.code))
+          setSendNotice(
+            sendErrorMessage(event.code) ??
+              (event.code === 'INVALID_REPLY' ? 'Yanıtladığın mesaj artık yok; mesaj gönderilmedi.' : null),
+          )
         }
       }
 
@@ -380,7 +393,7 @@ export function Session({
   // --- actions -------------------------------------------------------------------
 
   const transmit = useCallback(
-    (channelId: number, content: string, nonce: string, sentAttachments: readonly Attachment[] = []) => {
+    (channelId: number, content: string, nonce: string, sentAttachments: readonly Attachment[] = [], replyTo?: number) => {
       const ids = sentAttachments.map((attachment) => attachment.id)
       if (
         !socket.send({
@@ -389,6 +402,7 @@ export function Session({
           content,
           nonce,
           ...(ids.length > 0 ? { attachment_ids: ids } : {}),
+          ...(replyTo !== undefined ? { reply_to: replyTo } : {}),
         })
       ) {
         sendTimers.clear(nonce)
@@ -414,6 +428,7 @@ export function Session({
       const sentAttachments = attachments.take(channelId)
       if (content === '' && sentAttachments.length === 0) return
       const nonce = newNonce()
+      const reply = replyRef.current?.channel_id === channelId ? replyRef.current : null
       dispatch({
         type: 'message.optimistic',
         message: {
@@ -423,6 +438,7 @@ export function Session({
           content,
           created_at: new Date().toISOString(),
           attachments: sentAttachments,
+          ...replyFields(reply),
           key: nonce,
           nonce,
           status: 'pending',
@@ -430,9 +446,10 @@ export function Session({
       })
       delete lastTypingSent.current[channelId]
       setSendNotice(null)
-      transmit(channelId, content, nonce, sentAttachments)
+      if (reply) familyActions.cancelReply()
+      transmit(channelId, content, nonce, sentAttachments, reply?.id)
     },
-    [transmit, attachments, loadLatest],
+    [transmit, attachments, loadLatest, familyActions],
   )
 
   const retryMessage = useCallback(
@@ -440,7 +457,7 @@ export function Session({
       if (!message.nonce) return
       // The same nonce: a server that de-duplicates answers with the original message.
       dispatch({ type: 'message.retry', channelId: message.channel_id, nonce: message.nonce, at: Date.now() })
-      transmit(message.channel_id, message.content, message.nonce, message.attachments ?? [])
+      transmit(message.channel_id, message.content, message.nonce, message.attachments ?? [], message.reply_to?.id)
     },
     [transmit],
   )
@@ -533,6 +550,7 @@ export function Session({
 
   const activeChannel = state.channels.find((channel) => channel.id === activeChannelId)
   const nameOf = (userId: number) => state.users[userId]?.name ?? `#${userId}`
+  const familyNameOf = (userId: number) => state.users[userId]?.name ?? 'eski üye'
   const pendingHere = attachments.pending(activeChannelId)
   const addFiles = (files: File[]) => {
     if (activeChannelId !== null) attachments.add(activeChannelId, files)
@@ -597,6 +615,9 @@ export function Session({
           </button>
           <HashIcon size={20} />
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
+          {activeChannel && (
+            <PinsButton family={family} pins={state.pins[activeChannel.id]} channelName={activeChannel.name} nameOf={familyNameOf} />
+          )}
         </header>
 
         {state.connection !== 'open' && (
@@ -630,7 +651,15 @@ export function Session({
               onAtBottomChange={(value) => (atBottom.current = value)}
               onRetry={retryMessage}
               isMember={state.ready ? (userId) => userId in state.users : undefined}
+              family={{
+                nameOf: familyNameOf,
+                editingId: family.editing?.messageId ?? null,
+                jump: family.jump,
+                onJumpDone: familyActions.jumpDone,
+                actions: familyActions,
+              }}
             />
+            <FamilyNotice text={family.notice} onDismiss={familyActions.dismissNotice} />
             <div className="typing-line" data-testid="typing" aria-live="polite">
               {typingLabel(typing)}
             </div>
@@ -642,6 +671,14 @@ export function Session({
               onDraftChange={(value) => {
                 draft.current = value
               }}
+              replyBar={family.reply && <ReplyBar message={family.reply} onCancel={familyActions.cancelReply} />}
+              onEscape={() => {
+                if (!family.reply) return false
+                familyActions.cancelReply()
+                return true
+              }}
+              onEditLast={familyActions.editLast}
+              focusSignal={family.composerFocus}
               attachments={{
                 items: pendingHere,
                 files: attachments.files,
