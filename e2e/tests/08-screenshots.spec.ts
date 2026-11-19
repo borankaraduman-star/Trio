@@ -265,7 +265,23 @@ test('screenshot 09: adding a device, the code in Ayarlar › Hesap', async ({ b
   // Ayarlar › Hesap is taller since v4 (picture and name above "Cihaz ekle"): bring the
   // "Cihaz ekle" field (its heading, the hint and the card) to the top of the dialog's scroller.
   const card = account.getByTestId('link-code-card')
-  await card.evaluate((el) => (el.closest('.settings-field') ?? el).scrollIntoView({ block: 'start' }))
+  await card.evaluate((el) => {
+    const field = el.closest<HTMLElement>('.settings-field') ?? el
+    const dialog = el.closest<HTMLElement>('[data-testid="settings-dialog"]')!
+    // The dialog scrolls under its own sticky header: the field starts just below it.
+    const header = dialog.querySelector('.modal-header')!.getBoundingClientRect().bottom
+    let scroller: HTMLElement | null = field.parentElement
+    while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
+    if (scroller) scroller.scrollTop += field.getBoundingClientRect().top - header - 12
+  })
+  // Nothing of the field is under the header.
+  expect(
+    await card.evaluate((el) => {
+      const field = el.closest<HTMLElement>('.settings-field') ?? el
+      const header = el.closest('[data-testid="settings-dialog"]')!.querySelector('.modal-header')!.getBoundingClientRect().bottom
+      return field.getBoundingClientRect().top >= header
+    }),
+  ).toBe(true)
   await expect(card).toBeInViewport({ ratio: 1 })
   // In the dialog's visible box too (the page viewport alone does not see the dialog's clip).
   expect(
