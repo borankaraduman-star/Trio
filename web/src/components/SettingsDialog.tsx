@@ -10,8 +10,10 @@ import { CloseIcon } from './icons2'
 import { AccountSection, type AccountProps } from './AccountSection'
 import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
+import { DownloadLink } from './DownloadLink'
 import { GameShareSetting } from './GameActivity'
 import { NotificationsSection } from './notify/NotificationsSection'
+import { OpsSettings } from './owner/OpsSettings'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -336,6 +338,8 @@ export function SettingsDialog({
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
         {serverSettings && <ServerSection settings={serverSettings} />}
+        <OpsSettings />
+        <DownloadLink />
         {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}
       </div>
     </div>

@@ -26,6 +26,7 @@ import { HashIcon, MenuIcon } from './icons'
 import { RemoteAudio } from './Media'
 import { CallStage } from './CallStage'
 import { SettingsDialog } from './SettingsDialog'
+import { BackupDot } from './owner/BackupDot'
 import { UploadIcon } from './icons2'
 import { settingsStore } from '../settings'
 import { desktopBridge } from '../ptt'
@@ -700,6 +701,7 @@ export function Session({
           >
             <MenuIcon />
             {unreadTotal > 0 && <span className="unread-dot" />}
+            <BackupDot />
           </button>
           <HashIcon size={20} />
           <h1>{activeChannel?.name ?? 'Trio'}</h1>

@@ -52,7 +52,10 @@ def test_settings_defaults_and_parsing():
 def test_health(trio):
     response = trio.client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "version": VERSION}
+    body = response.json()
+    # CONTRACT-V6-OPS §7 adds persistent and data_since (tests/test_v6_persistence.py).
+    assert {k: body[k] for k in ("ok", "version")} == {"ok": True, "version": VERSION}
+    assert set(body) == {"ok", "version", "persistent", "data_since"}
 
 
 def test_join_ok(trio):
@@ -174,7 +177,10 @@ def test_me(trio):
     user = trio.user("Ali")
     response = trio.client.get("/api/me", headers=user["auth"])
     assert response.status_code == 200
-    assert response.json() == {"user": {"id": user["id"], "name": "Ali", "avatar_url": None}}
+    # The first user is the owner (CONTRACT-V6-OPS §1): only they carry is_owner.
+    assert response.json() == {
+        "user": {"id": user["id"], "name": "Ali", "avatar_url": None, "is_owner": True}
+    }
 
 
 @pytest.mark.parametrize(

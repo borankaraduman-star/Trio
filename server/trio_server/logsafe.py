@@ -1,4 +1,4 @@
-"""Keep the websocket token out of the logs.
+"""Keep the websocket token and backup tickets out of the logs.
 
 The token travels in the query string of /ws (a browser cannot set a header
 on a WebSocket), and uvicorn prints the request line of every connection.
@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 import re
 
-_TOKEN = re.compile(r"(token=)[^&\s\"']+", re.IGNORECASE)
+# token= : /ws?token=…; ticket= : /api/owner/backup?ticket=… (CONTRACT-V6-OPS §3).
+_TOKEN = re.compile(r"((?:token|ticket)=)[^&\s\"']+", re.IGNORECASE)
 
 
 def _redact(value: object) -> object:

@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { attachmentKind, formatSize } from '../lib/attachments'
+import { attachmentKind, formatSize, isDeletedAttachment } from '../lib/attachments'
+import { DeletedAttachment } from './owner/DeletedAttachment'
 import type { PendingAttachment } from '../lib/pending'
 import type { Attachment } from '../types'
 import { CloseIcon, DownloadIcon, FileIcon } from './icons2'
@@ -118,6 +119,7 @@ function FileAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {
+  if (isDeletedAttachment(attachment)) return <DeletedAttachment filename={attachment.filename} />
   switch (attachmentKind(attachment.content_type)) {
     case 'image':
       return <ImageAttachment attachment={attachment} />

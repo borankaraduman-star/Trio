@@ -48,6 +48,9 @@ class Settings:
     # endpoints are accepted without the push-service allowlist and the DNS
     # checks, so the e2e suite can run a fake push service. Refused on Railway.
     test_push_service: str | None = None
+    # CONTRACT-V6-OPS §1: the owner's user name (matched like a join); None =
+    # the active user with the lowest id.
+    owner: str | None = None
 
     def __post_init__(self) -> None:
         if not self.invite_code:
@@ -96,7 +99,7 @@ class Settings:
             f"max_upload_mb={self.max_upload_mb}, user_quota_mb={self.user_quota_mb}, "
             f"disk_reserve_mb={self.disk_reserve_mb}, "
             f"trusted_proxy_hops={self.trusted_proxy_hops}, "
-            f"cloudflare_turn={self.cloudflare_turn}, "
+            f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r}, "
             f"test_push_service={self.test_push_service!r})"
         )
 
@@ -144,4 +147,5 @@ class Settings:
             trusted_proxy_hops=integer("TRIO_TRUSTED_PROXY_HOPS", 1),
             push_subject=optional("TRIO_PUSH_SUBJECT"),
             test_push_service=test_push,
+            owner=optional("TRIO_OWNER"),
         )
