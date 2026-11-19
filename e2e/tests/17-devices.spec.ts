@@ -18,6 +18,7 @@ import {
   test,
   threePeople,
 } from '../lib/trio'
+import { settingsTab, startSignOut } from '../lib/v7phone'
 
 const INVALID_LINK_CODE = 'Bu kod geçersiz'
 
@@ -32,6 +33,7 @@ test('add a device: the code in settings signs a fourth browser in as the SAME u
 
   // Ayşe makes a code in Ayarlar › Hesap.
   await ayse.page.getByTestId('btn-settings').click()
+  await settingsTab(ayse.page, 'hesap')
   const account = ayse.page.getByTestId('settings-account')
   await expect(account).toContainText('Ayşe')
   await account.getByTestId('settings-add-device').click()
@@ -107,7 +109,7 @@ test('sign out: confirm, the token stops working, the other device stays, the na
   }, phone.token)
 
   // The dialog says what happens, truthfully, and offers a code first.
-  await phone.page.getByTestId('btn-logout').click()
+  await startSignOut(phone.page)
   const dialog = phone.page.getByTestId('logout-dialog')
   await expect(dialog).toContainText('Bu cihazdan çıkış yapılsın mı?')
   await expect(dialog).toContainText('Hesabın, adın (Ayşe) ve mesajların silinmez')
@@ -117,7 +119,7 @@ test('sign out: confirm, the token stops working, the other device stays, the na
   await expectConnected(phone.page)
 
   // The safe path: make a code first (it opens Ayarlar › Hesap with one made).
-  await phone.page.getByTestId('btn-logout').click()
+  await startSignOut(phone.page)
   await dialog.getByTestId('logout-code-first').click()
   const account = phone.page.getByTestId('settings-account')
   const code = (await account.getByTestId('link-code').textContent()) ?? ''
@@ -168,7 +170,7 @@ test('sign out still clears this device when the server answers 401', async ({ b
       body: JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'missing or invalid token' } }),
     }),
   )
-  await ayse.page.getByTestId('btn-logout').click()
+  await startSignOut(ayse.page)
   await ayse.page.getByTestId('logout-confirm').click()
   await expect(ayse.page.getByTestId('join-form')).toBeVisible()
   await expect(ayse.page.getByTestId('join-notice')).toHaveCount(0)

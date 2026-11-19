@@ -11,6 +11,7 @@ import { CHROMIUM_ARGS } from '../playwright.config'
 import { baseUrl, E2E_DIR, freshServer } from '../lib/server'
 import { api, apiJoin, expect, GENEL, personWithSession, SOHBET, test, type Person } from '../lib/trio'
 import { FakePushService, fakeSubscriptionScript, NEW_HEADLESS } from '../lib/push'
+import { settingsTab } from '../lib/v7phone'
 
 test.use({ launchOptions: { ...NEW_HEADLESS, args: CHROMIUM_ARGS } })
 
@@ -23,6 +24,7 @@ async function openSettings(person: Person): Promise<Page> {
   const drawer = page.getByTestId('btn-drawer')
   if (await drawer.isVisible()) await drawer.click()
   await page.getByTestId('btn-settings').click()
+  await settingsTab(page, 'bildirimler')
   await expect(page.getByTestId('settings-notify')).toBeVisible()
   return page
 }

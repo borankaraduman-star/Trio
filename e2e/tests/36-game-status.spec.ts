@@ -9,6 +9,7 @@ import type { BrowserContext, Page } from '@playwright/test'
 import { E2E_DIR, freshServer, restartServer } from '../lib/server'
 import { apiAvatar, drawPicture } from '../lib/identity'
 import { apiJoin, expect, expectConnected, expectHearing, joinVoice, personViaApi, personWithSession, test, type ContextOptions, type Person } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 import { socketSwitch } from '../lib/voiceProbe'
 
 test.beforeEach(async () => {
@@ -103,6 +104,7 @@ test('game status: "Oyun durumumu paylaş" off clears it and sends nothing; on a
   await expect(line(mehmet, ayse)).toHaveText('WoW Forever · 37 · Orgrimmar')
 
   await ayse.page.getByTestId('btn-settings').click()
+  await settingsTab(ayse.page, 'hesap')
   const share = ayse.page.getByTestId('settings-game-share')
   await expect(share).toBeChecked()
   await share.uncheck()
@@ -119,6 +121,7 @@ test('game status: "Oyun durumumu paylaş" off clears it and sends nothing; on a
   await expect(line(mehmet, ayse)).toHaveCount(0)
 
   await ayse.page.getByTestId('btn-settings').click()
+  await settingsTab(ayse.page, 'hesap')
   await ayse.page.getByTestId('settings-game-share').check()
   await expect(line(mehmet, ayse)).toHaveText('WoW Forever · 37 · Mulgore')
 })
@@ -156,8 +159,9 @@ test('game status screenshot (deviceScaleFactor 2)', async ({ browser, trio }) =
     animations: 'disabled',
     caret: 'hide',
   })
-  // Its setting, between Bağlantı testi and Hesap, as the desktop app shows it.
+  // Its setting, in Ayarlar › Hesap, as the desktop app shows it.
   await ayse.page.getByTestId('btn-settings').click()
+  await settingsTab(ayse.page, 'hesap')
   const section = ayse.page.locator('section[aria-labelledby="settings-game"]')
   await section.scrollIntoViewIfNeeded()
   await expect(section).toContainText('Oyun durumumu paylaş')

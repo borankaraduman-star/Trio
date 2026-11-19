@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { deviceOptions, labelsHidden, sinkIdSupported, type DeviceKind } from '../lib/devices'
 import { isBindableKey, keyLabel, MOUSE_PTT_KEYS, type Settings } from '../settings'
 import { mouseButtonCode } from '../ptt'
@@ -15,7 +15,11 @@ import { GameShareSetting } from './GameActivity'
 import { NotificationsSection } from './notify/NotificationsSection'
 import { InputSensitivitySection, ShortcutsSection } from './voice/VoiceEveningSettings'
 import { DesktopVersionFooter } from './voice/DesktopVersion'
-import { OpsSettings } from './owner/OpsSettings'
+import { StorageSection } from './owner/StorageSection'
+import { OwnerSection } from './owner/OwnerSection'
+import { opsStore } from '../owner/opsStore'
+import { PHONE_QUERY, screenShareSupported, useMediaQuery } from '../lib/phone'
+import { SETTINGS_TABS, SettingsNav, settingsTabTitle, type SettingsTab } from './phone/SettingsNav'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -171,10 +175,24 @@ export function SettingsDialog({
   const dialog = useRef<HTMLDivElement>(null)
   const hidden = labelsHidden(devices, 'audioinput') || labelsHidden(devices, 'videoinput')
   const outputSupported = sinkIdSupported()
+  // V7 (CONTRACT-V7-PHONE §5): tabs. A list on the left on a wide screen; on a
+  // phone the list first, then one section with a way back.
+  const phone = useMediaQuery(PHONE_QUERY)
+  const { isOwner } = useSyncExternalStore(opsStore.subscribe, opsStore.getSnapshot)
+  useEffect(() => {
+    void opsStore.refresh()
+  }, [])
+  // Opened to make a device code (from the sign-out dialog): straight to Hesap.
+  const [chosen, setChosen] = useState<SettingsTab | null>(account?.createAtOnce ? 'hesap' : null)
+  const tabs = SETTINGS_TABS.filter((tab) => tab.id !== 'yonetim' || isOwner)
+  const valid = chosen !== null && tabs.some((tab) => tab.id === chosen) ? chosen : null
+  /** The section shown: none (the list) only on a phone. */
+  const tab: SettingsTab | null = valid ?? (phone ? null : 'ses')
+  const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
-    dialog.current?.querySelector<HTMLElement>('select, input, button')?.focus()
+    dialog.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"], [role="tab"], select, input, button')?.focus()
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented) onClose()
     }
@@ -185,45 +203,25 @@ export function SettingsDialog({
     }
   }, [onClose])
 
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <div
-        ref={dialog}
-        className="modal settings-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        data-testid="settings-dialog"
-      >
-        <header className="modal-header">
-          <h2 id="settings-title">Ayarlar</h2>
-          <button
-            type="button"
-            className="icon-button"
-            data-testid="settings-close"
-            aria-label="Kapat"
-            title="Kapat (Esc)"
-            onClick={onClose}
-          >
-            <CloseIcon />
-          </button>
-        </header>
+  const choose = (next: SettingsTab | null) => {
+    setChosen(next)
+    if (dialog.current) dialog.current.scrollTop = 0
+    if (panel.current) panel.current.scrollTop = 0
+  }
 
-        <section className="settings-section" aria-labelledby="settings-devices">
-          <h3 id="settings-devices">Cihazlar</h3>
-          {hidden && (
-            <p className="settings-hint">
-              Tarayıcı izin verilene kadar cihaz adlarını göstermiyor.{' '}
-              <button type="button" className="link" data-testid="settings-grant" onClick={() => void requestLabels()}>
-                Adları göster
-              </button>
-            </p>
-          )}
+  const devicesSection = (kinds: 'audio' | 'video') => (
+    <section className="settings-section" aria-labelledby={`settings-devices-${kinds}`}>
+      <h3 id={`settings-devices-${kinds}`}>{kinds === 'audio' ? 'Cihazlar' : 'Kamera'}</h3>
+      {hidden && (
+        <p className="settings-hint">
+          Tarayıcı izin verilene kadar cihaz adlarını göstermiyor.{' '}
+          <button type="button" className="link" data-testid="settings-grant" onClick={() => void requestLabels()}>
+            Adları göster
+          </button>
+        </p>
+      )}
+      {kinds === 'audio' && (
+        <>
           <DeviceSelect
             id="settings-mic"
             testId="settings-mic"
@@ -246,19 +244,28 @@ export function SettingsDialog({
           ) : (
             <p className="settings-hint">Bu tarayıcı ses çıkış cihazı seçmeyi desteklemiyor.</p>
           )}
-          <DeviceSelect
-            id="settings-camera"
-            testId="settings-camera"
-            label="Kamera"
-            kind="videoinput"
-            value={settings.cameraDeviceId}
-            devices={devices}
-            onChange={(cameraDeviceId, cameraDeviceLabel) => onChange({ cameraDeviceId, cameraDeviceLabel })}
-          />
-        </section>
+        </>
+      )}
+      {kinds === 'video' && (
+        <DeviceSelect
+          id="settings-camera"
+          testId="settings-camera"
+          label="Kamera"
+          kind="videoinput"
+          value={settings.cameraDeviceId}
+          devices={devices}
+          onChange={(cameraDeviceId, cameraDeviceLabel) => onChange({ cameraDeviceId, cameraDeviceLabel })}
+        />
+      )}
+    </section>
+  )
 
+  const panels: Record<SettingsTab, () => ReactNode> = {
+    ses: () => (
+      <>
+        {devicesSection('audio')}
         <section className="settings-section" aria-labelledby="settings-voice">
-          <h3 id="settings-voice">Ses</h3>
+          <h3 id="settings-voice">Konuşma</h3>
           <label className="settings-toggle">
             <input
               type="checkbox"
@@ -273,18 +280,6 @@ export function SettingsDialog({
                   {NOISE_TEXT[noiseState]}
                 </small>
               )}
-            </span>
-          </label>
-          <label className="settings-toggle">
-            <input
-              type="checkbox"
-              data-testid="settings-screen-audio"
-              checked={settings.shareScreenAudio}
-              onChange={(event) => onChange({ shareScreenAudio: event.target.checked })}
-            />
-            <span>
-              Ekran sesini de paylaş
-              <small className="settings-hint">{SCREEN_AUDIO_WARNING}</small>
             </span>
           </label>
 
@@ -321,7 +316,6 @@ export function SettingsDialog({
             </p>
           )}
         </section>
-
         <InputSensitivitySection />
         <ShortcutsSection />
         <SoundsSection
@@ -331,22 +325,122 @@ export function SettingsDialog({
           onChange={onChange}
         />
         {connectionTest && (
-          <ConnectionTest
-            {...connectionTest}
-            micDeviceId={settings.micDeviceId}
-            outputDeviceId={settings.outputDeviceId}
-          />
+          <ConnectionTest {...connectionTest} micDeviceId={settings.micDeviceId} outputDeviceId={settings.outputDeviceId} />
         )}
-        <GameShareSetting />
-        <NotificationsSection />
-
+      </>
+    ),
+    goruntu: () => (
+      <>
+        {devicesSection('video')}
+        <section className="settings-section" aria-labelledby="settings-screen">
+          <h3 id="settings-screen">Ekran paylaşımı</h3>
+          {screenShareSupported() ? (
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                data-testid="settings-screen-audio"
+                checked={settings.shareScreenAudio}
+                onChange={(event) => onChange({ shareScreenAudio: event.target.checked })}
+              />
+              <span>
+                Ekran sesini de paylaş
+                <small className="settings-hint">{SCREEN_AUDIO_WARNING}</small>
+              </span>
+            </label>
+          ) : (
+            <p className="settings-hint" data-testid="settings-screen-unsupported">
+              Bu cihazda ekran paylaşılamıyor; başkalarının paylaştığı ekranları izleyebilirsin.
+            </p>
+          )}
+        </section>
+      </>
+    ),
+    bildirimler: () => <NotificationsSection />,
+    hesap: () => (
+      <>
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
+        <GameShareSetting />
         {serverSettings && <ServerSection settings={serverSettings} />}
-        <OpsSettings />
+      </>
+    ),
+    depolama: () => <StorageSection />,
+    yonetim: () => (isOwner ? <OwnerSection /> : null),
+    hakkinda: () => (
+      <>
         <DownloadLink />
         {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}
         {serverVersion !== undefined && <DesktopVersionFooter serverVersion={serverVersion} />}
+      </>
+    ),
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        ref={dialog}
+        className={`modal settings-dialog v7-settings${phone ? ' phone' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        data-testid="settings-dialog"
+        data-tab={tab ?? ''}
+      >
+        <header className="modal-header">
+          {phone && tab !== null && (
+            <button
+              type="button"
+              className="icon-button v7-settings-back"
+              data-testid="settings-back"
+              aria-label="Ayarlara dön"
+              title="Ayarlara dön"
+              onClick={() => choose(null)}
+            >
+              <BackIcon />
+            </button>
+          )}
+          <h2 id="settings-title">{phone && tab !== null ? settingsTabTitle(tab) : 'Ayarlar'}</h2>
+          <button
+            type="button"
+            className="icon-button"
+            data-testid="settings-close"
+            aria-label="Kapat"
+            title="Kapat (Esc)"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <div className="v7-settings-body">
+          {(!phone || tab === null) && <SettingsNav tabs={tabs} current={tab} phone={phone} onChoose={choose} />}
+          {tab !== null && (
+            <div
+              ref={panel}
+              className="v7-settings-panel"
+              role="tabpanel"
+              id={`settings-panel-${tab}`}
+              aria-labelledby={`settings-tab-${tab}`}
+              data-testid={`settings-panel-${tab}`}
+            >
+              {!phone && <h2 className="v7-settings-panel-title">{settingsTabTitle(tab)}</h2>}
+              {panels[tab]()}
+            </div>
+          )}
+        </div>
       </div>
     </div>
+  )
+}
+
+function BackIcon() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
   )
 }

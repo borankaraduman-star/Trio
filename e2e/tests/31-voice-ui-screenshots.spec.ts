@@ -8,6 +8,7 @@
 import type { Page } from '@playwright/test'
 import { freshServer } from '../lib/server'
 import { expect, joinVoice, test, threePeople, type Person } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -94,11 +95,13 @@ for (const [label, options] of [
     await zeynep.page.getByTestId('btn-settings').click()
     const dialog = zeynep.page.getByTestId('settings-dialog')
     await expect(dialog).toBeVisible()
+    await settingsTab(zeynep.page, 'goruntu')
     const screenAudio = zeynep.page.getByTestId('settings-screen-audio')
     await screenAudio.scrollIntoViewIfNeeded()
     await expect(screenAudio).not.toBeChecked()
     await noOverflow(zeynep.page)
     await zeynep.page.screenshot({ path: `screenshots/settings-screen-audio-${label}.png` })
+    await settingsTab(zeynep.page, 'ses')
     await zeynep.page.getByTestId('settings-cues').scrollIntoViewIfNeeded()
     await zeynep.page.screenshot({ path: `screenshots/v4-settings-sounds-${label}.png` })
   })

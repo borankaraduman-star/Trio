@@ -8,9 +8,11 @@
 import type { Page } from '@playwright/test'
 import { freshServer } from '../lib/server'
 import { expect, joinVoice, test, threePeople, type Person } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 async function openTest(page: Page) {
   await page.getByTestId('btn-settings').click()
+  await settingsTab(page, 'ses')
   const section = page.getByTestId('conn-test')
   await section.scrollIntoViewIfNeeded()
   return section

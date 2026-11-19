@@ -11,6 +11,7 @@ import { baseUrl, freshServer } from '../lib/server'
 import { api, apiJoin, expect, GENEL, joinVoice, personViaApi, personWithSession, SOHBET, test, type Person } from '../lib/trio'
 import { send } from '../lib/messages'
 import { AWAY_SCRIPT, FakePushService, fakeSubscriptionScript, NEW_HEADLESS, setAway, verifyVapid, type FakeDevice } from '../lib/push'
+import { settingsTab } from '../lib/v7phone'
 
 test.use({ launchOptions: { ...NEW_HEADLESS, args: CHROMIUM_ARGS } })
 
@@ -31,6 +32,7 @@ async function openSettings(person: Person): Promise<void> {
   const drawer = person.page.getByTestId('btn-drawer')
   if (await drawer.isVisible()) await drawer.click()
   await person.page.getByTestId('btn-settings').click()
+  await settingsTab(person.page, 'bildirimler')
   await expect(person.page.getByTestId('settings-notify')).toBeVisible()
 }
 

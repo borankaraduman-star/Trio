@@ -13,7 +13,7 @@ test.beforeEach(async () => {
 
 test('the owner revokes a friend’s sessions with the invite code (390 px)', async ({ browser, trio }) => {
   const [ayse, mehmet, zeynep] = await people(browser, trio, [PHONE, DESKTOP, DESKTOP])
-  await openSettings(ayse.page)
+  await openSettings(ayse.page, 'yonetim')
   const row = ayse.page.getByTestId('owner-user').filter({ hasText: 'Zeynep' })
   await row.getByTestId('owner-revoke').click()
   const dialog = ayse.page.getByTestId('ops-confirm')

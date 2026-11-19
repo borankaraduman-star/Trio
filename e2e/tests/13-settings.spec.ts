@@ -3,6 +3,7 @@ import { CHROMIUM_ARGS } from '../playwright.config'
 import { expectTileDecoding, localDescriptions, sentAudioTrackIds } from '../lib/media'
 import { freshServer } from '../lib/server'
 import { expect, expectConnected, expectHearing, joinVoice, test, threePeople } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 // Three fake cameras (and, as always, two fake microphones and outputs
 // besides the defaults). The second fake camera of Chromium 153 shows in a
@@ -120,7 +121,9 @@ test('settings: devices switch live in a call, the output device is used, everyt
   await expect(ayse.page.getByTestId('settings-ptt-key')).toHaveText('V')
   await expect(ayse.page.getByTestId('settings-noise')).not.toBeChecked()
   await expect(ayse.page.getByTestId('settings-mic').locator('option:checked')).toHaveText('Fake Audio Input 2')
+  await settingsTab(ayse.page, 'goruntu')
   await expect(ayse.page.getByTestId('settings-camera').locator('option:checked')).toHaveText('fake_device_2')
+  await settingsTab(ayse.page, 'ses')
   await expect(ayse.page.getByTestId('settings-output').locator('option:checked')).toHaveText('Fake Audio Output 1')
   const outputNow = await ayse.page.getByTestId('settings-output').inputValue()
   await ayse.page.getByTestId('settings-close').click()

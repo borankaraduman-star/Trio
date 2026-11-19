@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { Browser, Page } from '@playwright/test'
 import { baseUrl, readState, python } from './server'
 import { expect, personViaApi, type ContextOptions, type Person } from './trio'
+import { settingsTab, type SettingsTab } from './v7phone'
 
 export const PHONE: ContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
 export const DESKTOP: ContextOptions = { viewport: { width: 1280, height: 860 }, deviceScaleFactor: 2 }
@@ -25,13 +26,15 @@ export async function people(
   return [ayse, mehmet, zeynep]
 }
 
-export async function openSettings(page: Page): Promise<void> {
+/** Open Ayarlar on one section (V7 tabs): Depolama unless told otherwise. */
+export async function openSettings(page: Page, tab: SettingsTab = 'depolama'): Promise<void> {
   if (isPhone(page)) await page.getByTestId('btn-drawer').tap()
   const button = page.getByTestId('btn-settings')
   if (isPhone(page)) await button.tap()
   else await button.click()
   await expect(page.getByTestId('settings-dialog')).toBeVisible()
-  await expect(page.getByTestId('storage-section')).toBeVisible()
+  await settingsTab(page, tab)
+  if (tab === 'depolama') await expect(page.getByTestId('storage-section')).toBeVisible()
 }
 
 export async function closeSettings(page: Page): Promise<void> {

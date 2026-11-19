@@ -6,6 +6,7 @@
 import type { Locator, Page } from '@playwright/test'
 import { baseUrl } from './server'
 import { expect, type Person } from './trio'
+import { settingsTab, type SettingsTab } from './v7phone'
 
 export interface Picture {
   name: string
@@ -85,11 +86,13 @@ export function hasExif(bytes: Buffer): boolean {
   return bytes.includes(Buffer.from('Exif\0\0', 'binary')) || bytes.includes(Buffer.from('EXIF', 'ascii'))
 }
 
-export async function openSettings(person: Person): Promise<void> {
+/** Open Ayarlar on one section (V7 tabs): Hesap (the profile) unless told otherwise. */
+export async function openSettings(person: Person, tab: SettingsTab = 'hesap'): Promise<void> {
   const button = person.page.getByTestId('btn-settings')
   if (!(await button.isVisible())) await person.page.getByTestId('btn-drawer').click()
   await button.click()
   await expect(person.page.getByTestId('settings-dialog')).toBeVisible()
+  await settingsTab(person.page, tab)
 }
 
 export async function closeSettings(person: Person): Promise<void> {
