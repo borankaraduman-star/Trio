@@ -65,7 +65,8 @@ export function localExpiry(expiresAt: string, serverDate: string | null, receiv
   const serverNow = serverDate ? Date.parse(serverDate) : Number.NaN
   if (!Number.isFinite(serverNow)) return expires
   // `Date` has whole seconds and is truncated: the server's real time was within the next second.
-  return receivedAtMs + (expires - (serverNow + 500))
+  // Taking its end errs on the safe side: the code is shown as expiring up to a second EARLY, never late.
+  return receivedAtMs + (expires - (serverNow + 999))
 }
 
 /** Whole seconds left until `expiresAtMs`, never negative and never more than a code's life. */

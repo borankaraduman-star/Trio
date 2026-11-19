@@ -178,8 +178,8 @@ export function AccountSection({ account, onSignOut }: { account: AccountProps; 
           </>
         ) : (
           <p className="settings-hint" data-testid="invite-link-unknown">
-            Bu cihaz cihaz koduyla girdiği için davet kodunu bilmiyor. Davet bağlantısını, davet koduyla katılmış bir
-            cihazından kopyalayabilirsin.
+            Davet kodu bu cihazda kayıtlı değil (cihaz koduyla ya da bu özellik gelmeden önce girilmiş). Bağlantıyı,
+            davet koduyla katılmış bir cihazından kopyalayabilirsin.
           </p>
         )}
       </div>

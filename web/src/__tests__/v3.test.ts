@@ -62,8 +62,8 @@ describe('link codes', () => {
     const received = Date.parse('2026-11-18T12:00:00Z')
     // Server clock 5 minutes ahead: the code still has its full 10 minutes here.
     const expiry = localExpiry('2026-11-18T12:15:00.000Z', 'Wed, 18 Nov 2026 12:05:00 GMT', received)
-    // (The header's whole second is taken as its middle: 599.5 s, shown as 600.)
-    expect(expiry - received).toBe(599_500)
+    // (The header's whole second is taken at its end: never later than the server's own expiry.)
+    expect(expiry - received).toBe(599_001)
     expect(secondsLeft(expiry, received)).toBe(600)
     // Never more than a code's life, whatever the clocks say.
     expect(secondsLeft(received + 650_000, received)).toBe(600)
