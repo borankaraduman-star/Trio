@@ -83,6 +83,8 @@ export class PlaybackMixer {
   /** The fallback output (an element that can choose a device), when the context cannot. */
   private outElement: SinkElement | null = null
   private outNode: MediaStreamAudioDestinationNode | null = null
+  /** Where the routes are connected now (null = the context's destination). */
+  private target: MediaStreamAudioDestinationNode | null = null
 
   /** Web Audio is usable here (boosts above 100 % are possible). */
   get available(): boolean {
@@ -108,7 +110,7 @@ export class PlaybackMixer {
         const limiter = makeLimiter(context)
         const output = context.createGain()
         source.connect(gain).connect(limiter).connect(output)
-        output.connect(this.outNode ?? context.destination)
+        output.connect(this.target ?? context.destination)
         route = { stream, source, volume: gain, limiter, output, deafened }
         this.routes.set(key, route)
         this.exposeTap(key, context, output)
@@ -190,19 +192,24 @@ export class PlaybackMixer {
 
   /** Reconnect every route to `node` (null = the context's destination). */
   private useDestination(context: AudioContext, node: MediaStreamAudioDestinationNode | null): void {
+    const previous: AudioNode = this.target ?? context.destination
+    const next: AudioNode = node ?? context.destination
     if (node === null && this.outElement) {
       this.outElement.pause()
       this.outElement.srcObject = null
       this.outElement = null
       this.outNode = null
     }
+    this.target = node
+    if (previous === next) return
     for (const route of this.routes.values()) {
+      // Only that connection: the output also feeds the e2e tap.
       try {
-        route.output.disconnect()
+        route.output.disconnect(previous)
       } catch {
-        // Not connected.
+        // Not connected there.
       }
-      route.output.connect(node ?? context.destination)
+      route.output.connect(next)
     }
   }
 
