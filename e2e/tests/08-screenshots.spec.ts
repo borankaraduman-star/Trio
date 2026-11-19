@@ -8,6 +8,7 @@ import { sql } from '../lib/db'
 import { E2E_DIR, freshServer } from '../lib/server'
 import { expectTileDecoding } from '../lib/media'
 import { expect, expectConnected, expectScreensDecoding, joinVoice, newContext, personViaApi, test, threePeople, type Person } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 const OUT = path.join(E2E_DIR, 'screenshots')
 const DESKTOP = { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 }
@@ -258,6 +259,7 @@ test('screenshot 09: adding a device, the code in Ayarlar › Hesap', async ({ b
   await seedConversation(people)
   const page = people[0].page
   await page.getByTestId('btn-settings').click()
+  await settingsTab(page, 'hesap')
   const account = page.getByTestId('settings-account')
   await account.getByTestId('settings-add-device').click()
   await expect(account.getByTestId('link-code')).toHaveText(/^\w{5}-\w{5}$/)

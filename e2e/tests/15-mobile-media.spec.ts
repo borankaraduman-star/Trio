@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { freshServer } from '../lib/server'
 import { expect, joinVoice, personViaApi, test } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -92,7 +93,14 @@ test('phone width: attachments and the settings dialog are usable at 390 px', as
   expect(frame.y).toBeGreaterThanOrEqual(0)
   expect(frame.y + frame.height).toBeLessThanOrEqual(844)
   await expect(phone.page.getByTestId('settings-close')).toBeInViewport({ ratio: 1 })
-  for (const id of ['settings-mic', 'settings-output', 'settings-camera', 'settings-noise', 'settings-mode-ptt']) {
+  for (const [tab, id] of [
+    ['goruntu', 'settings-camera'],
+    ['ses', 'settings-mic'],
+    ['ses', 'settings-output'],
+    ['ses', 'settings-noise'],
+    ['ses', 'settings-mode-ptt'],
+  ] as const) {
+    await settingsTab(phone.page, tab)
     const control = phone.page.getByTestId(id)
     await control.scrollIntoViewIfNeeded()
     await expect(control).toBeInViewport({ ratio: 1 })

@@ -28,7 +28,7 @@ for (const [label, viewport] of [
     await sendThroughUi(ayse, 'Ben de buradayım')
     await expect(ayse.page.getByTestId('backup-dot').filter({ visible: true })).toHaveCount(1)
 
-    await openSettings(ayse.page)
+    await openSettings(ayse.page, 'yonetim')
     const card = ayse.page.getByTestId('owner-backup')
     await expect(card.getByTestId('owner-last-backup')).toHaveText('Henüz yedek alınmadı.')
     const download = ayse.page.waitForEvent('download')

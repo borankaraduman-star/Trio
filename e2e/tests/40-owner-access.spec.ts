@@ -5,6 +5,7 @@
 import { baseUrl, freshServer } from '../lib/server'
 import { expect, newContext, test } from '../lib/trio'
 import { DESKTOP, expectNoSideScroll, openSettings, people, PHONE, SCREENSHOTS, status } from '../lib/ops'
+import { settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -13,12 +14,13 @@ test.beforeEach(async () => {
 test('only the owner sees Yönetim, at desktop and at 390 px; the others get 403', async ({ browser, trio }) => {
   const [ayse, mehmet, zeynep] = await people(browser, trio, [DESKTOP, DESKTOP, PHONE])
 
-  await openSettings(ayse.page)
+  await openSettings(ayse.page, 'yonetim')
   const owner = ayse.page.getByTestId('owner-section')
   await expect(owner).toBeVisible()
   await expect(owner.getByTestId('owner-user')).toHaveCount(3)
   await expect(owner.getByTestId('owner-user').filter({ hasText: 'Ayşe' })).toContainText('sahip')
   await expect(owner.getByTestId('owner-turn-provider')).toHaveText('Yok (yalnızca STUN)')
+  await settingsTab(ayse.page, 'depolama')
   await expect(ayse.page.getByTestId('storage-per-user')).toBeVisible()
 
   for (const person of [mehmet, zeynep]) {
@@ -26,6 +28,7 @@ test('only the owner sees Yönetim, at desktop and at 390 px; the others get 403
     await expect(person.page.getByTestId('storage-section')).toBeVisible()
     await expect(person.page.getByTestId('storage-usage')).toHaveText('0 / 1024 MB')
     await expect(person.page.getByTestId('owner-section')).toHaveCount(0)
+    await expect(person.page.getByTestId('settings-tab-yonetim')).toHaveCount(0)
     await expect(person.page.getByTestId('storage-per-user')).toHaveCount(0)
     expect(await person.page.evaluate(async (token) => (await fetch('/api/me', { headers: { Authorization: `Bearer ${token}` } })).json(), person.token)).toEqual({
       user: person.user.id === mehmet.user.id ? { id: mehmet.user.id, name: 'Mehmet', avatar_url: null } : { id: zeynep.user.id, name: 'Zeynep', avatar_url: null },
@@ -75,7 +78,7 @@ test('on Railway without a volume: a red band for everybody, the join screen inc
   await stranger.close()
 
   // Yönetim: the steps to attach a volume, the owner rule and the free seats.
-  await openSettings(ayse.page)
+  await openSettings(ayse.page, 'yonetim')
   await expect(ayse.page.getByTestId('owner-volume-steps')).toContainText('/data')
   await expect(ayse.page.getByTestId('owner-warning-owner')).toContainText('sahip = ilk katılan')
   await expect(ayse.page.getByTestId('owner-warning-seats')).toContainText('2 boş yer var')

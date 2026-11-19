@@ -5,6 +5,7 @@
  */
 import { baseUrl, freshServer, INVITE_CODE } from '../lib/server'
 import { apiLinkCode, expect, expectConnected, linkedDevice, newContext, test, type Person } from '../lib/trio'
+import { settingsTab, startSignOut } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -35,6 +36,7 @@ test('open the link, type only a name, join; the link is shared from settings', 
   expect(requested.filter((url) => url.includes(encodeURIComponent(INVITE_CODE)) || url.includes(INVITE_CODE))).toEqual([])
 
   await page.getByTestId('btn-settings').click()
+  await settingsTab(page, 'hesap')
   const link = `${baseUrl()}/#davet=${encodeURIComponent(INVITE_CODE)}`
   await expect(page.getByTestId('invite-link')).toHaveValue(link)
   await expect(page.getByTestId('settings-account')).toContainText('kişi sınırı dolana kadar')
@@ -47,11 +49,12 @@ test('open the link, type only a name, join; the link is shared from settings', 
   const ayse: Person = { name: 'Ayşe', context, page, user: body.user, token: body.token }
   const other = trio.add(await linkedDevice(browser, ayse, await apiLinkCode(body.token)))
   await other.page.getByTestId('btn-settings').click()
+  await settingsTab(other.page, 'hesap')
   await expect(other.page.getByTestId('invite-link-unknown')).toBeVisible()
   await expect(other.page.getByTestId('invite-link')).toHaveCount(0)
 
   // Signing out forgets the code, and remembers the name for next time.
-  await page.getByTestId('btn-logout').click()
+  await startSignOut(page)
   await page.getByTestId('logout-confirm').click()
   await expect(page.getByTestId('join-form')).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('trio.invite'))).toBeNull()

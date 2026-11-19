@@ -6,6 +6,7 @@
 import { freshServer } from '../lib/server'
 import { api, expect, test } from '../lib/trio'
 import { DESKTOP, expectNoSideScroll, openSettings, people, PHONE, sendFiles, status } from '../lib/ops'
+import { settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -62,5 +63,6 @@ test('a member deletes their own file: everybody sees the tombstone, the usage d
   // The owner's per-user totals follow.
   await openSettings(ayse.page)
   await expect(ayse.page.getByTestId('storage-per-user')).toContainText('Mehmet')
+  await settingsTab(ayse.page, 'yonetim')
   await expect(ayse.page.getByTestId('owner-user').filter({ hasText: 'Mehmet' })).toContainText('1 dosya')
 })

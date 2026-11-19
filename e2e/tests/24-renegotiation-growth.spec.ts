@@ -9,6 +9,7 @@ import type { Page } from '@playwright/test'
 import { expectTileDecoding } from '../lib/media'
 import { freshServer } from '../lib/server'
 import { expect, expectHearing, expectScreensDecoding, joinVoice, test, threePeople, type Person } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -102,6 +103,7 @@ test('30 camera cycles and 15 screen-share cycles on one connection keep the SDP
   await ayse.page.getByTestId('btn-screen').click()
   await expect(mehmet.page.getByTestId('remote-video')).toHaveCount(0)
   await ayse.page.getByTestId('btn-settings').click()
+  await settingsTab(ayse.page, 'goruntu')
   await ayse.page.getByTestId('settings-screen-audio').check()
   await ayse.page.getByTestId('settings-close').click()
 

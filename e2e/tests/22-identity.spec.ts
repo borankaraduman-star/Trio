@@ -18,6 +18,7 @@ import {
   uploadThroughCropper,
   withExifGps,
 } from '../lib/identity'
+import { settingsTab } from '../lib/v7phone'
 import {
   api,
   apiJoin,
@@ -251,7 +252,7 @@ test('the server name and icon change live for all three, survive a reload, and 
 test('the settings footer shows the client and server versions; Yenilikler after an update only', async ({ browser, trio }) => {
   const ayse = trio.add(await personViaUi(browser, 'Ayşe'))
   const serverVersion = ((await (await fetch(new URL('/api/health', ayse.page.url()))).json()) as { version: string }).version
-  await openSettings(ayse)
+  await openSettings(ayse, 'hakkinda')
   const footer = ayse.page.getByTestId('settings-versions')
   await footer.scrollIntoViewIfNeeded()
   await expect(footer).toHaveText(new RegExp(`^Trio ${WEB_VERSION.replace(/\./g, '\\.')} \\([^)]+\\) · sunucu ${serverVersion.replace(/\./g, '\\.')}$`))
@@ -334,7 +335,14 @@ test('phone width: the cropper works by touch (drag, pinch, slider) and every se
   await page.getByTestId('btn-drawer').tap()
   await page.getByTestId('btn-settings').tap()
   await expect(page.getByTestId('settings-dialog')).toBeVisible()
-  for (const id of ['avatar-choose', 'rename-input', 'settings-server', 'server-rename-input', 'settings-versions']) {
+  for (const [tab, id] of [
+    ['hakkinda', 'settings-versions'],
+    ['hesap', 'settings-server'],
+    ['hesap', 'server-rename-input'],
+    ['hesap', 'rename-input'],
+    ['hesap', 'avatar-choose'],
+  ] as const) {
+    await settingsTab(page, tab)
     const element = page.getByTestId(id)
     await element.scrollIntoViewIfNeeded()
     await expect(element).toBeInViewport()

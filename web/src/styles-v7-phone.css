@@ -1,0 +1,563 @@
+/*
+ * CONTRACT-V7-PHONE: the call bar, presence where the member column is
+ * hidden, the collapsible stage, the one "+" for channels and the tabbed
+ * settings. Imported before theme.css; every rule here is on a class of its
+ * own (v7-*), so the theme's overrides of older classes do not reach it.
+ */
+
+/* --- §1 the call bar (phones only; Session renders it at ≤ 680 px) ------------------------ */
+
+.v7-call-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 6px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 16px;
+  background: var(--trio-raised, #232730);
+}
+
+/* Without a composer under it, the bar is the bottom of the screen. */
+.v7-call-bar:last-child {
+  margin-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+
+.v7-call-room {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--trio-muted, #a0a6b2);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v7-call-room strong,
+.v7-call-room span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v7-call-room strong {
+  font-size: 14px;
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v7-call-room strong.wait {
+  color: var(--yellow, #f0b232);
+}
+
+.v7-call-room span[data-speaking='true'] {
+  color: var(--trio-speaking, #85d9c5);
+}
+
+.v7-call-buttons {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+
+.v7-call-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--trio-surface, #1a1d24);
+  color: var(--trio-text, #f2f1ed);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.v7-call-button.off {
+  background: rgb(228 119 127 / 18%);
+  color: var(--trio-danger, #e4777f);
+}
+
+.v7-call-button.on {
+  background: var(--trio-online, #69b9aa);
+  color: var(--trio-base, #111318);
+}
+
+.v7-call-button.held {
+  outline: 2px dashed var(--trio-muted, #a0a6b2);
+  outline-offset: 1px;
+}
+
+.v7-call-buttons .v7-call-button {
+  border-radius: 50%;
+}
+
+.v7-call-button.danger {
+  background: var(--trio-danger, #e4777f);
+  color: var(--trio-base, #111318);
+}
+
+.v7-call-button:focus-visible,
+.v7-call-room:focus-visible {
+  outline: 2px solid var(--trio-coral, #ee997f);
+  outline-offset: 2px;
+}
+
+/* The narrowest phones: the room line gives way before a button does. */
+@media (max-width: 359px) {
+  .v7-call-bar {
+    gap: 4px;
+    padding-left: 8px;
+  }
+
+  .v7-call-buttons {
+    gap: 2px;
+  }
+}
+
+@media (min-width: 681px) {
+  .v7-call-bar,
+  .v7-presence-pill {
+    display: none;
+  }
+}
+
+/* --- §2 presence ---------------------------------------------------------------------------- */
+
+.v7-presence {
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--trio-border, #2b303a);
+}
+
+.v7-presence ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v7-presence-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 10px;
+  border-radius: 10px;
+}
+
+.v7-presence-row.offline {
+  opacity: 0.55;
+}
+
+.v7-presence-row .dot {
+  border-color: var(--trio-side, #171a20);
+}
+
+.v7-presence-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v7-presence-name > span,
+.v7-presence-room {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v7-presence-room {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--trio-online, #69b9aa);
+}
+
+.v7-presence-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--trio-muted, #a0a6b2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.v7-presence-pill .dot {
+  position: static;
+  width: 8px;
+  height: 8px;
+  border: 0;
+}
+
+.v7-presence-faces {
+  display: inline-flex;
+}
+
+.v7-presence-faces > * + * {
+  margin-left: -5px;
+}
+
+/* The pill and whatever follows it (the pins) sit together on the right. */
+.main-header > .v7-presence-pill ~ * {
+  margin-left: 0;
+}
+
+.v7-presence-faces .avatar {
+  box-shadow: 0 0 0 2px var(--trio-surface, #1a1d24);
+  border-radius: 50%;
+}
+
+/* --- §3 the collapsible stage --------------------------------------------------------------- */
+
+.v7-stage[data-active='false'] {
+  display: contents;
+}
+
+.v7-stage[data-active='true'] {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.v7-stage[data-active='false'] > .v7-stage-body {
+  display: contents;
+}
+
+.v7-stage[data-active='true'] > .v7-stage-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Hidden, not unmounted: the streams keep playing (and a screen's sound is heard). */
+.v7-stage[data-collapsed='true'] > .v7-stage-body {
+  display: none;
+}
+
+.v7-stage-collapse {
+  position: absolute;
+  z-index: 2;
+  bottom: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+  background: rgb(17 19 24 / 82%);
+  color: var(--trio-text, #f2f1ed);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* The touch area is 44 px even where the pill looks smaller. */
+.v7-stage-collapse::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+}
+
+.v7-stage-collapse svg {
+  transform: rotate(180deg);
+}
+
+/* Bottom right: on the people strip's empty end when there is one, else on the
+   tile's corner (its caption is centred, its fullscreen button is top right). */
+
+.v7-stage-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 6px 8px 0;
+  padding: 0 14px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+  background: var(--trio-raised, #232730);
+  color: var(--trio-text, #f2f1ed);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v7-stage-pill-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v7-stage-pill-action {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--trio-coral, #ee997f);
+  font-weight: 600;
+}
+
+/* --- §4 one "+" for channels ---------------------------------------------------------------- */
+
+.v7-add-channel {
+  position: relative;
+  margin-left: auto;
+  flex: none;
+}
+
+.v7-add-channel > .icon-button.small {
+  width: 36px;
+  height: 36px;
+}
+
+@media (max-width: 680px) {
+  .v7-add-channel > .icon-button.small {
+    width: 44px;
+    height: 44px;
+    margin-right: -8px;
+  }
+}
+
+.v7-add-channel-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 236px;
+  padding: 6px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 12px;
+  background: var(--trio-raised, #232730);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+}
+
+.v7-add-channel-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--trio-text, #f2f1ed);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v7-add-channel-menu button:hover,
+.v7-add-channel-menu button:focus-visible {
+  background: var(--trio-border, #2b303a);
+}
+
+.v7-add-channel-menu span {
+  display: flex;
+  flex-direction: column;
+}
+
+.v7-add-channel-menu small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+/* --- §5 settings in tabs ------------------------------------------------------------------- */
+
+.modal.settings-dialog.v7-settings {
+  width: min(820px, 100%);
+  height: min(720px, calc(100vh - 32px));
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.v7-settings > .modal-header {
+  position: static;
+  flex: none;
+  gap: 8px;
+  padding: 16px 16px 12px 24px;
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+}
+
+.v7-settings > .modal-header h2 {
+  flex: 1;
+  min-width: 0;
+}
+
+.v7-settings-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.v7-settings-nav {
+  flex: none;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--trio-border, #2b303a);
+  overflow-y: auto;
+}
+
+.v7-settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--trio-muted, #a0a6b2);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v7-settings-nav button:hover {
+  background: var(--trio-raised, #232730);
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v7-settings-nav button[aria-selected='true'] {
+  background: var(--trio-pill, #5e3d37);
+  color: var(--trio-text, #f2f1ed);
+  font-weight: 600;
+}
+
+.v7-settings-nav button:focus-visible {
+  outline: 2px solid var(--trio-coral, #ee997f);
+  outline-offset: -2px;
+}
+
+.v7-settings-panel {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 4px 24px 24px;
+}
+
+.v7-settings-panel-title {
+  margin: 14px 0 0;
+  font-size: 18px;
+  color: var(--trio-text, #f2f1ed);
+}
+
+/* The first section of a panel needs no rule above it. */
+.v7-settings-panel > .settings-section:first-of-type,
+.v7-settings-panel > .v7-settings-panel-title + .settings-section {
+  border-top: 0;
+}
+
+/* Phones: the list fills the screen, then one section with a way back. */
+
+.v7-settings.phone > .modal-header {
+  padding: 10px 8px 10px 16px;
+}
+
+.v7-settings.phone .v7-settings-back {
+  width: 44px;
+  height: 44px;
+  margin-left: -8px;
+}
+
+.v7-settings.phone .v7-settings-body {
+  flex-direction: column;
+}
+
+.v7-settings-nav.list {
+  width: auto;
+  flex: 1;
+  padding: 8px;
+  border-right: 0;
+}
+
+.v7-settings-nav.list button {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'title chevron'
+    'hint chevron';
+  min-height: 60px;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+  border-radius: 0;
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v7-settings-nav.list button[aria-selected='true'] {
+  background: none;
+  font-weight: 400;
+}
+
+.v7-settings-nav.list .v7-settings-nav-title {
+  grid-area: title;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.v7-settings-nav.list small {
+  grid-area: hint;
+  font-size: 12.5px;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.v7-settings-nav-chevron {
+  grid-area: chevron;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.v7-settings.phone .v7-settings-panel {
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 680px) {
+  .modal-backdrop:has(> .v7-settings.phone) {
+    padding: 0;
+  }
+
+  .modal.settings-dialog.v7-settings.phone {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+}

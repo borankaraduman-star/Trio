@@ -8,6 +8,7 @@ import type { Page } from '@playwright/test'
 import { freshServer } from '../lib/server'
 import { expect, sendThroughUi, test } from '../lib/trio'
 import { DESKTOP, openSettings, people, PHONE, SCREENSHOTS, sendFiles } from '../lib/ops'
+import { settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -36,7 +37,7 @@ test('a forced client error shows up in the owner’s list, with its count', asy
   })
   expect((await rejected).status()).toBe(204)
 
-  await openSettings(ayse.page)
+  await openSettings(ayse.page, 'yonetim')
   const list = ayse.page.getByTestId('owner-errors')
   const row = list.getByTestId('owner-error').filter({ hasText: 'e2e zorlanmış hata' })
   await expect(row).toHaveCount(1)
@@ -69,10 +70,12 @@ for (const [suffix, viewport] of [
     })
     await reported
 
-    await openSettings(ayse.page)
+    await openSettings(ayse.page, 'yonetim')
     await expect(ayse.page.getByTestId('owner-errors').getByTestId('owner-error')).toHaveCount(1)
+    await settingsTab(ayse.page, 'depolama')
     await expect(ayse.page.getByTestId('storage-file')).toHaveCount(2)
     await shot(ayse.page, `v6-ops-depolama${suffix}.png`, 'storage-section')
+    await settingsTab(ayse.page, 'yonetim')
     await ayse.page.getByTestId('owner-section').scrollIntoViewIfNeeded()
     await shot(ayse.page, `v6-ops-yonetim${suffix}.png`, 'owner-section')
     await shot(ayse.page, `v6-ops-yonetim-hatalar${suffix}.png`, 'owner-errors')

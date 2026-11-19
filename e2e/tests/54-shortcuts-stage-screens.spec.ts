@@ -16,6 +16,7 @@ import type { Page } from '@playwright/test'
 import { longPress } from '../lib/messages'
 import { baseUrl, freshServer } from '../lib/server'
 import { expect, expectScreensDecoding, joinVoice, personViaApi, test, threePeople } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 import { CUE_PROBE, cuesPlayed } from '../lib/voiceProbe'
 
 test.beforeEach(async () => {
@@ -237,6 +238,7 @@ test('desktop version: an older app gets the update notice (dismissable per vers
   )
   await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute('target', '_blank')
   await older.page.getByTestId('btn-settings').click()
+  await settingsTab(older.page, 'hakkinda')
   await expect(older.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması 0.0.1')
   await expect(older.page.getByTestId('desktop-update-line')).toContainText(`(${serverVersion})`)
   await older.page.getByTestId('settings-close').click()
@@ -247,12 +249,14 @@ test('desktop version: an older app gets the update notice (dismissable per vers
   await expect(band).toHaveCount(0)
   // The settings line stays (only the band is dismissed).
   await older.page.getByTestId('btn-settings').click()
+  await settingsTab(older.page, 'hakkinda')
   await expect(older.page.getByTestId('desktop-update-line')).toBeVisible()
 
   const same = trio.add(
     await personViaApi(browser, 'Mehmet', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion(serverVersion))) }),
   )
   await same.page.getByTestId('btn-settings').click()
+  await settingsTab(same.page, 'hakkinda')
   await expect(same.page.getByTestId('desktop-version')).toHaveText(`Masaüstü uygulaması ${serverVersion}`)
   await expect(same.page.getByTestId('desktop-update-line')).toHaveCount(0)
   await expect(same.page.getByTestId('desktop-update')).toHaveCount(0)
@@ -262,10 +266,12 @@ test('desktop version: an older app gets the update notice (dismissable per vers
   )
   await expect(oldBuild.page.getByTestId('desktop-update')).toBeVisible()
   await oldBuild.page.getByTestId('btn-settings').click()
+  await settingsTab(oldBuild.page, 'hakkinda')
   await expect(oldBuild.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması (eski sürüm)')
 
   const plain = trio.add(await personViaApi(browser, 'Ece'))
   await plain.page.getByTestId('btn-settings').click()
+  await settingsTab(plain.page, 'hakkinda')
   await expect(plain.page.getByTestId('settings-versions')).toBeVisible()
   await expect(plain.page.getByTestId('desktop-version')).toHaveCount(0)
   await expect(plain.page.getByTestId('desktop-update')).toHaveCount(0)
