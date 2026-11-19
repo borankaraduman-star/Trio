@@ -24,13 +24,32 @@ at once (the client does not forbid it; the UI shows each).
   120 characters after trimming, control and bidi-override characters
   removed, `null` when empty or when `music` is false. Relayed like the other
   flags. An old client ignores both keys.
+
+  As built (server): a title is CLEANED, not refused — it comes from
+  somebody else's player — controls, format (bidi, zero-width) and private-
+  use characters removed, whitespace runs made one space, cut to 120
+  characters. `music` that is not a boolean, or a `music_title` that is
+  neither a string nor `null`, is `BAD_REQUEST`. A client sends both keys
+  only while sharing; a frame without them (every older client) means "not
+  sharing". Leaving clears them (the next join starts without). A resume
+  (`voice.join {resume: true}`) carries them like the other flags.
 - `signal.data.meta` gains `music: "<MediaStream id>" | null` next to
   `camera` and `screen`, sent BEFORE the track is added (CONTRACT-V2 §4). A
   remote audio track whose stream id equals `meta.music` is music, never the
-  microphone.
+  microphone. (An older client that does not read `meta.music` would take the
+  music stream for the microphone: the three friends' web clients come from
+  the same server, so this only matters for a tab left open across a
+  release.)
 - Starting and stopping music goes through the existing turn-taking
   negotiation (CLAUDE.md: never an SDP rollback). Stopping stops the
   transceiver (`stopSenders`), like camera and screen.
+- As built: when a negotiation settles, a transceiver that NEITHER side sends
+  on and that has no track is stopped (`stopIdleTransceivers` in voice.ts,
+  applies to camera and screen too). `stopSenders` keeps a sendrecv
+  transceiver receiving (the other side may still send on it); when two
+  people turned music off together, the other side then stopped too and
+  nobody stopped it, so each such cycle left one m-line (+1.2 KB, measured in
+  e2e 72). Stopping is itself a negotiation, through the turn-taking.
 
 ## 3. Capture rules (the sharer)
 
@@ -38,11 +57,45 @@ at once (the client does not forbid it; the UI shows each).
   `autoGainControl: false`, stereo. The music never passes through RNNoise,
   the input gate, mute, push-to-talk or AFK: muting the microphone does not
   stop the music; "Müziği durdur" does. Hanging up stops it.
-- Sent as Opus music: stereo, a target of ~128 kbit/s (state in this file what
-  was actually needed — sender `maxBitrate`, fmtp `stereo=1`, and how it was
-  measured from `outbound-rtp`). If stereo needs SDP changes, they are made
-  without ever causing a rollback and are covered by a test that counts
-  offers and signalling states.
+- Sent as Opus music: stereo, a target of ~128 kbit/s.
+
+  **Measured (web part, 19 Nov 2026, Chromium 153 of the e2e suite)** with a
+  stereo source (440 Hz at 0.5 on the left, silence on the right) between two
+  connections, reading `outbound-rtp`/`inbound-rtp` bytes over 3 s, the
+  `codec` stats and each decoded channel's peak:
+
+  | SDP munging | maxBitrate | out kbit/s | decoded L / R |
+  |---|---|---|---|
+  | none | — | 32 | 0.25 / 0.25 (downmixed) |
+  | none | 128 000 | 128 | 0.25 / 0.25 |
+  | `stereo=1` only in the answer the SENDER applies | — | 64 | 0.25 / 0.25 |
+  | the same, and in the offer the receiver applies | 128 000 | 128 | 0.25 / 0.25 |
+  | `stereo=1;sprop-stereo=1` in the RECEIVER's own (local) answer | — | 64 | 0.50 / 0 |
+  | the same | 128 000 | 128 | 0.50 / 0 |
+
+  So what is needed: (1) `stereo=1` in the **receiver's own description** of
+  the m-line — its decoder takes the channel count from its local fmtp, and
+  the sender's encoder reads the same line from the remote description it
+  receives; munging only what one side receives gives mono; (2) the
+  sender's `maxBitrate: 128000` (`setParameters`, not in the SDP, no
+  renegotiation; stereo=1 alone gives 64 kbit/s). `contentHint = "music"`
+  changed nothing measurable here; it is set anyway (it is the documented
+  hint for an encoder). Sender-side `sprop-stereo` changed nothing either.
+
+  As built (`web/src/music/opusStereo.ts`): every local description, offer or
+  answer, gets `stereo=1;sprop-stereo=1` on the Opus payload of the m-lines
+  that carry music in either direction (found by `a=msid` = the peer's
+  `meta.music` in the remote description, or by the transceivers of my own
+  music sender and of the peer's music receiver), and on no other m-line —
+  the microphone stays mono at 32 kbit/s (e2e 71 checks its fmtp). While no
+  music m-line exists the description is set exactly as before
+  (`setLocalDescription()` with no argument); with one, it is
+  `createOffer`/`createAnswer`, munged, then `setLocalDescription`. No
+  rollback: e2e 72 counts explicit and implicit rollbacks (a remote offer
+  applied in `have-local-offer`) over 15 on/off cycles, every fifth by both
+  people at once — 0 — and every signalling state seen is `stable`,
+  `have-local-offer` or `have-remote-offer`. Received in e2e 71/73/74: ~128
+  kbit/s, left ≈ 0.50, right 0.
 - **The sharer's own Trio sound must not be in it.** If the captured sound
   included the voices of the room, everybody would hear themselves back.
   - Browser: the picker asks for a **tab** (or, on Windows, system audio) via
@@ -50,6 +103,31 @@ at once (the client does not forbid it; the UI shows each).
     tab is excluded from the picker where the browser allows
     (`selfBrowserSurface: "exclude"`), and system audio is offered only if
     the browser can keep Trio's own playback out of it; otherwise only tabs.
+
+    As built (`web/src/music/capture.ts`; option names checked by web search
+    on 19 Nov 2026 against Chrome's docs and blink-dev intents, the pages
+    themselves were not reachable from the build machine):
+    `{video: true, audio: {echoCancellation: false, noiseSuppression: false,
+    autoGainControl: false, channelCount: 2, restrictOwnAudio: true¹,
+    suppressLocalAudioPlayback: false²}, selfBrowserSurface: "exclude",
+    preferCurrentTab: false, surfaceSwitching: "exclude", systemAudio,
+    windowAudio, monitorTypeSurfaces}` where the last three are
+    `"include"`/`"window"`/`"include"` when `getSupportedConstraints()` lists
+    `restrictOwnAudio` (¹ only then), else `"exclude"` — tabs only.
+    ² only where listed; the sharer keeps hearing the tab. Because a listed
+    constraint is not a working one (Linux Chromium lists `restrictOwnAudio`
+    and a capture reports `false`), the capture is checked AFTER the picker:
+    kept if the picture's `displaySurface` is `"browser"` (another tab: none
+    of Trio's sound) or the audio track reports `restrictOwnAudio: true`;
+    otherwise every track is stopped and the sharer reads "Trio kendi sesini
+    bu paylaşımdan ayıramıyor… Müziğin çaldığı sekmeyi seç…". No audio track
+    (the "share tab audio" box not ticked) is "Ses gelmedi: paylaşırken
+    seçicide bir sekme seç ve “Sekme sesini de paylaş” seçeneğini işaretle."
+    Closing the picker says nothing. Measured: stopping the picture track
+    of a tab capture leaves its sound flowing; headless Chromium captures a
+    tab's sound as silence (e2e 73 runs a headed browser on its own Xvfb).
+    The screen share already sends `restrictOwnAudio: true` where listed
+    (`audio/screenAudio.ts`, since V6); unchanged.
   - Windows desktop app: system sound **without Trio's own output**. The
     desktop part decides how (Chromium's own-audio restriction, a per-process
     loopback, or routing) and proves it with a test or a documented manual
@@ -127,6 +205,16 @@ at once (the client does not forbid it; the UI shows each).
 - Per listener and per sharer: a music volume (0–100 %, default 50 %) and a
   mute for the music, remembered on the device; separate from that person's
   voice volume. Deafen silences music too. The output device setting applies.
+
+  As built: `localStorage` `trio.music8` (`{volumes: {"<id>": {volume,
+  muted}}, showTitle}`), apart from the V6 volumes (`trio.voice6`). The
+  music volume is the element's own `volume` and never above 100 %, so music
+  NEVER goes through the V6 boost path (Web Audio gain + limiter) — a
+  person's voice boost does not touch their music and their music cannot be
+  boosted; the element is muted by deafen or the music mute. The element
+  follows the output device with `setSinkId` like a microphone's element
+  (e2e 74). Shown in the existing volume sheet (right-click / long-press on
+  the sharer's row) under the voice sliders, only while they share.
 - Music never drives the speaking ring, the AFK speech detector or the voice
   activity of anyone.
 - While somebody shares, the room shows it: a note mark on the sharer's row
@@ -177,12 +265,25 @@ at once (the client does not forbid it; the UI shows each).
 - Browser: best effort from the captured tab (its title, where the platform
   exposes it); otherwise an editable text the sharer may type. No title is
   not an error.
+
+  As built: no browser gives the capturer the tab's title — Chrome's track
+  label is `web-contents-media-stream://<id>` (measured), a window's
+  `window:<id>:0` — so the browser case is the editable text alone
+  (`music-title-input`, empty at the start, sent 400 ms after typing stops).
+  In the app with `onNowPlaying`, the title is what the bridge reports
+  (`"Artist — Title"`, or the title alone when it already contains the
+  artist), read-only in the panel; without `onNowPlaying`, the text field.
+  "Şarkı adını göster" is remembered on the device (`trio.music8`) and only
+  shown while sharing.
 - Shown as text only (never HTML), at most one line, with the sharer's name.
 
 ## 6. Controls and test ids
 
-`btn-music` (user panel while in voice, and the phone call bar; hidden where
-`getDisplayMedia` does not exist), `music-title-toggle`, `music-title-input`,
+`btn-music` (the user panel at the bottom of the sidebar, while in voice),
+`call-bar-music` (the phone call bar — **changed from `btn-music`**: on a
+phone both are in the page at once, the drawer's and the bar's, as with
+`btn-screen`/`call-bar-screen`); both hidden where `getDisplayMedia` does not
+exist; `music-panel` (while I share), `music-title-toggle`, `music-title-input`,
 `music-now-playing-<user id>`, `music-volume-<user id>`,
 `music-mute-<user id>`, `remote-music-<user id>`.
 
