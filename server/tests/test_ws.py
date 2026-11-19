@@ -60,6 +60,7 @@ def test_ready_is_the_first_frame(trio, three):
             "users",
             "channels",
             "voice",
+            "activity",
         }
         assert ready["user"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
         assert ready["users"] == [
