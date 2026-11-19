@@ -252,3 +252,11 @@
 .whats-new li + li {
   margin-top: 3px;
 }
+
+/* A phone: never more than the top half, so the messages and the composer stay usable. */
+@media (max-width: 680px) {
+  .whats-new {
+    top: 60px;
+    max-height: 45dvh;
+  }
+}

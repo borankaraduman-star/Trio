@@ -15,6 +15,7 @@ import { DeleteConfirm } from './DeleteConfirm'
 import { EmojiPicker } from './EmojiPicker'
 import type { ActionKind } from './MessageActions'
 import type { AnchorRect } from './Popover'
+import { swallowPressEndClick } from '../../lib/pressEnd'
 
 /** Passed down by Session. */
 export interface ListFamily {
@@ -127,6 +128,8 @@ export function useRowFamily(family: ListFamily | undefined, meId: number): RowF
           timer: setTimeout(() => {
             press.current = null
             pressed.current = true
+            // The sheet may open under the finger: the click this press ends with must not land on it.
+            swallowPressEndClick(document)
             navigator.vibrate?.(10)
             setOverlay({ kind: 'menu', messageId: idOf(target), anchor: null })
           }, LONG_PRESS_MS),

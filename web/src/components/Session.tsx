@@ -875,7 +875,7 @@ export function Session({
         />
       )}
 
-      <WhatsNewCard ready={state.ready} busy={busyForNews} />
+      <WhatsNewCard ready={state.ready} busy={busyForNews} paused={calls.incoming !== null} />
 
       <div hidden>
         {voice.remoteAudio.map((media) => (

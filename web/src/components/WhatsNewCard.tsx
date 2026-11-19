@@ -10,8 +10,10 @@ const CHECK_MS = 1000
  * since the version it last acknowledged. Never on a first visit, never a
  * dialog (it takes no focus and blocks nothing), and it only appears while
  * `busy()` — the reload guard's view of the page — says nothing is going on.
+ * While `paused` (a ring band is up) it steps aside, so it never covers the
+ * band's buttons, and comes back as it was.
  */
-export function WhatsNewCard({ ready, busy }: { ready: boolean; busy: () => boolean }) {
+export function WhatsNewCard({ ready, busy, paused = false }: { ready: boolean; busy: () => boolean; paused?: boolean }) {
   const [entries] = useState<ChangelogEntry[]>(() =>
     entriesSince(CHANGELOG, loadSeenVersion(), CLIENT_VERSION, DEVICE_KNOWN_AT_LOAD),
   )
@@ -39,6 +41,8 @@ export function WhatsNewCard({ ready, busy }: { ready: boolean; busy: () => bool
   if (!shown || done) {
     return entries.length > 0 && !done ? <span hidden data-testid="whats-new-waiting" data-held={held} /> : null
   }
+
+  if (paused) return <span hidden data-testid="whats-new-paused" />
 
   const dismiss = () => {
     saveSeenVersion(CLIENT_VERSION)
