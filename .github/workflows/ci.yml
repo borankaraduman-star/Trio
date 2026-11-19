@@ -99,6 +99,12 @@ jobs:
   e2e:
     needs: [server, web]
     runs-on: ubuntu-latest
+    # The suite runs with one worker; split by file into shards so the whole
+    # of it fits the time limit (one job hit 30 minutes at ~150 tests).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     timeout-minutes: 30
     env:
       # The web client is built below; the suite's global setup need not rebuild it.
@@ -141,13 +147,13 @@ jobs:
       # so a failed run leaves a report to download.
       - name: Run Playwright
         working-directory: e2e
-        run: npm test -- --reporter=list,html
+        run: npm test -- --reporter=list,html --shard=${{ matrix.shard }}/4
 
       - name: Upload report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             e2e/playwright-report/
             e2e/test-results/
