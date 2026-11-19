@@ -56,7 +56,9 @@ test('settings: devices switch live in a call, the output device is used, everyt
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('heading', { name: 'Ayarlar' })).toBeVisible()
   expect(await options(ayse.page, 'settings-mic')).toEqual(['Sistem varsayılanı', 'Fake Audio Input 1', 'Fake Audio Input 2'])
+  await settingsTab(ayse.page, 'goruntu')
   expect(await options(ayse.page, 'settings-camera')).toEqual(['Sistem varsayılanı', 'fake_device_0', 'fake_device_1', 'fake_device_2'])
+  await settingsTab(ayse.page, 'ses')
   expect(await options(ayse.page, 'settings-output')).toEqual(['Sistem varsayılanı', 'Fake Audio Output 1', 'Fake Audio Output 2'])
 
   const tracks = await sentAudioTrackIds(ayse.page)
@@ -67,6 +69,7 @@ test('settings: devices switch live in a call, the output device is used, everyt
   await expect.poll(async () => (await liveDevices(ayse.page)).mic).toEqual(['Fake Audio Input 2'])
   expect(await sentAudioTrackIds(ayse.page)).toEqual(tracks)
   // Camera: replaceTrack, the tile keeps decoding for the others.
+  await settingsTab(ayse.page, 'goruntu')
   await ayse.page.getByTestId('settings-camera').selectOption({ label: 'fake_device_2' })
   await expect.poll(async () => (await liveDevices(ayse.page)).camera).toEqual(['fake_device_2'])
   await expect.poll(() => sentCamera(ayse.page)).toEqual(['fake_device_2', 'fake_device_2'])
@@ -77,6 +80,7 @@ test('settings: devices switch live in a call, the output device is used, everyt
   }
 
   // Output: every remote voice plays on the chosen device.
+  await settingsTab(ayse.page, 'ses')
   const output = await ayse.page.getByTestId('settings-output').locator('option', { hasText: 'Fake Audio Output 1' }).getAttribute('value')
   await ayse.page.getByTestId('settings-output').selectOption({ label: 'Fake Audio Output 1' })
   for (const other of [mehmet, zeynep]) {
