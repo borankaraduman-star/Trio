@@ -11,6 +11,8 @@ COPY web/package.json web/package-lock.json* ./
 # `npm ci` needs a lockfile; fall back to `npm install` if none was committed.
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY web/ ./
+# Test cases shared with the server; tsc type-checks the web tests that import them.
+COPY shared/ /shared/
 RUN npm run build
 
 # ---- Stage 2: the server, serving API + websocket + built client -----------
