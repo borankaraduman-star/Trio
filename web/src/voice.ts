@@ -1,7 +1,10 @@
 import { ContextKeeper } from './audio/contextKeeper'
 import { MicPipeline, type NoiseState } from './audio/pipeline'
 import { displayMediaOptions } from './audio/screenAudio'
+import type { PeerStat } from './lib/connReport'
+import { HeldActions } from './lib/heldActions'
 import { classifyStreams, EMPTY_META, parseMeta, sameMeta } from './lib/streamMeta'
+import { planResume, resumeDecision } from './lib/voiceResume'
 import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
 
 export interface RemoteMedia {
@@ -55,6 +58,15 @@ export interface VoiceSnapshot {
   micLost: boolean
   /** The connection to each other member, by user id. */
   peerHealth: Readonly<Record<number, PeerHealth>>
+  /**
+   * V4 A1: `down` while the call is kept without a socket (the banner "ses
+   * sürüyor"), until the resume is answered; `up` otherwise.
+   */
+  signalling: 'up' | 'down'
+  /** V4 A1: a camera change asked for while `down`, applied on resume; null if none. */
+  heldCamera: boolean | null
+  /** V4 A3: the ICE list has a TURN server (null before it was loaded). */
+  turnConfigured: boolean | null
 }
 
 /** Shown for `micLost`. */
@@ -141,6 +153,8 @@ interface Peer {
   negotiationWanted: boolean
   /** A fresh connection was wanted while it could not be signalled. */
   recoverWanted: boolean
+  /** V4 A1: kept across a resume but not listed by the server: closed if it does not come back. */
+  awaitTimer: ReturnType<typeof setTimeout> | null
 }
 
 interface Monitor {
@@ -171,6 +185,33 @@ const DISCONNECTED_GRACE_MS = 3_000
 const ICE_ATTEMPT_TIMEOUT_MS = 8_000
 const MAX_ICE_RESTARTS = 3
 const FAILED_RETRY_MS = 15_000
+
+/** V4 A1: a call is kept this long without a socket, then closed as before. */
+export const SIGNALLING_FALLBACK_MS = 30_000
+/**
+ * V4 A1: after a resume, a kept peer the server does not list is waited for
+ * this long (the server's grace): after a restart everybody resumes one by one.
+ */
+const RESUME_WAIT_MS = 10_000
+
+export const FALLBACK_NOTICE =
+  'Sunucuya 30 saniyedir ulaşılamıyor: ses bağlantıları kapatıldı, bağlantı gelince yeniden katılınacak.'
+export const CAMERA_DROPPED_NOTICE = 'Kamera değişikliği uygulanamadı: sunucu bağlantısı gelmedi.'
+export const ELSEWHERE_NOTICE = 'Ses görüşmen başka bir sekmede ya da cihazda sürüyor.'
+
+function randomSession(): string {
+  const bytes = new Uint8Array(12)
+  crypto.getRandomValues(bytes)
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** An ICE list with at least one `turn:`/`turns:` URL. */
+export function hasTurnServer(servers: readonly RTCIceServer[]): boolean {
+  return servers.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls]
+    return urls.some((url) => typeof url === 'string' && /^turns?:/i.test(url))
+  })
+}
 
 const SPEAKING_THRESHOLD = 0.02
 const SPEAKING_HOLD_MS = 300
@@ -322,7 +363,13 @@ function stopSenders(pc: RTCPeerConnection, senders: readonly RTCRtpSender[]): v
       // removeTrack first: it lets go of the track at once (`sender.track`
       // is null now), while a stop alone keeps it until negotiated.
       pc.removeTrack(transceiver.sender)
-      transceiver.stop()
+      // But never stop a transceiver the OTHER side also sends on: addTrack
+      // reuses the transceiver that receives the peer's camera when ours is
+      // added after theirs, and stopping it would end THEIR camera here too
+      // (seen when a camera went off on a connection kept across a resume).
+      // removeTrack alone leaves it receiving; it is still in use, so it
+      // does not make the description grow.
+      if (transceiver.currentDirection !== 'sendrecv') transceiver.stop()
     } catch {
       // The connection is already closed.
     }
@@ -351,6 +398,25 @@ export class VoiceEngine {
   /** `voice.join` has been sent on the current connection. */
   private joinSent = false
   private iceServers: RTCIceServer[] = []
+  private iceLoaded = false
+
+  // --- V4 A1: the call survives a signalling drop ---------------------------
+  /** This call's random id, repeated on every resume of it (`voice.join {session}`). */
+  private session = ''
+  /** The socket dropped while connected: peers are kept, nothing can be signalled. */
+  private signallingDown = false
+  /** A resume `voice.join` is out; its `voice.peers` has not come back yet. */
+  private resuming = false
+  private downTimer: ReturnType<typeof setTimeout> | null = null
+  /** My own entry in the last `ready.voice`, to tell a resume from a call that moved. */
+  private ownEntry: { channelId: number; reconnecting: boolean; session: string | null } | null = null
+  private heldCamera: boolean | null = null
+  private readonly held = new HeldActions<'camera'>(() => {
+    if (this.heldCamera === null) return
+    this.heldCamera = null
+    this.error = CAMERA_DROPPED_NOTICE
+    this.emit()
+  })
 
   private micStream: MediaStream | null = null
   private screenStream: MediaStream | null = null
@@ -421,6 +487,9 @@ export class VoiceEngine {
       transmitting: this.pipeline?.transmitting ?? false,
       micLost: this.pipeline?.micLost ?? false,
       peerHealth,
+      signalling: this.signallingDown || this.resuming ? 'down' : 'up',
+      heldCamera: this.heldCamera,
+      turnConfigured: this.iceLoaded ? hasTurnServer(this.iceServers) : null,
     }
   }
 
@@ -437,6 +506,7 @@ export class VoiceEngine {
 
     const generation = ++this.generation
     this.channelId = channelId
+    this.session = randomSession()
     this.status = 'joining'
     this.error = null
     this.emit()
@@ -514,9 +584,32 @@ export class VoiceEngine {
     await this.pipeline?.retry()
   }
 
-  /** The WebSocket dropped: the server has already removed us from the channel. */
+  /**
+   * The WebSocket dropped. V4 A1: a call that was connected is KEPT — peer
+   * connections, tracks, audio and the microphone stay as they are; nothing
+   * can be signalled, so negotiations, ICE restarts and resets wait (see
+   * canSignal), and on the next `ready` the call is resumed. After
+   * SIGNALLING_FALLBACK_MS without a socket it is closed as before. A join
+   * that was not confirmed yet is simply made again.
+   */
   handleDisconnected(): void {
     if (this.status === 'idle') return
+    if (this.signallingDown) {
+      // Down again while the resume was on its way: wait for the next ready.
+      this.joinSent = false
+      this.resuming = false
+      this.emit()
+      return
+    }
+    if (this.status === 'connected') {
+      this.joinSent = false
+      this.resuming = false
+      this.signallingDown = true
+      for (const peer of this.peers.values()) this.setHealthTimer(peer, null)
+      this.downTimer = setTimeout(() => this.fallBack(), SIGNALLING_FALLBACK_MS)
+      this.emit()
+      return
+    }
     this.joinSent = false
     this.closeAllPeers()
     this.status = 'joining'
@@ -526,7 +619,63 @@ export class VoiceEngine {
   /** A `ready` frame arrived: if we were in voice before the drop, go back in. */
   handleReady(): void {
     if (this.status === 'idle' || this.joinSent || !this.micStream) return
-    void this.rejoin()
+    if (this.signallingDown) void this.resume()
+    else void this.rejoin()
+  }
+
+  private async resume(): Promise<void> {
+    const generation = this.generation
+    await this.loadIce()
+    if (generation !== this.generation || this.joinSent || !this.signallingDown) return
+    if (resumeDecision(this.ownEntry, this.session) === 'elsewhere') {
+      // Another tab or device of mine joined while this one was away: the
+      // place is theirs now. Stop here without telling the server anything.
+      this.generation += 1
+      this.reset()
+      this.error = ELSEWHERE_NOTICE
+      this.emit()
+      return
+    }
+    // Fresh TURN credentials for kept connections (used by later ICE restarts).
+    for (const peer of this.peers.values()) {
+      try {
+        peer.pc.setConfiguration({ ...peer.pc.getConfiguration(), iceServers: this.iceServers })
+      } catch {
+        // Not every configuration change is allowed; the old one keeps working.
+      }
+    }
+    if (this.sendJoin(true)) {
+      this.resuming = true
+      this.emit()
+    }
+  }
+
+  /** Thirty seconds without a socket: close everything; rejoin on the next ready. */
+  private fallBack(): void {
+    this.downTimer = null
+    if (!this.signallingDown) return
+    if (this.resuming) {
+      // The socket is back and the resume is on its way: its answer decides.
+      // (Closing now would leave the others keeping connections this side
+      // had just thrown away.)
+      this.downTimer = setTimeout(() => this.fallBack(), 5_000)
+      return
+    }
+    this.signallingDown = false
+    this.resuming = false
+    this.held.clear()
+    this.heldCamera = null
+    this.closeAllPeers()
+    if (!this.joinSent) this.status = 'joining'
+    this.error = FALLBACK_NOTICE
+    this.emit()
+  }
+
+  private endSignallingDown(): void {
+    this.signallingDown = false
+    this.resuming = false
+    if (this.downTimer !== null) clearTimeout(this.downTimer)
+    this.downTimer = null
   }
 
   private async rejoin(): Promise<void> {
@@ -538,7 +687,7 @@ export class VoiceEngine {
     this.sendJoin()
   }
 
-  private sendJoin(): boolean {
+  private sendJoin(resume = false): boolean {
     if (this.channelId === null) return false
     const sent = this.deps.send({
       type: 'voice.join',
@@ -546,6 +695,9 @@ export class VoiceEngine {
       muted: this.muted,
       deafened: this.deafened,
       camera: this.cameraStream !== null,
+      screensharing: this.screenStream !== null,
+      session: this.session,
+      ...(resume ? { resume: true } : {}),
     })
     this.joinSent = sent
     return sent
@@ -559,6 +711,7 @@ export class VoiceEngine {
       console.warn('trio: could not load ICE servers', error)
       this.iceServers = []
     }
+    this.iceLoaded = true
   }
 
   private fail(message: string): void {
@@ -583,6 +736,9 @@ export class VoiceEngine {
     this.channelId = null
     this.status = 'idle'
     this.joinSent = false
+    this.endSignallingDown()
+    this.held.clear()
+    this.heldCamera = null
   }
 
   // --- local controls ------------------------------------------------------
@@ -724,8 +880,35 @@ export class VoiceEngine {
   // --- v2: camera ------------------------------------------------------------
 
   async toggleCamera(): Promise<void> {
+    if (this.signallingDown || this.resuming) {
+      this.holdCamera()
+      return
+    }
     if (this.cameraStream) this.stopCamera()
     else await this.startCamera()
+  }
+
+  /**
+   * V4 A1: a camera change while the call is kept without a socket waits for
+   * the resume (the button shows it); toggling back cancels it; after 30 s it
+   * is dropped with a notice.
+   */
+  private holdCamera(): void {
+    const on = this.cameraStream !== null
+    const desired = this.heldCamera === null ? !on : !this.heldCamera
+    if (desired === on) {
+      this.heldCamera = null
+      this.held.cancel('camera')
+    } else {
+      this.heldCamera = desired
+      this.held.hold('camera', () => {
+        const want = this.heldCamera
+        this.heldCamera = null
+        if (want === true) void this.startCamera()
+        else if (want === false) this.stopCamera()
+      })
+    }
+    this.emit()
   }
 
   async startCamera(): Promise<void> {
@@ -883,12 +1066,87 @@ export class VoiceEngine {
     await this.pipeline?.setNoiseSuppression(on)
   }
 
+  // --- V4 A3: connection facts for Ayarlar › Bağlantı testi ----------------------
+
+  /** The ICE list the call uses (loaded at join), for the TURN probe. */
+  iceList(): RTCIceServer[] {
+    return this.iceServers
+  }
+
+  /** Per peer: the selected candidate pair's path, its round-trip time, inbound audio loss. */
+  async peerStats(): Promise<PeerStat[]> {
+    const result: PeerStat[] = []
+    for (const peer of [...this.peers.values()].sort((a, b) => a.id - b.id)) {
+      const stat: PeerStat = { userId: peer.id, path: null, rtt: null, packetsLost: null, packetsReceived: null }
+      try {
+        const report = await peer.pc.getStats()
+        const byId = new Map<string, Record<string, unknown>>()
+        report.forEach((entry: Record<string, unknown>) => byId.set(String(entry.id), entry))
+        let pair: Record<string, unknown> | undefined
+        for (const entry of byId.values()) {
+          if (entry.type === 'transport' && typeof entry.selectedCandidatePairId === 'string') {
+            pair = byId.get(entry.selectedCandidatePairId)
+          }
+        }
+        if (!pair) {
+          for (const entry of byId.values()) {
+            if (entry.type === 'candidate-pair' && entry.state === 'succeeded' && entry.nominated === true) pair = entry
+          }
+        }
+        if (pair) {
+          const local = byId.get(String(pair.localCandidateId))
+          const remote = byId.get(String(pair.remoteCandidateId))
+          stat.path = local?.candidateType === 'relay' || remote?.candidateType === 'relay' ? 'relay' : 'direct'
+          if (typeof pair.currentRoundTripTime === 'number') stat.rtt = pair.currentRoundTripTime
+        }
+        for (const entry of byId.values()) {
+          if (entry.type === 'inbound-rtp' && entry.kind === 'audio') {
+            if (typeof entry.packetsLost === 'number') stat.packetsLost = (stat.packetsLost ?? 0) + entry.packetsLost
+            if (typeof entry.packetsReceived === 'number') {
+              stat.packetsReceived = (stat.packetsReceived ?? 0) + entry.packetsReceived
+            }
+          }
+        }
+      } catch {
+        // Closed meanwhile: what we have.
+      }
+      result.push(stat)
+    }
+    return result
+  }
+
   // --- server events -------------------------------------------------------
 
   handleEvent(event: ServerEvent): void {
     switch (event.type) {
+      case 'ready': {
+        this.ownEntry = null
+        for (const [key, list] of Object.entries(event.voice ?? {})) {
+          for (const entry of list) {
+            if (entry.user_id !== this.deps.myId) continue
+            const session = (entry as { session?: unknown }).session
+            this.ownEntry = {
+              channelId: Number(key),
+              reconnecting: entry.reconnecting === true,
+              session: typeof session === 'string' ? session : null,
+            }
+          }
+        }
+        return
+      }
+
       case 'voice.peers':
         if (!this.joinSent || event.channel_id !== this.channelId) return
+        if (this.resuming) {
+          if (event.resumed === true) {
+            this.reconcileResume(event.peers, event.reconnecting ?? [])
+            return
+          }
+          // A server that predates resume: the others were told we left and
+          // will connect afresh. Start over as on any join.
+          this.endSignallingDown()
+          this.closeAllPeers()
+        }
         // Members in their reconnect grace are listed apart and are not
         // connected to: they come back with a voice.joined of their own.
         for (const peerId of event.reconnecting ?? []) this.markReconnecting(peerId, true)
@@ -905,11 +1163,28 @@ export class VoiceEngine {
             this.emit()
           }
         } else {
-          const existing = this.peers.get(event.user_id)
-          if (existing?.reconnecting) this.markReconnecting(event.user_id, false)
-          else {
-            this.reconnectingIds.delete(event.user_id)
-            this.ensurePeer(event.user_id)
+          // While my own resume is out, its voice.peers decides about everybody.
+          if (this.resuming) return
+          const uid = event.user_id
+          const existing = this.peers.get(uid)
+          this.reconnectingIds.delete(uid)
+          if (event.resumed === true) {
+            // V4 A1: they resumed. A connection I kept is brought back in
+            // step; with none (I closed it on their voice.left), theirs may
+            // still be up: a fresh pair is started with a reset, so that
+            // they replace it too instead of answering a stranger.
+            if (existing) {
+              this.clearAwait(existing)
+              existing.reconnecting = false
+              this.resumePeer(existing)
+            } else {
+              this.freshPeer(uid)
+            }
+          } else {
+            // An ordinary join: a fresh tab, with fresh connections and epochs.
+            if (existing?.reconnecting) this.closePeer(uid)
+            if (!this.peers.has(uid)) this.pairEpochs.delete(uid)
+            this.ensurePeer(uid)
           }
         }
         return
@@ -919,7 +1194,7 @@ export class VoiceEngine {
           // Only a CONFIRMED membership can be taken away (another tab joined).
           // While a join is on its way, this is the echo of the membership it
           // replaces and must not undo it.
-          if (this.status === 'connected' && event.channel_id === this.channelId) {
+          if (this.status === 'connected' && !this.resuming && event.channel_id === this.channelId) {
             this.generation += 1
             this.reset()
             this.emit()
@@ -985,7 +1260,7 @@ export class VoiceEngine {
       }
 
       case 'error':
-        if (event.code === 'INVALID_CHANNEL' && this.joinSent && this.status === 'joining') {
+        if (event.code === 'INVALID_CHANNEL' && this.joinSent && (this.status === 'joining' || this.resuming)) {
           this.joinSent = false
           this.fail('Bu ses kanalına katılınamadı.')
         }
@@ -1043,6 +1318,7 @@ export class VoiceEngine {
       reconnecting: this.reconnectingIds.has(peerId),
       negotiationWanted: false,
       recoverWanted: false,
+      awaitTimer: null,
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
@@ -1157,7 +1433,7 @@ export class VoiceEngine {
 
   /** The peer can be signalled now (V4 A1: not while it is in the server's grace). */
   private canSignal(peer: Peer): boolean {
-    return this.joinSent && !peer.reconnecting
+    return this.joinSent && !this.resuming && !peer.reconnecting
   }
 
   private negotiationNeeded(peer: Peer): void {
@@ -1317,7 +1593,7 @@ export class VoiceEngine {
   }
 
   private signal(to: number, data: WireSignal): void {
-    if (!this.joinSent) return
+    if (!this.joinSent || this.resuming) return
     // V4 A1: the server would answer NOT_IN_VOICE; what matters is redone on resume.
     if (this.peers.get(to)?.reconnecting) return
     const epoch = this.pairEpochs.get(to) ?? 0
@@ -1526,6 +1802,7 @@ export class VoiceEngine {
     const peer = this.peers.get(peerId)
     if (!peer || peer.reconnecting === on) return
     peer.reconnecting = on
+    this.clearAwait(peer)
     if (on) {
       this.setHealthTimer(peer, null)
       this.emit()
@@ -1567,9 +1844,78 @@ export class VoiceEngine {
     this.emit()
   }
 
+  /**
+   * My resume was answered (`voice.peers {resumed: true}`): CONTRACT-V4 A1's
+   * reconciliation, planned by `planResume`. Listed peers I kept are brought
+   * back in step (resumePeer), listed ones I have none for are connected to,
+   * and the kept ones the server cannot reach — in their grace, or not listed
+   * at all, e.g. still reconnecting after a server restart — are kept
+   * unsignalled until their own voice.joined {resumed: true}; an unlisted one
+   * is closed if it is not back within RESUME_WAIT_MS. Held actions run last.
+   */
+  private reconcileResume(listed: readonly number[], reconnecting: readonly number[]): void {
+    this.endSignallingDown()
+    const kept = [...this.peers.values()].map((peer) => {
+      const state = peer.pc.connectionState
+      return {
+        id: peer.id,
+        live: state === 'connected' || state === 'connecting',
+        stable: peer.pc.signalingState === 'stable' && !peer.makingOffer,
+      }
+    })
+    const plan = planResume(kept, listed, reconnecting, this.deps.myId)
+    for (const id of reconnecting) if (id !== this.deps.myId) this.reconnectingIds.add(id)
+    const unlisted = new Set(plan.unlisted)
+    for (const id of plan.wait) {
+      const peer = this.peers.get(id)
+      if (!peer) continue
+      peer.reconnecting = true
+      this.setHealthTimer(peer, null)
+      if (unlisted.has(id)) {
+        this.clearAwait(peer)
+        peer.awaitTimer = setTimeout(() => {
+          peer.awaitTimer = null
+          if (this.peers.get(id) === peer && peer.reconnecting) this.closePeer(id)
+        }, RESUME_WAIT_MS)
+      }
+    }
+    for (const id of [...plan.keep, ...plan.restart]) {
+      const peer = this.peers.get(id)
+      if (!peer) continue
+      peer.reconnecting = false
+      this.reconnectingIds.delete(id)
+      this.resumePeer(peer)
+    }
+    for (const id of plan.create) this.ensurePeer(id)
+    this.held.flush()
+    this.emit()
+  }
+
+  /** A connection for a resumed member I had closed (see voice.joined). */
+  private freshPeer(peerId: number): void {
+    if (this.status === 'idle') return
+    const polite = this.deps.myId > peerId
+    if (!polite) {
+      const epoch = (this.pairEpochs.get(peerId) ?? 0) + 1
+      this.pairEpochs.set(peerId, epoch)
+      this.signal(peerId, { reset: epoch, why: 'fresh' })
+      this.ensurePeer(peerId)
+    } else {
+      this.signal(peerId, { reset: 'request', why: 'fresh' })
+      this.ensurePeer(peerId)
+    }
+    this.emit()
+  }
+
+  private clearAwait(peer: Peer): void {
+    if (peer.awaitTimer !== null) clearTimeout(peer.awaitTimer)
+    peer.awaitTimer = null
+  }
+
   private closePeer(peerId: number): void {
     const peer = this.peers.get(peerId)
-    this.pairEpochs.delete(peerId)
+    // The pair epoch is kept: if they resume, a fresh pair starts past it
+    // (freshPeer); an ordinary join of theirs forgets it.
     this.resets.delete(peerId)
     if (this.lastDescription?.peerId === peerId) this.lastDescription = null
     if (!peer) return
@@ -1592,6 +1938,7 @@ export class VoiceEngine {
     const { pc } = peer
     this.setTurnTimer(peer, null)
     this.setHealthTimer(peer, null)
+    this.clearAwait(peer)
     pc.onnegotiationneeded = null
     pc.onicecandidate = null
     pc.onconnectionstatechange = null
@@ -1693,7 +2040,8 @@ export class VoiceEngine {
         sum += centered * centered
       }
       if (Math.sqrt(sum / monitor.data.length) > SPEAKING_THRESHOLD) monitor.lastLoudAt = now
-      const silenced = userId === this.deps.myId && this.muted
+      // Muted, or the microphone lost (nothing is sent): no speaking ring for me.
+      const silenced = userId === this.deps.myId && (this.muted || this.pipeline?.micLost === true)
       if (!silenced && now - monitor.lastLoudAt < SPEAKING_HOLD_MS) next.add(userId)
     }
     if (next.size === this.speaking.size && [...next].every((id) => this.speaking.has(id))) return

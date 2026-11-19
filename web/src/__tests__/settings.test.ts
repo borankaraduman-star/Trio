@@ -43,8 +43,19 @@ describe('validateSettings', () => {
       inputMode: 'ptt',
       pttKey: 'KeyV',
       shareScreenAudio: true,
+      cuesEnabled: false,
+      cueVolume: 0.25,
+      doNotDisturb: true,
     }
     expect(validateSettings(full)).toEqual(full)
+  })
+
+  it('cue sounds default on at 60 %, "rahatsız etme" off; the volume is clamped to 0–1', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ cuesEnabled: true, cueVolume: 0.6, doNotDisturb: false })
+    expect(validateSettings({ cueVolume: 7 }).cueVolume).toBe(1)
+    expect(validateSettings({ cueVolume: -1 }).cueVolume).toBe(0)
+    expect(validateSettings({ cueVolume: 'x' }).cueVolume).toBe(0.6)
+    expect(validateSettings({ cueVolume: Number.NaN }).cueVolume).toBe(0.6)
   })
 
   it('shares the screen without its sound unless asked to (an echo risk)', () => {

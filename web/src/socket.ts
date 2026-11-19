@@ -3,6 +3,12 @@ import type { ClientEvent, ServerEvent } from './types'
 export const BACKOFF_BASE_MS = 1000
 export const BACKOFF_CAP_MS = 15000
 export const PING_INTERVAL_MS = 25000
+/**
+ * V4 A1: while a voice call is kept without signalling, reconnect at least
+ * this often: the call has 30 s before it is closed, and after a deploy every
+ * member should be back (and resumed) within a second or two of the server.
+ */
+export const URGENT_RETRY_MS = 1000
 const PONG_TIMEOUT_MS = 10000
 export const CLOSE_UNAUTHORIZED = 4401
 /**
@@ -67,6 +73,7 @@ export class TrioSocket {
   private stableTimer: ReturnType<typeof setTimeout> | null = null
   private lastFrameAt = 0
   private tooManyStreak = 0
+  private urgent = false
 
   constructor(private readonly token: string) {}
 
@@ -86,6 +93,18 @@ export class TrioSocket {
       return true
     } catch {
       return false
+    }
+  }
+
+  /** V4 A1: retry at most URGENT_RETRY_MS apart while `on` (a call waits for us). */
+  setUrgent(on: boolean): void {
+    if (this.urgent === on) return
+    this.urgent = on
+    if (on && this.retryTimer !== null) {
+      clearTimeout(this.retryTimer)
+      this.retryTimer = null
+      this.attempt = Math.max(0, this.attempt - 1)
+      this.scheduleRetry()
     }
   }
 
@@ -176,7 +195,7 @@ export class TrioSocket {
 
   private scheduleRetry(): void {
     if (this.stopped) return
-    const delay = backoffDelay(this.attempt)
+    const delay = this.urgent ? Math.min(URGENT_RETRY_MS, backoffDelay(this.attempt)) : backoffDelay(this.attempt)
     this.attempt += 1
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null

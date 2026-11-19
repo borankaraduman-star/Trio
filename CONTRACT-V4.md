@@ -109,6 +109,66 @@ call. New rule:
   another `session` and not `reconnecting` → the call moved elsewhere, and
   this tab stops without taking it back.
 
+### A1 in the client, as built (round 3)
+
+- Kept on a drop: peer connections, tracks, `<audio>` elements, the microphone
+  pipeline. Signalling-bound work is held per peer (a negotiation, an ICE
+  restart, a reset) and done on resume; health timers stop and count nothing.
+  A camera toggle is held as an action ("Kamera bağlantı gelince açılacak") and
+  run after the resume, or dropped with a notice; a screen share starts at
+  once (its picker needs the click), only its negotiation waits. The socket
+  retries every second while a call waits.
+- On `ready`: the client's own `ready.voice` entry decides (`session`, above):
+  another tab/device holds the place → stop locally; otherwise `voice.join
+  {…, screensharing, session, resume: true}`. Until its `voice.peers` comes
+  nothing is signalled and a `voice.left` for oneself is ignored (it is the
+  echo of the grace the resume replaces).
+- Reconciliation (`web/src/lib/voiceResume.ts`): listed + live + stable → kept
+  (turn-taking state reset, `meta` re-sent, a held negotiation run); listed but
+  not live, or caught in `have-local-offer`/an offer being made → started again
+  through the reset protocol (`{reset: N, why: "resume"}` / `{reset:
+  "request", why: "resume"}`, not counted against the 3 resets; NEVER a
+  rollback); listed and not kept → connected to; in `reconnecting` → kept
+  unsignalled until their `voice.joined`. **Deviation:** a kept peer NOT listed
+  at all is not closed at once but kept unsignalled for 10 s: after a server
+  restart everybody resumes in turn, and the first one back sees an empty
+  room. It is closed if its `voice.joined` does not come.
+- The other side: `voice.joined {resumed: true}` for a peer with a kept
+  connection → the same bring-back-in-step as above (turn-taking reset, a
+  non-live or mid-negotiation pair restarted via reset); for a peer with NO
+  connection (closed at its `voice.left` because its grace ran out) → a fresh
+  pair is started WITH a reset (`why: "fresh"`) past the remembered epoch, so
+  that a resuming side that kept its old connection replaces it instead of
+  answering a stranger. Pair epochs are therefore kept when a peer is closed,
+  and forgotten on its ordinary (not resumed) join. A reset request stamped
+  with an older epoch than the receiver's is ignored (the reset that already
+  replaced it answers it).
+- A member in their grace (`reconnecting`) is not signalled; nothing about the
+  pair is counted or declared failed while it lasts; the ICE badge on their row
+  is hidden behind the server's "Yeniden bağlanıyor…".
+- 30 s without a socket: everything is closed (notice "Sunucuya 30 saniyedir
+  ulaşılamıyor…"), held actions dropped, and the next `ready` is an ordinary
+  join. If the resume is already on its way at 30 s, its answer is awaited
+  (5 s more) instead.
+
+### A3/A4 in the client, as built (round 3)
+
+- Cue sounds are synthesised with WebAudio (`web/src/audio/cues.ts`), not
+  bundled files (**deviation**: nothing to license or fetch). Own AudioContext,
+  routed to the chosen output device (`AudioContext.setSinkId` where it
+  exists), never connected to the microphone graph. Deafened: no cue at all
+  except the click of my own deafen/undeafen, and no ringtone (the band
+  stays). "Sesler": on/off and volume; "Rahatsız etme": rings show the band
+  only (no sound, no notification), and "X ses odasına girdi" comes silent.
+- The ringtone loops for at most 20 s; the band stays until Katıl, Kapat, my
+  joining any room, the ringer leaving the room, or 2 minutes.
+- "X ses odasına girdi": a room going from empty to one person by an ordinary
+  join (a `resumed` join after a restart is not announced), to those not
+  viewing the page, with the notification permission.
+- The TURN probe gathers with `iceTransportPolicy: "relay"` for one data
+  channel; the report carries display names only and is scrubbed of anything
+  shaped like an address, a token or a long opaque string.
+
 e2e: kill and restart the server with three people in voice — receiver stats
 show audio never stopped on any pair (bytes keep increasing across the
 restart), and afterwards camera/screen toggles work.

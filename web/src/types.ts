@@ -88,6 +88,8 @@ export type ServerEvent =
   | { type: 'voice.left'; channel_id: number; user_id: number }
   | ({ type: 'voice.state'; channel_id: number } & VoiceParticipant)
   | { type: 'signal'; from: number; data: unknown }
+  /** V4 A4: somebody in `channel_id` calls me in. */
+  | { type: 'voice.ring'; channel_id: number; from: number }
   | { type: 'pong' }
   | { type: 'error'; code: string; message: string }
 
@@ -109,8 +111,11 @@ export type ClientEvent =
       /** V4 A1. */
       screensharing?: boolean
       resume?: boolean
+      /** V4 A1: this call's random id, repeated on every resume. */
+      session?: string
     }
   | { type: 'voice.leave' }
+  | { type: 'voice.ring'; channel_id: number }
   | {
       type: 'voice.state'
       muted: boolean

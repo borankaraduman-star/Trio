@@ -18,6 +18,7 @@ import { CameraIcon, SettingsIcon } from './icons2'
 import { BrandMark } from './BrandMark'
 import { EmptyState } from './EmptyState'
 import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
+import { heldCameraTitle, RingButton, TurnHint, type RingButtonProps } from './VoiceExtras'
 
 export interface SidebarProps {
   open: boolean
@@ -43,6 +44,8 @@ export interface SidebarProps {
   onHangup: () => void
   onDismissVoiceError: () => void
   onRetryMic?: () => void
+  /** V4 A4: the "Çağır" button on my voice room. */
+  ring?: RingButtonProps
   onAskNotifications: () => void
   onLogout: () => void
 }
@@ -266,6 +269,7 @@ export function Sidebar(props: SidebarProps) {
       )}
 
       <MicLostNotice lost={voice.micLost} onRetry={props.onRetryMic} />
+      {inVoice && <TurnHint configured={voice.turnConfigured} />}
 
       {inVoice && (
         <div className="voice-panel">
@@ -274,14 +278,16 @@ export function Sidebar(props: SidebarProps) {
               {voice.status === 'connected' ? 'Ses bağlı' : 'Bağlanıyor…'}
             </strong>
             <span>{voiceChannel?.name ?? ''}</span>
+            {props.ring && <RingButton {...props.ring} />}
           </div>
           {props.onToggleCamera && (
             <button
               type="button"
-              className={voice.camera ? 'icon-button on' : 'icon-button'}
+              className={`${voice.camera ? 'icon-button on' : 'icon-button'}${voice.heldCamera !== null ? ' held' : ''}`}
               data-testid="btn-camera"
+              data-held={voice.heldCamera !== null}
               aria-pressed={voice.camera}
-              title={voice.camera ? 'Kamerayı kapat' : 'Kamerayı aç'}
+              title={heldCameraTitle(voice.heldCamera) ?? (voice.camera ? 'Kamerayı kapat' : 'Kamerayı aç')}
               aria-label={voice.camera ? 'Kamerayı kapat' : 'Kamerayı aç'}
               onClick={props.onToggleCamera}
             >

@@ -28,6 +28,11 @@ export interface Settings {
   pttKey: string
   /** Share the screen's sound with it. Off by default: it can echo the call back (voice.ts). */
   shareScreenAudio: boolean
+  /** V4 A4: cue sounds (mute, deafen, joins, leaves, ring) on/off, and their volume 0–1. */
+  cuesEnabled: boolean
+  cueVolume: number
+  /** V4 A4: "Rahatsız etme": a ring shows its band, without sound or notification. */
+  doNotDisturb: boolean
 }
 
 export const SETTINGS_KEY = 'trio.settings'
@@ -44,6 +49,9 @@ export const DEFAULT_SETTINGS: Settings = {
   inputMode: 'activity',
   pttKey: 'Backquote',
   shareScreenAudio: false,
+  cuesEnabled: true,
+  cueVolume: 0.6,
+  doNotDisturb: false,
 }
 
 export const MOUSE_PTT_KEYS = ['MouseMiddle', 'MouseBack', 'MouseForward'] as const
@@ -82,6 +90,11 @@ export function validateSettings(raw: unknown): Settings {
 
   if (isValidPttKey(record.pttKey)) result.pttKey = record.pttKey
   if (typeof record.shareScreenAudio === 'boolean') result.shareScreenAudio = record.shareScreenAudio
+  if (typeof record.cuesEnabled === 'boolean') result.cuesEnabled = record.cuesEnabled
+  if (typeof record.cueVolume === 'number' && Number.isFinite(record.cueVolume)) {
+    result.cueVolume = Math.min(1, Math.max(0, record.cueVolume))
+  }
+  if (typeof record.doNotDisturb === 'boolean') result.doNotDisturb = record.doNotDisturb
 
   return result
 }

@@ -389,6 +389,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
     // Handled outside the store (voice engine) or not at all.
     case 'voice.peers':
     case 'signal':
+    case 'voice.ring':
     case 'pong':
     case 'error':
       return state

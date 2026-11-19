@@ -41,6 +41,8 @@ import { isViewing, onViewingChange } from '../lib/viewing'
 import { fetchCovering, newestConfirmedId } from '../lib/catchUp'
 import { Sidebar } from './Sidebar'
 import { LogoutDialog } from './LogoutDialog'
+import { CallAlerts } from '../callAlerts'
+import { RingBand } from './RingBand'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -95,6 +97,34 @@ export function Session({
   )
   const voice = useSyncExternalStore(engine.subscribe, engine.getSnapshot)
   useDeviceFallback(voice.status)
+  // V4 A4: rings, cue sounds, "X ses odasına girdi" (callAlerts.ts).
+  const namesRef = useRef({ user: (id: number) => `#${id}`, channel: (id: number) => `#${id}` })
+  const [alerts] = useState(
+    () =>
+      new CallAlerts({
+        myId: auth.user.id,
+        send: (event) => socket.send(event),
+        settings: () => settingsStore.getSnapshot(),
+        viewing: () => isViewing(),
+        myVoiceChannel: () => engine.getSnapshot().channelId,
+        inCall: () => engine.getSnapshot().status === 'connected',
+        deafened: () => engine.getSnapshot().deafened,
+        nameOf: (id) => namesRef.current.user(id),
+        channelName: (id) => namesRef.current.channel(id),
+        notify: (title, body, tag, silent) => {
+          if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+          try {
+            new Notification(title, { body, tag, silent })
+          } catch {
+            // Some browsers only allow notifications from a service worker.
+          }
+        },
+      }),
+  )
+  const calls = useSyncExternalStore(alerts.subscribe, alerts.getSnapshot)
+  // A1: a call waits for the socket (kept, or to be rejoined): reconnect fast.
+  const callWaiting = voice.status !== 'idle'
+  useEffect(() => socket.setUrgent(callWaiting), [socket, callWaiting])
 
   // --- v2: settings, push-to-talk, devices, attachments ------------------------
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot)
@@ -248,6 +278,7 @@ export function Session({
       const before = stateRef.current
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
       engine.handleEvent(event)
+      alerts.handleEvent(event, (channelId) => (before.voice[channelId] ?? []).map((p) => p.user_id))
       if (event.type === 'message.new' && event.nonce !== undefined) sendTimers.clear(event.nonce)
 
       if (event.type === 'user.removed') {
@@ -312,6 +343,8 @@ export function Session({
         dispatch({ type: 'connection.down' })
         sendTimers.clearAll()
         engine.handleDisconnected()
+        // Before the socket schedules its retry: a kept call wants it soon.
+        socket.setUrgent(engine.getSnapshot().status !== 'idle')
       },
       onUnauthorized: onLogout,
       onTooMany: (streak) => setTooMany(streak > 0),
@@ -328,7 +361,12 @@ export function Session({
       engine.destroy()
       sendTimers.clearAll()
     }
-  }, [socket, engine, sendTimers, token, onLogout, loadLatest, probeUnread])
+  }, [socket, engine, alerts, sendTimers, token, onLogout, loadLatest, probeUnread])
+
+  useEffect(() => () => alerts.destroy(), [alerts])
+  useEffect(() => {
+    alerts.refreshPrefs()
+  }, [alerts, settings.cuesEnabled, settings.cueVolume, settings.doNotDisturb, settings.outputDeviceId, voice.deafened])
 
   // --- effects that follow the state ---------------------------------------------
 
@@ -496,9 +534,22 @@ export function Session({
 
   const joinVoice = useCallback(
     (channelId: number) => {
+      alerts.selfJoined()
       void engine.join(channelId)
     },
-    [engine],
+    [engine, alerts],
+  )
+
+  /** The user's own mute/deafen click, with its cue (V4 A4). */
+  const selfToggle = useCallback(
+    (which: 'mute' | 'deafen') => {
+      const before = engine.getSnapshot()
+      if (which === 'mute') engine.toggleMute()
+      else engine.toggleDeafen()
+      const after = engine.getSnapshot()
+      alerts.selfChanged(before, after)
+    },
+    [engine, alerts],
   )
 
   /** "Add a device" (CONTRACT-V3 §2); a 401 here means this session is over. */
@@ -533,6 +584,11 @@ export function Session({
 
   const activeChannel = state.channels.find((channel) => channel.id === activeChannelId)
   const nameOf = (userId: number) => state.users[userId]?.name ?? `#${userId}`
+  namesRef.current = {
+    user: nameOf,
+    channel: (channelId) => state.channels.find((c) => c.id === channelId)?.name ?? `#${channelId}`,
+  }
+  const ringChannelId = voice.status === 'connected' ? voice.channelId : null
   const pendingHere = attachments.pending(activeChannelId)
   const addFiles = (files: File[]) => {
     if (activeChannelId !== null) attachments.add(activeChannelId, files)
@@ -555,8 +611,18 @@ export function Session({
         onSelectChannel={selectChannel}
         onJoinVoice={joinVoice}
         onCreateChannel={createChannel}
-        onToggleMute={() => engine.toggleMute()}
-        onToggleDeafen={() => engine.toggleDeafen()}
+        onToggleMute={() => selfToggle('mute')}
+        onToggleDeafen={() => selfToggle('deafen')}
+        ring={
+          ringChannelId === null
+            ? undefined
+            : {
+                lastRingAt: calls.lastRingAt,
+                disabled: voice.signalling === 'down',
+                error: calls.ringError,
+                onRing: () => alerts.ring(ringChannelId),
+              }
+        }
         onToggleScreen={() => void engine.toggleScreen()}
         onToggleCamera={() => void engine.toggleCamera()}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -600,14 +666,32 @@ export function Session({
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
         </header>
 
-        {state.connection !== 'open' && (
-          <div className={tooMany ? 'banner warn' : 'banner'} role="status" data-testid="connection-banner">
+        {(state.connection !== 'open' || voice.signalling === 'down') && (
+          <div
+            className={tooMany ? 'banner warn' : voice.signalling === 'down' ? 'banner voice-kept' : 'banner'}
+            role="status"
+            data-testid="connection-banner"
+            data-voice-kept={voice.signalling === 'down'}
+          >
             {tooMany
               ? 'Çok fazla sekme ya da cihaz açık (bir hesapta en fazla 10 bağlantı). Kullanmadığın sekmeleri kapat; bağlantı kendiliğinden yeniden denenecek.'
-              : state.ready
-                ? 'Bağlantı koptu, yeniden bağlanılıyor…'
-                : 'Sunucuya bağlanılıyor…'}
+              : voice.signalling === 'down'
+                ? 'Sunucuya yeniden bağlanılıyor… ses sürüyor'
+                : state.ready
+                  ? 'Bağlantı koptu, yeniden bağlanılıyor…'
+                  : 'Sunucuya bağlanılıyor…'}
           </div>
+        )}
+
+        {calls.incoming && (
+          <RingBand
+            ring={calls.incoming}
+            fromName={nameOf(calls.incoming.from)}
+            channelName={namesRef.current.channel(calls.incoming.channelId)}
+            silent={settings.doNotDisturb || voice.deafened}
+            onJoin={() => joinVoice(calls.incoming?.channelId ?? 0)}
+            onDismiss={() => alerts.dismiss()}
+          />
         )}
 
         <CallStage
@@ -674,6 +758,12 @@ export function Session({
           onChange={(patch) => settingsStore.update(patch)}
           onClose={closeSettings}
           inVoice={voice.status !== 'idle'}
+          connectionTest={{
+            fetchIce: () => api.ice(token),
+            peerStats: () => engine.peerStats(),
+            inVoice: voice.status === 'connected',
+            nameOf,
+          }}
           noiseState={voice.noiseState}
           transmitting={voice.transmitting}
           isDesktop={desktopBridge() !== null}

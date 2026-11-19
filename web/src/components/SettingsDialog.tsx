@@ -5,6 +5,7 @@ import { mouseButtonCode } from '../ptt'
 import { useDevices } from '../useDevices'
 import type { NoiseState } from '../audio/pipeline'
 import { SCREEN_AUDIO_WARNING } from '../audio/screenAudio'
+import { ConnectionTest, SoundsSection, type ConnectionTestProps } from './ConnectionTest'
 import { CloseIcon } from './icons2'
 import { AccountSection, type AccountProps } from './AccountSection'
 
@@ -137,6 +138,7 @@ export function SettingsDialog({
   isDesktop,
   account,
   onSignOut,
+  connectionTest,
 }: {
   settings: Settings
   onChange: (patch: Partial<Omit<Settings, 'version'>>) => void
@@ -148,6 +150,8 @@ export function SettingsDialog({
   /** v3: the "Hesap" section (add a device, sign out). */
   account?: AccountProps
   onSignOut?: () => void
+  /** V4 A3: Bağlantı testi. */
+  connectionTest?: ConnectionTestProps
 }) {
   const { devices, requestLabels } = useDevices()
   const dialog = useRef<HTMLDivElement>(null)
@@ -303,6 +307,20 @@ export function SettingsDialog({
             </p>
           )}
         </section>
+
+        <SoundsSection
+          cuesEnabled={settings.cuesEnabled}
+          cueVolume={settings.cueVolume}
+          doNotDisturb={settings.doNotDisturb}
+          onChange={onChange}
+        />
+        {connectionTest && (
+          <ConnectionTest
+            {...connectionTest}
+            micDeviceId={settings.micDeviceId}
+            outputDeviceId={settings.outputDeviceId}
+          />
+        )}
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
       </div>

@@ -1,0 +1,292 @@
+/* CONTRACT-V4 A1, A3, A4 (round 3): the kept call's banner, the ring band and
+   button, the TURN hint, the camera's waiting state, Bağlantı testi.
+   Imported before theme.css; colours come from design/palette.md through the
+   theme's variables (--trio-*). */
+
+/* A1: the call goes on while the server is away: calm, not a warning. */
+.banner.voice-kept {
+  background: rgb(105 185 170 / 16%);
+  border-bottom: 1px solid rgb(105 185 170 / 40%);
+  color: var(--trio-speaking, #85d9c5);
+}
+
+/* A1: a camera change waiting for the socket. */
+.icon-button.held {
+  outline: 1px dashed var(--trio-coral, #ee997f);
+  outline-offset: -3px;
+  animation: trio-held-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes trio-held-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* A4: "Çağır", under the room's name in the voice panel. */
+.ring-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.voice-status .ring-button {
+  align-self: flex-start;
+  padding: 3px 10px;
+  min-height: 26px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+  background: var(--trio-raised, #232730);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.voice-status .ring-button:hover:not(:disabled) {
+  border-color: var(--trio-coral, #ee997f);
+  color: var(--trio-coral, #ee997f);
+}
+
+.voice-status .ring-button:disabled {
+  cursor: default;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.voice-status .ring-error {
+  flex-basis: 100%;
+  color: var(--trio-danger, #e4777f);
+  white-space: normal;
+  font-size: 11px;
+}
+
+/* A4: the receiving band, above the stage. */
+.ring-band {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid rgb(238 153 127 / 55%);
+  border-radius: 12px;
+  background: rgb(238 153 127 / 12%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 14px;
+}
+
+.ring-band-pulse {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--trio-coral, #ee997f);
+  animation: trio-ring-pulse 1s ease-in-out infinite;
+}
+
+.ring-band[data-silent='true'] .ring-band-pulse {
+  animation: none;
+  opacity: 0.6;
+}
+
+@keyframes trio-ring-pulse {
+  50% {
+    transform: scale(1.6);
+    opacity: 0.35;
+  }
+}
+
+.ring-band-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ring-band-text small {
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.ring-band-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+.ring-band .ring-join {
+  padding: 6px 14px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--trio-coral, #ee997f);
+  color: var(--trio-base, #111318);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ring-band .ghost {
+  min-height: 32px;
+}
+
+/* A3: quiet and persistent. */
+.turn-hint {
+  margin: 0 10px 6px;
+  padding: 4px 10px;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* A3: Ayarlar › Bağlantı testi. */
+.conn-test .conn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.conn-label {
+  width: 72px;
+  flex: none;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 13px;
+}
+
+.conn-meter {
+  flex: 1;
+  min-width: 80px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--trio-raised, #232730);
+  overflow: hidden;
+}
+
+.conn-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--trio-speaking, #85d9c5);
+  transition: width 0.08s linear;
+}
+
+.conn-value {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.conn-turn {
+  flex: 1;
+  font-size: 13px;
+}
+
+.conn-turn.working {
+  color: var(--trio-online, #69b9aa);
+}
+
+.conn-turn.unreachable {
+  color: var(--trio-danger, #e4777f);
+}
+
+.conn-turn.unconfigured,
+.conn-turn.checking {
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.conn-peers {
+  width: 100%;
+  margin: 6px 0;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.conn-peers th,
+.conn-peers td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.conn-peers th {
+  color: var(--trio-muted, #a0a6b2);
+  font-weight: 600;
+}
+
+.conn-report {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 8px;
+  background: var(--trio-base, #111318);
+  color: var(--trio-text, #f2f1ed);
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.settings-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.settings-range input[type='range'] {
+  flex: 1;
+  accent-color: var(--trio-coral, #ee997f);
+}
+
+@media (max-width: 480px) {
+  .ring-band {
+    flex-wrap: wrap;
+    margin: 6px 8px 0;
+  }
+
+  .ring-band-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .conn-label {
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-button.held,
+  .ring-band-pulse {
+    animation: none;
+  }
+}
+
+/* The hang-up button: the generic `.danger` button's padding (styles-v3.css)
+   squeezed its 18 px icon to a dot inside the 34 px icon button. */
+.icon-button.danger {
+  padding: 0;
+}
+
+.conn-test .conn-copy {
+  padding: 7px 14px;
+  min-height: 34px;
+  border: 1px solid var(--trio-coral, #ee997f);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--trio-coral, #ee997f);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.conn-test .conn-copy:hover {
+  background: rgb(238 153 127 / 12%);
+}
+
+/* A1: a participant in the server's grace — dimmed (theme.css) and said in
+   words, since the title alone is not seen on a phone. */
+.voice-user.reconnecting .voice-user-name::after {
+  content: ' · bağlanıyor…';
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 0.85em;
+}
