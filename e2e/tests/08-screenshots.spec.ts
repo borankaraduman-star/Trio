@@ -263,9 +263,9 @@ test('screenshot 09: adding a device, the code in Ayarlar › Hesap', async ({ b
   await expect(account.getByTestId('link-code')).toHaveText(/^\w{5}-\w{5}$/)
   await expect(account.getByTestId('link-code-countdown')).toHaveText(/^(10:00|9:5\d)$/)
   // Ayarlar › Hesap is taller since v4 (picture and name above "Cihaz ekle"): bring the
-  // card itself to the middle of the dialog's scroller, whatever is above or below it.
+  // "Cihaz ekle" field (its heading, the hint and the card) to the top of the dialog's scroller.
   const card = account.getByTestId('link-code-card')
-  await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await card.evaluate((el) => (el.closest('.settings-field') ?? el).scrollIntoView({ block: 'start' }))
   await expect(card).toBeInViewport({ ratio: 1 })
   // In the dialog's visible box too (the page viewport alone does not see the dialog's clip).
   expect(
