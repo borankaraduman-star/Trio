@@ -15,11 +15,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from starlette.websockets import WebSocket
 
+from trio_server.ratelimit import SlidingWindow
 from trio_server.version import VERSION
 
 # Frames waiting for one slow client. Past it the connection is dropped rather
@@ -32,6 +35,12 @@ SEND_QUEUE_SIZE = 512
 MAX_CONNECTIONS_PER_USER = 10
 CLOSE_UNAUTHORIZED = 4401
 CLOSE_TOO_MANY = 4429
+# CONTRACT-V4 A1: how long a voice member whose voice-bound socket closed is
+# kept ("reconnecting") before ``voice.left``, waiting for a resume.
+VOICE_GRACE_SECONDS = 10.0
+# CONTRACT-V4 A4: rings per user per window.
+RING_LIMIT = 1
+RING_WINDOW_SECONDS = 30.0
 
 
 @dataclass(eq=False)
@@ -86,11 +95,19 @@ class Connection:
 
 @dataclass
 class VoiceMember:
-    conn: Connection
+    # None while reconnecting: the voice-bound socket closed and the grace
+    # (VOICE_GRACE_SECONDS) runs; nothing can be signalled to the member then.
+    conn: Connection | None
     muted: bool = False
     deafened: bool = False
     screensharing: bool = False
     camera: bool = False
+    # App-clock time the grace ends; None when not reconnecting.
+    grace_until: float | None = None
+
+    @property
+    def reconnecting(self) -> bool:
+        return self.conn is None
 
     def flags(self) -> dict[str, bool]:
         return {
@@ -98,11 +115,17 @@ class VoiceMember:
             "deafened": self.deafened,
             "screensharing": self.screensharing,
             "camera": self.camera,
+            "reconnecting": self.reconnecting,
         }
 
 
 class Hub:
-    def __init__(self) -> None:
+    def __init__(self, now: Callable[[], float] = time.time) -> None:
+        self.now = now
+        self.grace_seconds = VOICE_GRACE_SECONDS
+        # user id -> the task that ends their grace (see voice_disconnected).
+        self._grace_tasks: dict[int, asyncio.Task[None]] = {}
+        self.rings = SlidingWindow(RING_LIMIT, RING_WINDOW_SECONDS, now)
         # Users and channels are mirrored from the database (both are tiny) so
         # that ``ready`` is built without awaiting anything.
         self.users: dict[int, dict[str, Any]] = {}
@@ -161,7 +184,9 @@ class Hub:
             frame = {"type": "presence", "user_id": conn.user_id, "online": True}
             self.broadcast(frame, exclude_user=conn.user_id)
 
-    def disconnect(self, conn: Connection) -> None:
+    def disconnect(self, conn: Connection, *, grace: bool = True) -> None:
+        """Forget ``conn``. Its voice membership goes into the reconnect grace
+        (CONTRACT-V4 A1) unless ``grace`` is False (a server-side kick)."""
         conns = self.conns.get(conn.user_id)
         if conns is None or conn not in conns:
             return
@@ -170,7 +195,10 @@ class Hub:
             del self.conns[conn.user_id]
         channel_id = self.voice_of.get(conn.user_id)
         if channel_id is not None and self.voice[channel_id][conn.user_id].conn is conn:
-            self.voice_leave(conn.user_id)
+            if grace:
+                self.voice_disconnected(conn.user_id)
+            else:
+                self.voice_leave(conn.user_id)
         if conn.user_id not in self.conns:
             self.broadcast({"type": "presence", "user_id": conn.user_id, "online": False})
 
@@ -178,8 +206,8 @@ class Hub:
         return len(self.conns.get(user_id, ()))
 
     def kick(self, conn: Connection, code: int, reason: str = "") -> None:
-        """Forget ``conn`` now (presence, voice) and close it with ``code``."""
-        self.disconnect(conn)
+        """Forget ``conn`` now (presence, voice, no grace) and close it with ``code``."""
+        self.disconnect(conn, grace=False)
         conn.kick(code, reason)
 
     def kick_token(self, token_hash: str, code: int = CLOSE_UNAUTHORIZED) -> int:
@@ -217,12 +245,74 @@ class Hub:
     # -- voice --------------------------------------------------------------
 
     def voice_member(self, user_id: int) -> tuple[int, VoiceMember] | None:
+        """Where ``user_id`` is in voice WITH a voice-bound connection.
+
+        A member in the reconnect grace has none: for signalling, state and
+        rings they are not reachable (``NOT_IN_VOICE``), although they are
+        still listed in the room (``voice_channel_of``).
+        """
         channel_id = self.voice_of.get(user_id)
         if channel_id is None:
             return None
-        return channel_id, self.voice[channel_id][user_id]
+        member = self.voice[channel_id][user_id]
+        if member.conn is None:
+            return None
+        return channel_id, member
+
+    def voice_channel_of(self, user_id: int) -> int | None:
+        """The voice channel ``user_id`` is listed in, reconnecting or not."""
+        return self.voice_of.get(user_id)
+
+    def _cancel_grace(self, user_id: int) -> None:
+        task = self._grace_tasks.pop(user_id, None)
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+
+    def voice_disconnected(self, user_id: int) -> None:
+        """The voice-bound socket closed: keep the member, marked reconnecting,
+        for ``grace_seconds``; ``voice.left`` only if no resume comes."""
+        channel_id = self.voice_of[user_id]
+        member = self.voice[channel_id][user_id]
+        member.conn = None
+        member.grace_until = self.now() + self.grace_seconds
+        self.broadcast(
+            {"type": "voice.state", "channel_id": channel_id, "user_id": user_id, **member.flags()}
+        )
+        self._cancel_grace(user_id)
+        try:
+            task = asyncio.get_running_loop().create_task(self._grace_timer(user_id))
+        except RuntimeError:  # no loop (a unit test driving the hub by hand)
+            return
+        self._grace_tasks[user_id] = task
+
+    async def _grace_timer(self, user_id: int) -> None:
+        await asyncio.sleep(self.grace_seconds)
+        self._grace_tasks.pop(user_id, None)
+        self.expire_graces(force_user=user_id)
+
+    def expire_graces(self, *, force_user: int | None = None) -> list[int]:
+        """End every grace that is over by the app clock (and ``force_user``'s,
+        whose timer has run out): ``voice.left`` for each. Which users left."""
+        now = self.now()
+        ended = []
+        for members in list(self.voice.values()):
+            for user_id, member in list(members.items()):
+                if member.grace_until is None:
+                    continue
+                if member.grace_until <= now or user_id == force_user:
+                    ended.append(user_id)
+        for user_id in ended:
+            self.voice_leave(user_id)
+        return ended
+
+    def close(self) -> None:
+        """Server shutdown: stop the grace timers (state is in memory anyway)."""
+        for task in self._grace_tasks.values():
+            task.cancel()
+        self._grace_tasks.clear()
 
     def voice_leave(self, user_id: int) -> None:
+        self._cancel_grace(user_id)
         channel_id = self.voice_of.pop(user_id, None)
         if channel_id is None:
             return
@@ -233,23 +323,66 @@ class Hub:
         self.broadcast({"type": "voice.left", "channel_id": channel_id, "user_id": user_id})
 
     def voice_join(
-        self, conn: Connection, channel_id: int, muted: bool, deafened: bool, camera: bool = False
+        self,
+        conn: Connection,
+        channel_id: int,
+        muted: bool,
+        deafened: bool,
+        camera: bool = False,
+        *,
+        screensharing: bool = False,
+        resume: bool = False,
     ) -> None:
-        """Leave wherever the user was, then join, bound to ``conn``."""
-        self.voice_leave(conn.user_id)
+        """Leave wherever the user was, then join, bound to ``conn``.
+
+        A ``resume`` into the channel where the user is reconnecting takes the
+        membership over without ``voice.left`` (CONTRACT-V4 A1); every other
+        join, resume or not, first leaves wherever the user was.
+        """
+        user_id = conn.user_id
+        current = self.voice_of.get(user_id)
+        taking_over = (
+            resume and current == channel_id and self.voice[channel_id][user_id].reconnecting
+        )
+        if taking_over:
+            self._cancel_grace(user_id)
+            del self.voice[channel_id][user_id]
+        else:
+            self.voice_leave(user_id)
         members = self.voice.setdefault(channel_id, {})
-        conn.send({"type": "voice.peers", "channel_id": channel_id, "peers": list(members)})
-        member = VoiceMember(conn=conn, muted=muted, deafened=deafened, camera=camera)
-        members[conn.user_id] = member
-        self.voice_of[conn.user_id] = channel_id
+        conn.send(
+            {
+                "type": "voice.peers",
+                "channel_id": channel_id,
+                # Only peers that can be signalled now; those in their own
+                # grace come back with a voice.joined {resumed: true}.
+                "peers": [uid for uid, m in members.items() if not m.reconnecting],
+                "reconnecting": [uid for uid, m in members.items() if m.reconnecting],
+                "resumed": resume,
+            }
+        )
+        member = VoiceMember(
+            conn=conn, muted=muted, deafened=deafened, camera=camera, screensharing=screensharing
+        )
+        members[user_id] = member
+        self.voice_of[user_id] = channel_id
         self.broadcast(
             {
                 "type": "voice.joined",
                 "channel_id": channel_id,
-                "user_id": conn.user_id,
+                "user_id": user_id,
                 **member.flags(),
+                "resumed": resume,
             }
         )
+
+    def voice_ring(self, user_id: int, channel_id: int) -> None:
+        """``voice.ring`` to every online user not listed in ``channel_id``."""
+        frame = {"type": "voice.ring", "channel_id": channel_id, "from": user_id}
+        inside = self.voice.get(channel_id, {})
+        for target in list(self.conns):
+            if target not in inside:
+                self.send_to_user(target, frame)
 
     def voice_state(
         self,

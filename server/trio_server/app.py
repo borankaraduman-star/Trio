@@ -130,7 +130,7 @@ def create_app(
     """
     logsafe.install()
     db = Database(settings.db_path)
-    hub = Hub()
+    hub = Hub(now)
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,
@@ -194,6 +194,7 @@ def create_app(
             watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
+            hub.close()
             await db.close()
 
     # redirect_slashes off: behind a TLS edge the app sees http://, and a

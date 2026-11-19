@@ -53,6 +53,47 @@ call. New rule:
   `voice.join {resume: true}` within 10 s. During the grace the others keep
   the peer connection and show the participant dimmed.)
 
+### A1 on the wire, as the server implements it
+
+    client → server   voice.join  {channel_id, muted?, deafened?, camera?, screensharing?, resume?}
+    server → joiner   voice.peers {channel_id, peers: [user_id], reconnecting: [user_id], resumed}
+    server → everyone voice.joined {channel_id, user_id, muted, deafened, screensharing, camera,
+                                    reconnecting, resumed}
+    server → everyone voice.state  {channel_id, user_id, muted, deafened, screensharing, camera,
+                                    reconnecting}
+    ready.voice["<channel id>"]: [{user_id, muted, deafened, screensharing, camera, reconnecting}]
+
+- `screensharing`, `resume` on `voice.join` are booleans, default false; any
+  other type is `error BAD_REQUEST`. `resumed` in `voice.peers`/`voice.joined`
+  is exactly the request's `resume` (always present, false for an ordinary
+  join). `reconnecting` is always present, false except during a grace.
+- **The grace.** When the voice-bound connection of a member closes by itself
+  (network, tab closed, server-side send queue overflow) the member stays in
+  the room with `reconnecting: true`, announced by one `voice.state`; flags are
+  kept. `voice.left` follows only when 10 s pass without the grace ending.
+  A connection closed BY the server (logout `DELETE /api/session`, a revoked
+  token, a removed user) gets no grace: `voice.left` at once.
+- The grace ends early:
+  - `voice.join {channel_id: <the same channel>, resume: true}` from ANY
+    connection of that user takes the membership over: no `voice.left`; the
+    joiner gets `voice.peers {resumed: true}` and everyone `voice.joined
+    {resumed: true, reconnecting: false}` with the flags from the new join.
+  - Any other `voice.join` (another channel, or `resume` absent/false) is the
+    ordinary rule: `voice.left` for the old membership, then the join.
+  - `voice.leave` from any of the user's connections: `voice.left` at once.
+- During the grace the member has no voice-bound connection, so they are
+  unreachable: a `signal` to them is `error NOT_IN_VOICE` (as for somebody not
+  in voice), `voice.state` from their other tabs is `NOT_IN_VOICE`, and they
+  cannot `voice.ring`. They ARE still listed (`ready.voice`, and in
+  `voice.peers.reconnecting` of a newcomer, not in `peers`): a newcomer must not
+  connect to them; when they resume, the newcomer receives `voice.joined
+  {resumed: true}` for a peer it has no connection to and connects as on any
+  `voice.joined`.
+- A resume after the grace ran out, after a server restart, or by a user who
+  was never in voice is an ordinary join (with `resumed: true` echoed).
+- Presence is independent: the last socket closing still broadcasts
+  `presence {online: false}` while the member is in the grace.
+
 e2e: kill and restart the server with three people in voice — receiver stats
 show audio never stopped on any pair (bytes keep increasing across the
 restart), and afterwards camera/screen toggles work.
@@ -96,6 +137,14 @@ everyone ("TURN ayarlı değil: bazı ağlarda ses bağlanmayabilir").
 - Only from a user who is in that voice channel; at most one per user per
   30 s (`error` `RATE_LIMITED` otherwise); delivered to every online user not
   already in that channel.
+  *Server, as built:* `channel_id` missing, not an integer, unknown or a text
+  channel → `error INVALID_CHANNEL`; the user not in THAT voice channel (or in
+  its reconnect grace) → `error NOT_IN_VOICE`; any of the ringer's connections
+  may send it. Over the limit → `error RATE_LIMITED` (a refused ring does not
+  restart the 30 s). Delivered to every connection of every online user not
+  listed in the channel (members in their grace count as listed); never to the
+  ringer; nothing is sent back on success and nothing is kept for offline
+  users.
 - Receiver: a ringtone (short, looped up to 20 s), a band "X seni <kanal>
   odasına çağırıyor — Katıl / Kapat", and a browser Notification when the page
   is not being viewed. Deafened or "rahatsız etme" (a new local setting) →

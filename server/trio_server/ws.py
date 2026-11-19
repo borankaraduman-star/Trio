@@ -81,6 +81,7 @@ class Session:
             "voice.leave": self.on_voice_leave,
             "voice.state": self.on_voice_state,
             "signal": self.on_signal,
+            "voice.ring": self.on_voice_ring,
         }
 
     async def handle_text(self, text: str) -> None:
@@ -178,7 +179,30 @@ class Session:
         muted = _bool(frame, "muted", default=False)
         deafened = _bool(frame, "deafened", default=False)
         camera = _bool(frame, "camera", default=False)
-        self.hub.voice_join(self.conn, channel_id, muted, deafened, camera)
+        screensharing = _bool(frame, "screensharing", default=False)
+        resume = _bool(frame, "resume", default=False)
+        self.hub.voice_join(
+            self.conn,
+            channel_id,
+            muted,
+            deafened,
+            camera,
+            screensharing=screensharing,
+            resume=resume,
+        )
+
+    async def on_voice_ring(self, frame: dict[str, Any]) -> None:
+        """CONTRACT-V4 A4: call the others into the voice channel I am in."""
+        channel_id = frame.get("channel_id")
+        channel = self.hub.channels.get(channel_id) if is_int(channel_id) else None
+        if channel is None or channel["kind"] != "voice":
+            raise FrameError("INVALID_CHANNEL", "no such voice channel")
+        found = self.hub.voice_member(self.user["id"])
+        if found is None or found[0] != channel_id:
+            raise FrameError("NOT_IN_VOICE", "you can only ring from the voice channel you are in")
+        if not self.hub.rings.allow(str(self.user["id"])):
+            raise FrameError("RATE_LIMITED", "you can ring at most once every 30 seconds")
+        self.hub.voice_ring(self.user["id"], channel_id)
 
     async def on_voice_leave(self, frame: dict[str, Any]) -> None:
         self.hub.voice_leave(self.user["id"])
