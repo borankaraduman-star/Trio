@@ -17,10 +17,13 @@ def expect(sock, frame_type: str) -> dict:
     return frame
 
 
-def expect_error(sock, code: str) -> None:
+def expect_error(sock, code: str) -> dict:
     frame = expect(sock, "error")
-    assert set(frame) == {"type", "code", "message"}
+    # `to` (a refused signal, V3 §6) and `request` (a refused ring, V4 A4) are
+    # the only extras an error frame carries.
+    assert set(frame) - {"to", "request"} == {"type", "code", "message"}
     assert frame["code"] == code
+    return frame
 
 
 @pytest.fixture

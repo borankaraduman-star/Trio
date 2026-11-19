@@ -160,6 +160,10 @@ everyone ("TURN ayarlı değil: bazı ağlarda ses bağlanmayabilir").
   listed in the channel (members in their grace count as listed); never to the
   ringer; nothing is sent back on success and nothing is kept for offline
   users.
+  *Added with the client (round 3):* every error answering a `voice.ring`
+  carries `request: "voice.ring"` (a `NOT_IN_VOICE` may otherwise answer a
+  signal sent to a member in their grace, and the client must not show the
+  ring's wording for that).
 - Receiver: a ringtone (short, looped up to 20 s), a band "X seni <kanal>
   odasına çağırıyor — Katıl / Kapat", and a browser Notification when the page
   is not being viewed. Deafened or "rahatsız etme" (a new local setting) →

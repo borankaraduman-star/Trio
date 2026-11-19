@@ -404,3 +404,19 @@ def test_session_must_be_a_short_string(trio, three, bad):
     with trio.ws(ali) as a:
         a.send_json({"type": "voice.join", "channel_id": VOICE, "session": bad})
         expect_error(a, "BAD_REQUEST")
+
+
+def test_a_refused_ring_says_it_answers_voice_ring(trio, three):
+    """A NOT_IN_VOICE can also answer a signal; `request` tells the client which."""
+    ali, berk, _ = three
+    with trio.ws(ali) as a:
+        a.send_json({"type": "voice.ring", "channel_id": VOICE})
+        assert expect_error(a, "NOT_IN_VOICE")["request"] == "voice.ring"
+        a.send_json({"type": "voice.ring", "channel_id": 999})
+        assert expect_error(a, "INVALID_CHANNEL")["request"] == "voice.ring"
+        join(a)
+        a.send_json({"type": "voice.ring", "channel_id": VOICE})
+        a.send_json({"type": "voice.ring", "channel_id": VOICE})
+        assert expect_error(a, "RATE_LIMITED")["request"] == "voice.ring"
+        a.send_json({"type": "signal", "to": berk["id"], "data": {}})
+        assert "request" not in expect_error(a, "NOT_IN_VOICE")

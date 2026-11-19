@@ -279,12 +279,18 @@ class Session:
         channel_id = frame.get("channel_id")
         channel = self.hub.channels.get(channel_id) if is_int(channel_id) else None
         if channel is None or channel["kind"] != "voice":
-            raise FrameError("INVALID_CHANNEL", "no such voice channel")
+            raise FrameError("INVALID_CHANNEL", "no such voice channel", request="voice.ring")
         found = self.hub.voice_member(self.user["id"])
         if found is None or found[0] != channel_id:
-            raise FrameError("NOT_IN_VOICE", "you can only ring from the voice channel you are in")
+            raise FrameError(
+                "NOT_IN_VOICE",
+                "you can only ring from the voice channel you are in",
+                request="voice.ring",
+            )
         if not self.hub.rings.allow(str(self.user["id"])):
-            raise FrameError("RATE_LIMITED", "you can ring at most once every 30 seconds")
+            raise FrameError(
+                "RATE_LIMITED", "you can ring at most once every 30 seconds", request="voice.ring"
+            )
         self.hub.voice_ring(self.user["id"], channel_id)
 
     async def on_voice_leave(self, frame: dict[str, Any]) -> None:
