@@ -49,7 +49,12 @@ from trio_server.media_routes import (
 )
 from trio_server.message_routes import EDIT_LIMIT, REACTION_LIMIT, register_message_routes
 from trio_server.notify import Notifier
-from trio_server.owner import OwnerAwareHub, register_owner_routes, with_owner_flag
+from trio_server.owner import (
+    OwnerAwareHub,
+    register_owner_routes,
+    resolve_owner_id,
+    with_owner_flag,
+)
 from trio_server.profile_routes import (
     prepare_profile_dirs,
     register_profile_routes,
@@ -57,6 +62,7 @@ from trio_server.profile_routes import (
 )
 from trio_server.push import PushSender, PushStore, Resolver, register_push_routes, system_resolver
 from trio_server.ratelimit import JoinGuard, client_address
+from trio_server.reading import register_channel_routes, seed_new_user
 from trio_server.uploads import (
     ATTACHMENT_ID,
     FRAMING_ALLOWANCE,
@@ -355,6 +361,7 @@ def create_app(
                 raise ApiError(409, "NAME_TAKEN", "that name is already taken") from None
             except ServerFullError:
                 raise ApiError(409, "SERVER_FULL", "the server is full") from None
+            await seed_new_user(db, user["id"])  # CONTRACT-V7-READING §1
             hub.add_user(user)
         logger.info("user.joined id=%s", user["id"])
         return {"token": token, "user": user}
@@ -592,6 +599,29 @@ def create_app(
     )
 
     register_media_routes(app, db=db, hub=hub, upload_dir=upload_dir, current_user=current_user)
+
+    async def forget_channel_prefs(channel_id: int) -> None:
+        """A deleted channel's level leaves every user's push preferences."""
+        key = str(channel_id)
+        for user_id, prefs in list(notifier.prefs.items()):
+            if key in prefs.get("channels", {}):
+                rest = {k: v for k, v in prefs["channels"].items() if k != key}
+                changed = {**prefs, "channels": rest}
+                await push_store.save_prefs(user_id, changed)
+                notifier.prefs[user_id] = changed
+
+    # CONTRACT-V7-READING: rename and delete a channel.
+    register_channel_routes(
+        app,
+        db=db,
+        hub=hub,
+        now=now,
+        upload_dir=upload_dir,
+        current_user=current_user,
+        read_json=read_json_object,
+        resolve_owner=lambda: resolve_owner_id(db, settings),
+        forget_channel_prefs=forget_channel_prefs,
+    )
 
     app.add_api_websocket_route("/ws", websocket_endpoint)
 

@@ -3,6 +3,7 @@ import { claimEchoes } from './lib/reconcile'
 import { DEFAULT_SERVER, normalizeUser, serverProfile } from './lib/identity'
 import { supersedes, updatePins, sortPins } from './lib/messageFamily'
 import { refreshQuotes } from './lib/replyQuote'
+import { isReadStateEntry, mergeEntry } from './lib/readState'
 
 export type MessageStatus = 'sent' | 'pending' | 'failed'
 
@@ -67,6 +68,16 @@ export interface AppState {
   deleted: Record<number, true>
   /** v4: channel id → its pinned messages, once asked for. */
   pins: Record<number, ChannelPins>
+  /** V7-READING: the server keeps read state (its `ready` carried `read_state`). */
+  readSync: boolean
+  /** V7-READING: channel id → the mark the server is known to hold. */
+  serverRead: Record<number, number>
+  /**
+   * V7-READING: "Yeni mesajlar" in the open channel: the mark it had when it
+   * was opened with something unread. Lasts for the visit (leaving the
+   * channel or sending in it ends it).
+   */
+  divider: { channelId: number; after: number } | null
 }
 
 export type Action =
@@ -102,6 +113,10 @@ export type Action =
   | { type: 'messages.refresh'; channelId: number; messages: Message[]; before: number; hasMore: boolean }
   | { type: 'pins.loaded'; channelId: number; messages: Message[] }
   | { type: 'pins.failed'; channelId: number }
+  // --- V7-READING ---
+  /** `channel.read` was handed to the socket: the server holds this mark now. */
+  | { type: 'read.sent'; channelId: number; messageId: number }
+  | { type: 'divider.clear'; channelId: number }
 
 export const TYPING_TTL_MS = 5000
 
@@ -135,6 +150,9 @@ export function createInitialState(init: {
     serverVersion: null,
     deleted: {},
     pins: {},
+    readSync: false,
+    serverRead: {},
+    divider: null,
   }
 }
 
@@ -259,10 +277,69 @@ function markRead(state: AppState, channelId: number): AppState {
   const unread = state.unread[channelId] ?? 0
   const nextRead = latest !== undefined && latest > (lastRead ?? 0) ? latest : lastRead
   if (unread === 0 && nextRead === lastRead) return state
+  // V7-READING: opening a channel with something unread remembers where it was.
+  const divider =
+    state.activeChannelId === channelId &&
+    state.divider?.channelId !== channelId &&
+    lastRead !== undefined &&
+    lastRead > 0 &&
+    nextRead !== undefined &&
+    nextRead > lastRead
+      ? { channelId, after: lastRead }
+      : state.divider
   return {
     ...state,
     unread: { ...state.unread, [channelId]: 0 },
     lastRead: nextRead === undefined ? state.lastRead : { ...state.lastRead, [channelId]: nextRead },
+    divider,
+  }
+}
+
+/** V7-READING: `ready.read_state` merged with this device's own marks (lib/readState.ts). */
+function withReadState(state: AppState, readState: unknown, channels: Channel[]): AppState {
+  if (typeof readState !== 'object' || readState === null) return { ...state, readSync: false }
+  const entries = readState as Record<string, unknown>
+  const lastRead = { ...state.lastRead }
+  const latest = { ...state.latest }
+  const unread = { ...state.unread }
+  const serverRead: Record<number, number> = {}
+  for (const channel of channels) {
+    if (channel.kind !== 'text') continue
+    const entry = entries[String(channel.id)]
+    if (!isReadStateEntry(entry)) continue
+    const merged = mergeEntry(state.lastRead[channel.id], entry, state.latest[channel.id])
+    if (merged.lastRead > 0) lastRead[channel.id] = merged.lastRead
+    if (merged.latest > 0) latest[channel.id] = merged.latest
+    serverRead[channel.id] = merged.serverRead
+    unread[channel.id] = merged.unread
+  }
+  return { ...state, readSync: true, lastRead, latest, unread, serverRead }
+}
+
+/** V7-READING: a channel and everything this tab held about it. */
+function forgetChannel(state: AppState, channelId: number): AppState {
+  const drop = <T,>(record: Record<number, T>): Record<number, T> => {
+    if (!(channelId in record)) return record
+    const next = { ...record }
+    delete next[channelId]
+    return next
+  }
+  const channels = state.channels.filter((channel) => channel.id !== channelId)
+  const activeChannelId =
+    state.activeChannelId === channelId ? pickActiveChannel(channels, null) : state.activeChannelId
+  return {
+    ...state,
+    channels,
+    activeChannelId,
+    messages: drop(state.messages),
+    typing: drop(state.typing),
+    lastRead: drop(state.lastRead),
+    latest: drop(state.latest),
+    unread: drop(state.unread),
+    serverRead: drop(state.serverRead),
+    pins: drop(state.pins),
+    voice: drop(state.voice),
+    divider: state.divider?.channelId === channelId ? null : state.divider,
   }
 }
 
@@ -327,7 +404,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           messages[Number(key)] = { ...EMPTY_CHANNEL, items: unsent }
         }
       }
-      return {
+      return withReadState({
         ...state,
         connection: 'open',
         ready: true,
@@ -342,7 +419,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         typing: {},
         // v4: re-read when the panel is open; what was missed is unknown.
         pins: {},
-      }
+      }, event.read_state, event.channels)
     }
 
     case 'presence': {
@@ -400,6 +477,36 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         ...state,
         channels,
         activeChannelId: state.activeChannelId ?? pickActiveChannel(channels, null),
+      }
+    }
+
+    case 'channel.updated': {
+      const index = state.channels.findIndex((channel) => channel.id === event.channel.id)
+      if (index < 0) return state
+      const channels = [...state.channels]
+      channels[index] = { ...channels[index], name: event.channel.name }
+      return { ...state, channels }
+    }
+
+    case 'channel.deleted':
+      return state.channels.some((channel) => channel.id === event.channel_id)
+        ? forgetChannel(state, event.channel_id)
+        : state
+
+    case 'channel.read': {
+      // Another device of mine read this far: so have I, everywhere.
+      const channelId = event.channel_id
+      if (!Number.isInteger(event.message_id) || !state.channels.some((c) => c.id === channelId)) return state
+      const mark = event.message_id
+      const serverRead = mark > (state.serverRead[channelId] ?? 0) ? { ...state.serverRead, [channelId]: mark } : state.serverRead
+      if (mark <= (state.lastRead[channelId] ?? 0)) return serverRead === state.serverRead ? state : { ...state, serverRead }
+      const latest = state.latest[channelId] ?? 0
+      const count = typeof event.unread === 'number' && Number.isInteger(event.unread) ? event.unread : 1
+      return {
+        ...state,
+        serverRead,
+        lastRead: { ...state.lastRead, [channelId]: mark },
+        unread: { ...state.unread, [channelId]: mark >= latest ? 0 : Math.max(0, count) },
       }
     }
 
@@ -587,7 +694,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'channel.select': {
       const channel = state.channels.find((item) => item.id === action.channelId)
       if (!channel || channel.kind !== 'text') return state
-      return markRead({ ...state, activeChannelId: channel.id }, channel.id)
+      const divider = state.divider?.channelId === channel.id ? state.divider : null
+      return markRead({ ...state, activeChannelId: channel.id, divider }, channel.id)
     }
 
     case 'viewing':
@@ -779,6 +887,14 @@ export function reducer(state: AppState, action: Action): AppState {
       const held = state.pins[action.channelId]
       return { ...state, pins: { ...state.pins, [action.channelId]: { items: held?.items ?? [], loaded: held?.loaded ?? false, error: true } } }
     }
+
+    case 'read.sent':
+      return action.messageId > (state.serverRead[action.channelId] ?? 0)
+        ? { ...state, serverRead: { ...state.serverRead, [action.channelId]: action.messageId } }
+        : state
+
+    case 'divider.clear':
+      return state.divider?.channelId === action.channelId ? { ...state, divider: null } : state
 
     default:
       return state

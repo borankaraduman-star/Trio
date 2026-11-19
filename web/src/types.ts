@@ -112,6 +112,14 @@ export type SignalData =
   /** Client-to-client turn-taking for offers (see voice.ts); the server relays it unread. */
   | { negotiate: 'request' | 'grant' }
 
+/** V7-READING: `ready.read_state["<channel id>"]`. */
+export interface ReadStateEntry {
+  last_read: number
+  latest: number
+  /** Messages by others after `last_read`, at most 100. */
+  unread: number
+}
+
 export type ServerEvent =
   | {
       type: 'ready'
@@ -123,6 +131,8 @@ export type ServerEvent =
       server_version?: string
       /** v4 (C) */
       server?: ServerProfile
+      /** V7-READING: per text channel; absent from an older server. */
+      read_state?: Record<string, ReadStateEntry>
     }
   | { type: 'presence'; user_id: number; online: boolean }
   | { type: 'user.joined'; user: User }
@@ -133,6 +143,12 @@ export type ServerEvent =
   /** v4: the server's name or icon changed. */
   | { type: 'server.updated'; server: ServerProfile }
   | { type: 'channel.new'; channel: Channel }
+  /** V7-READING: a rename. */
+  | { type: 'channel.updated'; channel: Channel }
+  /** V7-READING: the owner deleted it (with its messages). */
+  | { type: 'channel.deleted'; channel_id: number }
+  /** V7-READING: another device of MINE read up to `message_id`. */
+  | { type: 'channel.read'; channel_id: number; message_id: number; unread?: number }
   | { type: 'message.new'; message: Message; nonce?: string }
   /** v4: any later change to a message (edit, reactions, pin). */
   | { type: 'message.updated'; message: Message }
@@ -196,3 +212,5 @@ export type ClientEvent =
     }
   | { type: 'signal'; to: number; data: SignalData | { meta: StreamMeta } | { watch: { stream: string; on: boolean } } }
   | { type: 'ping' }
+  /** V7-READING: I have seen the channel up to this message. */
+  | { type: 'channel.read'; channel_id: number; message_id: number }

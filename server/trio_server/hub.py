@@ -43,6 +43,9 @@ VOICE_GRACE_SECONDS = 10.0
 # CONTRACT-V4 A4: rings per user per window.
 RING_LIMIT = 1
 RING_WINDOW_SECONDS = 30.0
+# CONTRACT-V7-READING: ``channel.read`` frames per user per window.
+READ_LIMIT = 120
+READ_WINDOW_SECONDS = 60.0
 
 
 @dataclass(eq=False)
@@ -52,6 +55,9 @@ class Connection:
     # SHA-256 of the token this socket signed in with: what logout and the
     # periodic token re-check close it by.
     token_hash: str = ""
+    # CONTRACT-V7-READING: ``ready.read_state`` for this connection, read from
+    # the database just before ``Hub.connect`` (None: the key is left out).
+    read_state: dict[str, Any] | None = None
     queue: asyncio.Queue[str] = field(default_factory=lambda: asyncio.Queue(SEND_QUEUE_SIZE))
     closed: bool = False
     _tasks: list[asyncio.Task[None]] = field(default_factory=list)
@@ -133,6 +139,8 @@ class Hub:
         # user id -> the task that ends their grace (see voice_disconnected).
         self._grace_tasks: dict[int, asyncio.Task[None]] = {}
         self.rings = SlidingWindow(RING_LIMIT, RING_WINDOW_SECONDS, now)
+        # CONTRACT-V7-READING: ``channel.read`` frames per user.
+        self.reads = SlidingWindow(READ_LIMIT, READ_WINDOW_SECONDS, now)
         # Users and channels are mirrored from the database (both are tiny) so
         # that ``ready`` is built without awaiting anything.
         self.users: dict[int, dict[str, Any]] = {}
@@ -214,7 +222,10 @@ class Hub:
         self.activity.user_online(conn.user_id)
         if self.notify is not None:
             self.notify.connected(conn)
-        conn.send(self.ready_frame(conn.user_id))
+        frame = self.ready_frame(conn.user_id)
+        if conn.read_state is not None:
+            frame["read_state"] = conn.read_state
+        conn.send(frame)
         if first:
             frame = {"type": "presence", "user_id": conn.user_id, "online": True}
             self.broadcast(frame, exclude_user=conn.user_id)

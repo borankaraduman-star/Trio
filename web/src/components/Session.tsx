@@ -56,6 +56,7 @@ import { notifyHub } from '../lib/notify/notifyHub'
 import { NotifyBridge } from './notify/NotifyBridge'
 import { MediaButton, MediaGallery } from './media/MediaGallery'
 import { useDrafts } from '../useDrafts'
+import { useReadSync } from '../useReadSync'
 import { failedSend } from '../lib/sendFailure'
 import type { Recording } from '../lib/voiceRecorder'
 // CONTRACT-V6-VOICE: share profiles, watching, volumes, gate, AFK, shortcuts, the people strip.
@@ -216,6 +217,8 @@ export function Session({
   replyRef.current = family.reply
   // V6: a draft per channel (text and reply), across channel switches and reloads.
   const drafts = useDrafts(state.activeChannelId, family.reply, familyActions, stateRef)
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
   const [galleryOpen, setGalleryOpen] = useState(false)
 
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -394,8 +397,11 @@ export function Session({
           })
         }
         setTooMany(false)
-        probeUnread(textIds.filter((id) => id !== active))
+        // V7-READING: a server that keeps read state already said what is unread.
+        if (event.read_state === undefined) probeUnread(textIds.filter((id) => id !== active))
         engine.handleReady()
+      } else if (event.type === 'channel.deleted') {
+        draftsRef.current.clear(event.channel_id)
       } else if (event.type === 'message.new') {
         const { message } = event
         // V6: one path with the pushes (skipped when this device gets them pushed).
@@ -457,6 +463,9 @@ export function Session({
   useEffect(() => {
     saveLastRead(state.lastRead)
   }, [state.lastRead])
+
+  // V7-READING: tell the server how far this device has read (at most every READ_SEND_MS).
+  useReadSync(socket, state, stateRef, dispatch)
 
   const unreadTotal = totalUnread(state)
   useEffect(() => {
@@ -540,6 +549,7 @@ export function Session({
         },
       })
       delete lastTypingSent.current[channelId]
+      dispatch({ type: 'divider.clear', channelId })
       setSendNotice(null)
       if (reply) familyActions.cancelReply()
       drafts.clear(channelId)
