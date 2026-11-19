@@ -201,6 +201,97 @@ read time; if the target was deleted: `{id, deleted: true}`),
   on boot (test from the previous shape — CLAUDE.md).
 - History pages include all the new fields.
 
+### B on the wire, as the server implements it
+
+`Message` (REST pages, `GET /pins`, `message.new`, `message.updated`, every
+REST answer below) is now:
+
+    {id, channel_id, author: {id, name, avatar_url}, content, created_at,
+     attachments: [Attachment], edited_at, reply_to, reactions, pinned_at,
+     pinned_by, rev}
+
+- `edited_at`: ISO time of the last edit that changed the content, else null.
+- `reply_to`: null, or `{id, author: {id, name}, excerpt}`, or `{id, deleted:
+  true}` when the target no longer exists. `excerpt` is the target's CURRENT
+  content cut to its first 140 code points (not graphemes, not bytes); when
+  the content is empty, `"📎 " + <first attachment's filename>`. It is resolved
+  whenever a message is serialised; the server sends NO `message.updated` for
+  replies when their target is edited or deleted — a client updates the quotes
+  it shows from the `message.updated`/`message.deleted` of the target itself.
+- `reactions`: `[{key, count, user_ids}]`; `count == len(user_ids)`; keys are
+  ordered by each key's earliest REMAINING reaction (so a key whose first
+  reactor takes theirs back may move behind a later key), `user_ids` by when
+  each reacted.
+- `pinned_at`: ISO or null; `pinned_by`: the pinner's user **id** (an int, as
+  in `user_ids`), or null.
+- `rev`: an integer, 0 at creation, +1 on every change (edit that changed the
+  content, reaction added/removed, pin/unpin). A client keeps, per message,
+  the copy with the highest `rev` and drops anything older, whichever way it
+  arrived. A no-op (same content, a reaction or pin already there or not
+  there) changes nothing: same `rev`, no broadcast, 200 with the current
+  message.
+
+Ordering: each change is committed and its `message.updated` /
+`message.deleted` is queued to EVERY socket — the actor's own included, with
+no nonce — before the HTTP response is written. Changes to messages leave on
+the websocket in the order they were made. The HTTP response and the
+broadcast may reach the actor's client in either order (different
+connections): use `rev`, or ignore the REST body and wait for the broadcast.
+For a delete, the 204 carries no body; `message.deleted` is the only signal.
+
+Requests and errors (all REST errors are the usual envelope):
+
+    PATCH  /api/messages/{id} {content}
+           422 INVALID_MESSAGE   content not a string, contains NUL, over 4000
+                                 characters after trim, or empty after trim while
+                                 the message has no attachments
+           422 INVALID_REQUEST   body not a JSON object, or contains a lone surrogate
+           413 PAYLOAD_TOO_LARGE body over 64 KiB
+    DELETE /api/messages/{id}
+    PUT|DELETE /api/messages/{id}/reactions/{key}
+           422 INVALID_REACTION  key is not one emoji and not :name: (see below)
+           409 REACTION_LIMIT    adding a 21st distinct key (an existing key may
+                                 still gain people)
+    PUT|DELETE /api/messages/{id}/pin
+           409 PIN_LIMIT         a 51st pin in the channel
+    GET    /api/channels/{id}/pins  → {messages} (newest pin first, ≤ 50)
+           404 NOT_FOUND for a missing or voice channel
+    every route: 401 UNAUTHORIZED; 404 NOT_FOUND for an unknown message id;
+           403 FORBIDDEN for edit/delete by somebody else; 422 INVALID_REQUEST
+           for an id that is not 1..2^63-1; 429 RATE_LIMITED; 507 STORAGE_FULL
+           when the database cannot be written.
+
+- Rate limits are per user per sliding 60 s, checked before anything else
+  (a refused, invalid or no-op request still counts): **30** edits, deletes,
+  pins and unpins together; **120** reaction adds and removes together. Over
+  it: `429 RATE_LIMITED` (no Retry-After).
+- A deleted message: its row, reactions, pin and attachment rows go in one
+  transaction; the files are then unlinked; at start-up the server removes any
+  file in the upload directory whose attachment row is gone (what a crash
+  between the two leaves). The bytes stop counting towards the uploader's
+  quota at once (V3 §4's quota is no longer a lifetime figure). Any message id
+  may be deleted by its author, at any age.
+- Reaction keys: either `:name:` with 1-32 of `a-z 0-9 _` (exactly; no
+  uppercase, no newline), or ONE emoji: a pictographic character (Unicode
+  `Extended_Pictographic`, including not-yet-assigned code points there) with
+  optional VS15/VS16 and one optional skin-tone modifier; up to 10 such
+  elements joined by ZWJ; a pair of regional indicators (a flag); a keycap
+  (`0-9 # *`, optional VS16, U+20E3); or a tag-sequence flag (🏴 + tags +
+  CANCEL TAG). At most 64 UTF-8 bytes. Keys are compared byte for byte, no
+  normalisation: `❤` and `❤️` are two keys — **send the fully qualified form
+  (with VS16) your picker shows.** In the URL the key is percent-encoded UTF-8
+  (`encodeURIComponent`).
+- `message.send {…, reply_to: <message id> | null}`: absent or null = not a
+  reply; not an integer → `error BAD_REQUEST`; no such message, or one in
+  another channel → `error INVALID_REPLY`, nothing stored. A deleted message
+  cannot be replied to (it no longer exists).
+- Nonce retries (V3 §10, `message.send` de-duplication): a retry answers the
+  sender with the message as it is NOW (re-read by id, so with its edits,
+  reactions and pin), not as first stored; if it has been deleted meanwhile,
+  the sender's connections get `message.deleted {channel_id, message_id,
+  nonce}` instead. `reply_to` of a retry is ignored like the rest of the
+  frame.
+
 Client: hover/long-press actions on a message (tepki, yanıtla, düzenle, sil,
 sabitle); edit in place (Esc cancels, Enter saves, "düzenlendi" mark); delete
 asks once; a small emoji picker (a built-in set of ~80 common emoji grouped,

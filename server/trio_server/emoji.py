@@ -37,6 +37,7 @@ REGIONAL = range(0x1F1E6, 0x1F200)
 TAG_SPEC = range(0xE0020, 0xE007F)
 CANCEL_TAG = 0xE007F
 BLACK_FLAG = 0x1F3F4
+KEYCAP_BASES = frozenset(map(ord, "0123456789#*"))
 
 # Extended_Pictographic (emoji-data.txt), as inclusive ranges.
 _PICTOGRAPHIC = (
@@ -88,7 +89,7 @@ def is_emoji(text: str) -> bool:
         return False
     if len(cps) == 2 and all(cp in REGIONAL for cp in cps):
         return True
-    if cps[0] in b"0123456789#*" and cps[-1] == KEYCAP:
+    if cps[0] in KEYCAP_BASES and cps[-1] == KEYCAP:
         return cps[1:-1] in ([], [VS16])
     if cps[0] == BLACK_FLAG and len(cps) >= 3 and cps[-1] == CANCEL_TAG:
         return all(cp in TAG_SPEC for cp in cps[1:-1])
