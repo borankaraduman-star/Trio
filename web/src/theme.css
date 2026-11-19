@@ -1,0 +1,587 @@
+/*
+ * Trio's visual identity (design/palette.md, design/mockups/). Imported LAST in
+ * main.tsx: it redefines the custom properties styles.css and styles-v2.css
+ * already use, and overrides shape and spacing through their own class names.
+ * The two older stylesheets are not edited, so this file is the whole look.
+ */
+
+:root {
+  /* the palette */
+  --trio-base: #111318;
+  --trio-side: #171a20;
+  --trio-surface: #1a1d24;
+  --trio-raised: #232730;
+  --trio-border: #2b303a;
+  --trio-text: #f2f1ed;
+  --trio-muted: #a0a6b2;
+  --trio-coral: #ee997f;
+  --trio-online: #69b9aa;
+  --trio-speaking: #85d9c5;
+  --trio-danger: #e4777f;
+  /* the selected channel: coral, deepened so light text keeps 8:1 on it */
+  --trio-pill: #5e3d37;
+  --trio-pill-hover: #6a443c;
+  --brand-coral: var(--trio-coral);
+
+  /* the variables the existing stylesheets read */
+  --bg-deep: var(--trio-base);
+  --bg-side: var(--trio-side);
+  --bg-main: var(--trio-surface);
+  --bg-input: var(--trio-raised);
+  --bg-hover: var(--trio-raised);
+  --bg-active: var(--trio-border);
+  --border: var(--trio-border);
+  --text: #e6e5e0;
+  --text-strong: var(--trio-text);
+  --text-muted: var(--trio-muted);
+  --accent: var(--trio-coral);
+  --accent-hover: #f3ae98;
+  --green: var(--trio-online);
+  --red: var(--trio-danger);
+  --yellow: #e5b567;
+  --link: #f3ae98;
+  --radius: 10px;
+
+  font-family: Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+}
+
+body {
+  background: var(--trio-base);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--trio-border) transparent;
+}
+
+::selection {
+  background: rgb(238 153 127 / 35%);
+}
+
+/* --- focus: a coral ring, offset so it reads on every surface ------------------- */
+
+:focus-visible {
+  outline: 2px solid var(--trio-coral);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+/* --- controls -------------------------------------------------------------------- */
+
+input,
+textarea,
+.settings-field select {
+  background: var(--trio-base);
+  border: 1px solid var(--trio-border);
+  border-radius: var(--radius);
+}
+
+input:focus,
+textarea:focus,
+.settings-field select:focus {
+  border-color: var(--trio-coral);
+  box-shadow: 0 0 0 3px rgb(238 153 127 / 18%);
+}
+
+.primary {
+  background: var(--trio-coral);
+  color: var(--trio-base);
+  border-radius: var(--radius);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* Disabled: a quiet raised surface rather than a half-transparent coral, which
+   read as a muddy brown with dark text on it. */
+.primary:disabled {
+  opacity: 1;
+  background: var(--trio-raised);
+  color: var(--trio-muted);
+}
+
+.ghost {
+  border-radius: 8px;
+}
+
+.icon-button {
+  border-radius: 8px;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.icon-button.danger {
+  color: var(--trio-base);
+  background: var(--trio-danger);
+}
+
+.icon-button.danger:hover {
+  background: #ec8d93;
+  color: var(--trio-base);
+}
+
+.form-error,
+.message.failed .message-content,
+.message-failed {
+  color: var(--trio-danger);
+}
+
+/* --- avatars: the per-user colours, deepened to sit with the palette ---------------
+   Avatar.tsx picks one of seven colours by user id and sets it inline; each is
+   mapped here to a muted tone that keeps the initial at 4.4:1 or more. */
+
+.avatar {
+  color: var(--trio-text);
+}
+
+.avatar[style*='rgb(88, 101, 242)'] { background: #52638f !important; }
+.avatar[style*='rgb(59, 165, 93)'] { background: #37766c !important; }
+.avatar[style*='rgb(235, 69, 158)'] { background: #97505f !important; }
+.avatar[style*='rgb(240, 160, 32)'] { background: #86652f !important; }
+.avatar[style*='rgb(237, 66, 69)'] { background: #a0574a !important; }
+.avatar[style*='rgb(42, 167, 201)'] { background: #3e6e85 !important; }
+.avatar[style*='rgb(155, 89, 182)'] { background: #75507a !important; }
+
+.avatar.speaking {
+  box-shadow:
+    0 0 0 2px var(--trio-side),
+    0 0 0 4px var(--trio-speaking);
+}
+
+.dot {
+  background: #5c6370;
+}
+
+.dot.online {
+  background: var(--trio-online);
+}
+
+/* --- brand ----------------------------------------------------------------------------- */
+
+.brand-mark {
+  flex: none;
+  display: block;
+}
+
+/* --- join screen ------------------------------------------------------------------------ */
+
+.join {
+  background-color: var(--trio-base);
+  background-image:
+    radial-gradient(ellipse at center, rgb(17 19 24 / 55%) 0%, rgb(17 19 24 / 20%) 70%),
+    url('/art/join.webp');
+  background-size: cover;
+  background-position: center;
+}
+
+.join-card {
+  gap: 8px;
+  padding: 36px 32px 32px;
+  background: rgb(26 29 36 / 88%);
+  border: 1px solid var(--trio-border);
+  border-radius: 20px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 45%);
+  backdrop-filter: blur(12px);
+}
+
+.join-logo {
+  display: none;
+}
+
+.join-brand {
+  align-self: center;
+  margin-bottom: 6px;
+}
+
+.join-card h1 {
+  font-size: 30px;
+  letter-spacing: -0.01em;
+}
+
+.join-card .primary {
+  border-radius: 12px;
+}
+
+/* --- sidebar ------------------------------------------------------------------------------ */
+
+.sidebar-header {
+  height: 56px;
+  gap: 10px;
+  padding: 0 18px;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-scroll {
+  padding: 8px 10px;
+}
+
+.section-header {
+  padding: 16px 4px 6px 10px;
+}
+
+.section-title {
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+}
+
+.channel {
+  gap: 10px;
+  padding: 8px 10px;
+  margin: 2px 0;
+  border-radius: var(--radius);
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.channel:hover {
+  background: var(--trio-raised);
+  color: var(--trio-text);
+}
+
+.channel.active {
+  background: var(--trio-pill);
+  color: var(--trio-text);
+  font-weight: 600;
+}
+
+.channel.active:hover {
+  background: var(--trio-pill-hover);
+}
+
+.channel.active svg {
+  color: var(--trio-coral);
+}
+
+/* The voice room you are in is "active" too, but it is not the channel you are
+   looking at: no second pill, just strong text and a teal speaker. */
+.channel.active:not([aria-current]) {
+  background: none;
+}
+
+.channel.active:not([aria-current]):hover {
+  background: var(--trio-raised);
+}
+
+.channel.active:not([aria-current]) svg {
+  color: var(--trio-online);
+}
+
+.voice-users {
+  padding: 2px 0 8px 26px;
+}
+
+.voice-user {
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+
+.voice-user[data-speaking='true'] .voice-user-name {
+  color: var(--trio-text);
+}
+
+.badge-live {
+  color: var(--trio-base);
+  background: var(--trio-danger);
+  border-radius: 6px;
+}
+
+.voice-error {
+  background: rgb(228 119 127 / 12%);
+  border: 1px solid rgb(228 119 127 / 45%);
+  color: #f1b3b7;
+}
+
+.voice-panel {
+  gap: 4px;
+  margin: 0 10px 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--trio-surface);
+  border: 1px solid var(--trio-border);
+  border-radius: 14px;
+}
+
+.voice-status .ok {
+  color: var(--trio-online);
+}
+
+.user-panel {
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  background: var(--trio-base);
+  border-top: 1px solid var(--trio-border);
+}
+
+/* --- centre ----------------------------------------------------------------------------------- */
+
+.main-header {
+  height: 56px;
+  gap: 10px;
+  padding: 0 20px;
+}
+
+.main-header h1 {
+  font-size: 18px;
+}
+
+.banner {
+  color: #2a1f08;
+}
+
+.day-separator::before,
+.day-separator::after {
+  background: var(--trio-border);
+}
+
+.message {
+  gap: 14px;
+  padding: 2px 20px;
+}
+
+.message:hover {
+  background: rgb(255 255 255 / 2.5%);
+}
+
+.message.with-header {
+  margin-top: 16px;
+}
+
+.message-header {
+  gap: 10px;
+}
+
+.composer {
+  padding: 0 20px calc(18px + env(safe-area-inset-bottom));
+}
+
+.composer textarea {
+  background: var(--trio-raised);
+  border-color: var(--trio-border);
+  border-radius: 14px;
+  padding: 11px 14px;
+}
+
+.composer .primary {
+  border-radius: 12px;
+}
+
+.composer-notice {
+  background: rgb(228 119 127 / 12%);
+  border: 1px solid rgb(228 119 127 / 45%);
+  border-radius: var(--radius);
+}
+
+.pending-attachment {
+  border-radius: 12px;
+}
+
+.pending-attachment.error {
+  border-color: rgb(228 119 127 / 60%);
+}
+
+.attachment-file {
+  border-radius: 12px;
+}
+
+.attachment-box,
+.attachment-image img {
+  border-radius: 12px;
+}
+
+.drop-overlay {
+  background: rgb(17 19 24 / 82%);
+}
+
+.drop-overlay > div {
+  border-color: var(--trio-coral);
+  border-radius: 20px;
+  background: rgb(238 153 127 / 10%);
+}
+
+/* --- the call stage ------------------------------------------------------------------------------ */
+
+.call-stage {
+  padding: 12px;
+  background: var(--trio-base);
+  border-bottom: 1px solid var(--trio-border);
+}
+
+.call-stage.grid,
+.call-stage.focus,
+.call-stage-strip {
+  gap: 10px;
+}
+
+.call-tile {
+  border-radius: 14px;
+  background: #0b0d11;
+  outline-offset: -3px;
+}
+
+.call-tile video {
+  background: #0b0d11;
+}
+
+.call-tile figcaption {
+  bottom: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgb(17 19 24 / 78%);
+  color: var(--trio-text);
+}
+
+.call-tile-full {
+  background: rgb(17 19 24 / 70%);
+  color: var(--trio-text);
+}
+
+.call-tile:fullscreen {
+  border-radius: 0;
+}
+
+/* --- members ---------------------------------------------------------------------------------------- */
+
+.members {
+  padding: 14px 10px;
+  border-left: 1px solid var(--trio-border);
+}
+
+.members .section-title {
+  padding: 14px 10px 8px;
+}
+
+.member {
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+}
+
+.member:hover {
+  background: var(--trio-raised);
+}
+
+.sidebar {
+  border-right: 1px solid var(--trio-border);
+}
+
+/* --- settings dialog ---------------------------------------------------------------------------------- */
+
+.modal-backdrop {
+  background: rgb(8 9 12 / 70%);
+}
+
+.modal {
+  border: 1px solid var(--trio-border);
+  border-radius: 18px;
+  padding: 0 24px 24px;
+}
+
+.modal-header {
+  padding: 20px 0 10px;
+}
+
+.settings-section h3 {
+  letter-spacing: 0.08em;
+}
+
+.key-binder kbd {
+  border-radius: 8px;
+  border-color: var(--trio-border);
+}
+
+.lightbox {
+  background: rgb(8 9 12 / 90%);
+}
+
+/* --- empty states -------------------------------------------------------------------------------------- */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--trio-muted);
+}
+
+.empty-state img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.empty-state p {
+  font-size: 12.5px;
+}
+
+.empty-state-voice {
+  margin: 4px 4px 8px 26px;
+  padding: 10px 10px 12px;
+  border: 1px dashed var(--trio-border);
+  border-radius: 12px;
+}
+
+.empty-state-voice img {
+  width: 120px;
+  aspect-ratio: 4 / 3;
+}
+
+/* A text channel with no messages: the illustration above "Henüz mesaj yok…",
+   in the middle of the list. Pure CSS (a fixed-size box), so MessageList is
+   untouched and nothing moves while the image loads. */
+.message-scroll:has(> .list-note.start + .message-list:empty) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.message-scroll:has(> .list-note.start + .message-list:empty) > .list-note.start::before,
+.main > .empty::before {
+  content: '';
+  display: block;
+  width: 240px;
+  max-width: 70%;
+  aspect-ratio: 4 / 3;
+  margin: 0 auto 12px;
+  background: url('/art/empty-chat.webp') center / contain no-repeat;
+}
+
+.main > .empty {
+  flex-direction: column;
+}
+
+.message-scroll:has(> .list-note.start + .message-list:empty) > .list-note.start {
+  font-size: 14px;
+}
+
+/* --- narrow screens ----------------------------------------------------------------------------------------- */
+
+@media (max-width: 680px) {
+  .main-header {
+    padding: 0 12px;
+  }
+
+  .message {
+    padding: 2px 12px;
+  }
+
+  .composer {
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .sidebar {
+    border-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .channel,
+  .icon-button {
+    transition: none;
+  }
+}

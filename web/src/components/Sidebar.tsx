@@ -15,6 +15,8 @@ import {
   SpeakerIcon,
 } from './icons'
 import { CameraIcon, SettingsIcon } from './icons2'
+import { BrandMark } from './BrandMark'
+import { EmptyState } from './EmptyState'
 
 export interface SidebarProps {
   open: boolean
@@ -134,7 +136,10 @@ export function Sidebar(props: SidebarProps) {
 
   return (
     <nav className={props.open ? 'sidebar open' : 'sidebar'} aria-label="Kanallar">
-      <header className="sidebar-header">Trio</header>
+      <header className="sidebar-header">
+        <BrandMark size={22} />
+        Trio
+      </header>
 
       <div className="sidebar-scroll">
         {sectionHeader('Metin kanalları', 'text')}
@@ -232,6 +237,9 @@ export function Sidebar(props: SidebarProps) {
                       )
                     })}
                   </ul>
+                )}
+                {mine && participants.length === 1 && participants[0]?.user_id === me.id && (
+                  <EmptyState art="voice" text="Odada şimdilik yalnızsın." />
                 )}
               </li>
             )

@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
-  --bg: #1e1f22;
-  --panel: #2b2d31;
-  --input: #383a40;
-  --text: #dbdee1;
-  --muted: #949ba4;
-  --accent: #5865f2;
-  --accent-hover: #4752c4;
-  --danger: #f23f43;
-  --ok: #23a55a;
+  --bg: #111318;
+  --panel: #1a1d24;
+  --input: #232730;
+  --text: #f2f1ed;
+  --muted: #a0a6b2;
+  --accent: #ee997f;
+  --accent-hover: #f3ae98;
+  --danger: #e4777f;
+  --ok: #69b9aa;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -24,7 +24,7 @@ label { display: block; font-size: 12px; font-weight: 700; text-transform: upper
 input[type=text], input[type=url] { width: 100%; padding: 10px 12px; border: 0; border-radius: 6px;
   background: var(--input); color: var(--text); outline: none; }
 input:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-.btn { border: 0; border-radius: 6px; padding: 10px 16px; cursor: pointer; background: var(--accent); color: #fff; }
+.btn { border: 0; border-radius: 6px; padding: 10px 16px; cursor: pointer; background: var(--accent); color: #111318; }
 .btn:hover { background: var(--accent-hover); }
 .btn:disabled { opacity: .6; cursor: default; }
 .btn.secondary { background: transparent; color: var(--text); }

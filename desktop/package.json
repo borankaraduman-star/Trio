@@ -36,6 +36,7 @@
       "output": "release",
       "buildResources": "resources"
     },
+    "icon": "build/icon.png",
     "files": [
       "dist/**/*",
       "!dist/test/**",
