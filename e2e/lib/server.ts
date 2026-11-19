@@ -5,7 +5,7 @@
  * Everything another process needs to find the server is kept in
  * `.state/server.json`: its port, its pid, and the environment it runs with.
  */
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -68,15 +68,34 @@ export async function freePort(): Promise<number> {
   })
 }
 
+/** Servers this process spawned, by pid, until their `exit` has been seen. */
+const spawned = new Map<number, ChildProcess>()
+
+/** Has the child exited, as far as its own handle knows? */
+function exited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null
+}
+
 /**
  * Is `pid` still THE SERVER this suite started on `port`? Not merely "does a
  * process with that number exist": pid numbers are reused (a container's
  * `pid_max` is often 32768, and browsers burn through that in minutes), so
  * after our server died its number may belong to anything — another suite's
  * server on the same machine, a browser. Signalling by number alone killed
- * other runs' servers (seen as "server exited during start" with an empty log).
+ * other runs' servers.
+ *
+ * A pid THIS process spawned is answered from its ChildProcess handle, which
+ * is the authority: the kernel cannot hand that number to anything else until
+ * we have reaped the child, and `exit` is reported only once every thread of
+ * it is gone and its sockets are closed. /proc is a guess by comparison (a
+ * process between fork and exec still shows node's command line, and one that
+ * is being killed shows an empty one while its threads still hold the port).
+ * Only a pid read back from `.state/server.json` that another process
+ * started (global setup vs. a test worker) is judged by its command line.
  */
 function alive(pid: number, port: number): boolean {
+  const child = spawned.get(pid)
+  if (child) return !exited(child)
   let command: string
   try {
     command = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replaceAll('\0', ' ')
@@ -100,6 +119,34 @@ async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: numbe
   throw new Error(`timed out waiting for ${what}`)
 }
 
+/**
+ * Nothing accepts connections on `port` any more. A killed server's pid can
+ * look gone (its command line reads empty once the main thread has dropped
+ * its memory) while another of its threads is still finishing and the
+ * listening socket is still open; a new server started then fails to bind.
+ */
+function portFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port })
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once('error', (error: NodeJS.ErrnoException) => resolve(error.code === 'ECONNREFUSED'))
+  })
+}
+
+/** What the log says since `marker` (this start), at most the last 40 lines: a CI job log shows it. */
+function logTail(logFile: string, marker: string): string {
+  try {
+    const text = fs.readFileSync(logFile, 'utf8')
+    const from = text.lastIndexOf(marker)
+    return (from >= 0 ? text.slice(from) : text).split('\n').slice(-40).join('\n')
+  } catch {
+    return '(log unreadable)'
+  }
+}
+
 async function healthy(port: number): Promise<boolean> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/health`)
@@ -117,12 +164,15 @@ export async function startServer(
   options: { port?: number; dataDir?: string; env?: Record<string, string> } = {},
 ): Promise<ServerState> {
   const port = options.port ?? (await freePort())
+  // A restart reuses the port of a server that was just stopped.
+  if (options.port !== undefined) await waitFor(() => portFree(port), 10000, `port ${port} to be free`)
   const dataDir = options.dataDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'trio-e2e-'))
   const dbPath = path.join(dataDir, 'trio.db')
   const logFile = path.join(STATE_DIR, 'server.log')
   fs.mkdirSync(STATE_DIR, { recursive: true })
   const log = fs.openSync(logFile, 'a')
-  fs.writeSync(log, `\n--- start ${new Date().toISOString()} port=${port} db=${dbPath}\n`)
+  const marker = `--- start ${new Date().toISOString()} port=${port} db=${dbPath}`
+  fs.writeSync(log, `\n${marker}\n`)
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -143,8 +193,10 @@ export async function startServer(
     ['-m', 'trio_server', '--host', '127.0.0.1', '--port', String(port), '--log-level', 'warning'],
     { cwd: serverDir(), env, stdio: ['ignore', log, log], detached: true },
   )
+  if (child.pid) spawned.set(child.pid, child)
   // How it ended goes into the log: a server killed from outside leaves no other trace.
   child.on('exit', (code, signal) => {
+    if (child.pid) spawned.delete(child.pid)
     try {
       fs.appendFileSync(logFile, `--- exit ${new Date().toISOString()} pid=${child.pid} code=${code} signal=${signal}\n`)
     } catch {
@@ -159,7 +211,13 @@ export async function startServer(
 
   await waitFor(
     async () => {
-      if (!alive(child.pid!, port)) throw new Error(`server exited during start; see ${logFile}`)
+      // Asked of the handle, never of /proc (see `alive`).
+      if (exited(child)) {
+        throw new Error(
+          `server exited during start (code=${child.exitCode} signal=${child.signalCode}); ` +
+            `the end of ${logFile}:\n${logTail(logFile, marker)}`,
+        )
+      }
       return healthy(port)
     },
     20000,
