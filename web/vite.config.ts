@@ -18,6 +18,10 @@ export default defineConfig({
     __TRIO_VERSION__: JSON.stringify(VERSION),
     __TRIO_BUILD__: JSON.stringify(BUILD),
   },
+  // Two pages: the app, and the public download page /indir (CONTRACT-V6-DOWNLOAD).
+  build: {
+    rollupOptions: { input: { index: 'index.html', indir: 'indir.html' } },
+  },
   server: {
     port: 5173,
     proxy: {

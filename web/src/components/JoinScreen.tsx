@@ -4,6 +4,7 @@ import { linkCodeProblem, normalizeLinkCode, tidyLinkCodeInput } from '../lib/li
 import { rateLimitMessage } from '../lib/retryAfter'
 import { desktopBridge } from '../ptt'
 import { BrandMark } from './BrandMark'
+import { DownloadLink } from './DownloadLink'
 
 export type JoinMode = 'invite' | 'link'
 
@@ -216,6 +217,7 @@ export function JoinScreen({
         <button type="submit" className="primary" data-testid="join-submit" disabled={!canSubmit}>
           {busy ? (mode === 'invite' ? 'Katılınıyor…' : 'Giriliyor…') : mode === 'invite' ? 'Katıl' : 'Giriş yap'}
         </button>
+        <DownloadLink />
       </form>
     </main>
   )
