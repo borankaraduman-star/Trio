@@ -79,6 +79,8 @@ test('each permission state explains itself; the iPhone in Safari gets the home-
   await expect(page.getByTestId('notify-state')).toHaveAttribute('data-state', 'ios-needs-home-screen')
   await expect(page.getByTestId('notify-state')).toContainText('ana ekrana eklenip')
   await page.getByTestId('settings-close').click()
+  // The drawer is still open over the card (the card never hid the settings button).
+  await page.getByRole('button', { name: 'Menüyü kapat' }).click({ position: { x: 380, y: 400 } })
   await card.getByTestId('install-card-ok').click()
   await expect(card).toHaveCount(0)
   await zeynep.page.reload()
@@ -165,12 +167,20 @@ test('levels, the channel menu and quiet hours are stored on the server; screens
     await page.getByTestId('notify-test').click()
     await expect(page.getByTestId('notify-test-result')).toHaveAttribute('data-ok', 'true')
 
+    // The whole section in view: the dialog scrolled to its heading, the window tall enough.
     const section = page.getByTestId('settings-notify')
-    await section.scrollIntoViewIfNeeded()
-    await section.screenshot({ path: path.join(OUT, 'v6-push-settings.png') })
-    await page.setViewportSize({ width: 390, height: 844 })
-    await section.scrollIntoViewIfNeeded()
-    await section.screenshot({ path: path.join(OUT, 'v6-push-settings-390.png') })
+    const shoot = async (width: number, file: string) => {
+      await page.setViewportSize({ width, height: 1500 })
+      await section.evaluate((element) => {
+        element.scrollIntoView({ block: 'start' })
+        // Clear of the dialog's own header, so the section's heading shows.
+        const dialog = element.closest('.modal')
+        if (dialog) dialog.scrollTop -= 72
+      })
+      await page.screenshot({ path: path.join(OUT, file) })
+    }
+    await shoot(1280, 'v6-push-settings.png')
+    await shoot(390, 'v6-push-settings-390.png')
 
     // Removing the device here turns "Bu cihazda bildir" off.
     const own = await page.getByTestId('notify-device').first().getAttribute('data-here')

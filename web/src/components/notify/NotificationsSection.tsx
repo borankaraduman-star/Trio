@@ -26,8 +26,10 @@ function DeviceRow({ device, here }: { device: PushDevice; here: boolean }) {
   return (
     <li className="notify-device" data-testid="notify-device" data-here={here}>
       <span className="notify-device-name">
-        {device.label}
-        {here && <span className="notify-here-badge">bu cihaz</span>}
+        <span className="notify-device-label">
+          {device.label}
+          {here && <span className="notify-here-badge">bu cihaz</span>}
+        </span>
         <small className={device.last_error ? 'settings-hint notify-error' : 'settings-hint'}>{status}</small>
       </span>
       <button
@@ -108,7 +110,7 @@ export function NotificationsSection() {
         <div className="notify-test">
           <button
             type="button"
-            className="ghost"
+            className="ghost notify-test-button"
             data-testid="notify-test"
             disabled={test?.sending === true}
             onClick={() => void notifyHub.sendTest()}

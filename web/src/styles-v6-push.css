@@ -104,9 +104,22 @@ p.notify-error {
   overflow-wrap: anywhere;
 }
 
+.notify-device-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.notify-test-button {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--trio-border) !important;
+  border-radius: 8px;
+}
+
 .notify-here-badge {
   display: inline-block;
-  margin-left: 8px;
   padding: 0 6px;
   border-radius: 999px;
   font-size: 11px;
@@ -241,8 +254,10 @@ p.notify-error {
 .install-card {
   position: fixed;
   left: 50%;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  z-index: 35;
+  /* Above the composer (not over it), and under the mobile drawer (z 20) and
+   its backdrop (z 10): the card never hides the settings button or typing. */
+  bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  z-index: 9;
   width: min(360px, calc(100vw - 24px));
   transform: translateX(-50%);
   padding: 14px 16px 12px;
@@ -277,6 +292,7 @@ p.notify-error {
 }
 
 .install-steps {
+  list-style: decimal;
   margin: 0 0 8px;
   padding-left: 20px;
   font-size: 13px;
