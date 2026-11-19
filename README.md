@@ -58,7 +58,7 @@ Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md),
 ## Arkadaşlar nasıl katılır
 
 - **Tarayıcı:** Railway adresini açarlar, bir **ad** ve **davet kodunu** yazarlar. Oturum tarayıcıda saklanır. Telefonda da çalışır.
-- **Masaüstü uygulaması:** `desktop/` içindeki uygulamayı kurarlar (GitHub Releases'teki Windows/macOS/Linux paketleri). İlk açılışta sunucu adresi sorulur: `https://<ad>.up.railway.app`. Sonra aynı giriş ekranı gelir. Paketler imzasız olduğu için Windows SmartScreen ve macOS Gatekeeper uyarı verir (ayrıntı `desktop/` içinde).
+- **Masaüstü uygulaması:** `desktop/` içindeki uygulamayı kurarlar (GitHub Releases'teki Windows/macOS/Linux paketleri). İlk açılışta sunucu adresi sorulur: `https://<ad>.up.railway.app`. Sonra aynı giriş ekranı gelir. En kolayı sunucunun **`/indir`** sayfası (`https://<ad>.up.railway.app/indir`, girişsiz açılır): sistemi tanır, doğru dosyayı, SHA-256'sını ve uyarı çıkarsa ne yapılacağını gösterir. Paketler imzasız olduğu için Windows SmartScreen ve macOS Gatekeeper uyarı verir; imzalamak için `docs/imzalama.md`.
 
 Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar); mevcut oturumlar etkilenmez, yeni katılımlar yeni kodu ister. `TRIO_MAX_USERS` hesap sayısını sınırlar. İçeri girmiş bir yabancıyı ya da kaybolan bir telefonu aşağıdaki **Yönetim** aracıyla çıkarırsın.
 
@@ -78,6 +78,8 @@ Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar)
 | `TRIO_CF_TURN_API_TOKEN` | boş | Cloudflare TURN anahtarının API token'ı (gizli) |
 | `TRIO_TURN_HOST` | boş | kendi coturn sunucunun adı (VPS kurulumu; Cloudflare ayarlıysa kullanılmaz) |
 | `TRIO_TURN_SECRET` | boş | coturn `static-auth-secret` (VPS kurulumu) |
+| `TRIO_RELEASES_REPO` | `borankaraduman-star/Trio` | `/indir` sayfasının kurulum dosyalarını aldığı GitHub deposu (`sahip/ad`) |
+| `TRIO_GITHUB_TOKEN` | boş | depo **özelse**: yalnız o depoda salt-okunur **Contents** izni olan ince ayarlı (fine-grained) token. Günlüğe ve yanıtlara asla yazılmaz |
 | `TRIO_STUN_URLS` | `stun:stun.l.google.com:19302` | virgülle ayrılmış STUN adresleri |
 | `TRIO_DB_PATH` | imajda `/data/trio.db` | SQLite dosyası |
 | `TRIO_UPLOAD_DIR` | imajda `/data/uploads` | yüklenen dosyaların klasörü |

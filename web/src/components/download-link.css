@@ -1,0 +1,18 @@
+/* "Masaüstü uygulamasını indir" under the join card and at the end of Ayarlar. */
+.download-link {
+  display: block;
+  width: fit-content;
+  margin: 14px auto 0;
+  color: var(--text-muted, #a0a6b2);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.download-link:hover {
+  color: var(--text-strong, #f2f1ed);
+}
+
+.join .download-link {
+  margin-top: 16px;
+}

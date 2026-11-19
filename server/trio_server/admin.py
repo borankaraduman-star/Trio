@@ -25,7 +25,7 @@ import os
 import sqlite3
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
@@ -42,6 +42,10 @@ from trio_server.validation import clean_name, name_key
 
 
 class AdminError(Exception):
+    pass
+
+
+class TooManyCodesError(AdminError):
     pass
 
 
@@ -102,7 +106,8 @@ def list_users(conn: sqlite3.Connection, out: TextIO) -> None:
     rows = conn.execute(
         "SELECT u.id, u.name, u.created_at, u.removed_at, "
         "(SELECT count(*) FROM tokens t WHERE t.user_id = u.id) AS sessions, "
-        "(SELECT coalesce(sum(size), 0) FROM attachments a WHERE a.uploader_id = u.id) AS bytes "
+        "(SELECT coalesce(sum(size), 0) FROM attachments a "
+        "WHERE a.uploader_id = u.id AND a.deleted_at IS NULL) AS bytes "
         "FROM users u ORDER BY u.id"
     ).fetchall()
     out.write(f"{'id':>4}  {'name':<32}  {'status':<8}  {'sessions':>8}  {'storage':>10}  joined\n")
@@ -123,9 +128,27 @@ def _sign_out_everywhere(conn: sqlite3.Connection, user_id: int) -> int:
     return count
 
 
-def remove_user(conn: sqlite3.Connection, who: str, out: TextIO) -> None:
+# The three changes below are shared with the owner's REST routes
+# (trio_server/owner.py, CONTRACT-V6-OPS): each takes an open connection and a
+# ``who`` (a name, or ``#<id>``), runs in ONE immediate transaction, and
+# returns what it did instead of printing it.
+
+
+def _transaction[T](conn: sqlite3.Connection, work: Callable[[], T]) -> T:
     conn.execute("BEGIN IMMEDIATE")
     try:
+        result = work()
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return result
+
+
+def do_remove_user(conn: sqlite3.Connection, who: str) -> tuple[sqlite3.Row, int]:
+    """(the user as they were, sessions ended)."""
+
+    def work() -> tuple[sqlite3.Row, int]:
         user = find_user(conn, who)
         # The row stays (messages point at it and show its name). Replacing
         # name_key frees the name; removed_at frees the slot.
@@ -133,44 +156,36 @@ def remove_user(conn: sqlite3.Connection, who: str, out: TextIO) -> None:
             "UPDATE users SET removed_at = ?, name_key = ? WHERE id = ?",
             (utc_now(), removed_name_key(user["id"]), user["id"]),
         )
-        sessions = _sign_out_everywhere(conn, user["id"])
-        conn.execute("COMMIT")
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    out.write(
-        f"removed {user['name']} (id {user['id']}); {sessions} session(s) ended. "
-        "Their messages stay. Open connections close within 30 seconds.\n"
-    )
+        return user, _sign_out_everywhere(conn, user["id"])
+
+    return _transaction(conn, work)
 
 
-def revoke_tokens(conn: sqlite3.Connection, who: str, out: TextIO) -> None:
-    conn.execute("BEGIN IMMEDIATE")
-    try:
+def do_revoke_tokens(conn: sqlite3.Connection, who: str) -> tuple[sqlite3.Row, int]:
+    """(the user, sessions ended); unused link codes go too."""
+
+    def work() -> tuple[sqlite3.Row, int]:
         user = find_user(conn, who)
-        sessions = _sign_out_everywhere(conn, user["id"])
-        conn.execute("COMMIT")
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    out.write(
-        f"{sessions} session(s) of {user['name']} ended; unused link codes deleted. "
-        "Open connections close within 30 seconds.\n"
-    )
+        return user, _sign_out_everywhere(conn, user["id"])
+
+    return _transaction(conn, work)
 
 
-def new_link_code(conn: sqlite3.Connection, who: str, out: TextIO, now: float | None = None) -> str:
+def do_new_link_code(
+    conn: sqlite3.Connection, who: str, now: float | None = None
+) -> tuple[sqlite3.Row, str, float]:
+    """(the user, the code, its expiry). AdminError when 5 are live already."""
     now = time.time() if now is None else now
     code = linkcodes.new_code()
-    conn.execute("BEGIN IMMEDIATE")
-    try:
+
+    def work() -> tuple[sqlite3.Row, float]:
         user = find_user(conn, who)
         conn.execute("DELETE FROM link_codes WHERE expires_ts <= ?", (now,))
         (live,) = conn.execute(
             "SELECT count(*) FROM link_codes WHERE user_id = ?", (user["id"],)
         ).fetchone()
         if live >= linkcodes.MAX_LIVE_PER_USER:
-            raise AdminError(
+            raise TooManyCodesError(
                 f"{user['name']} already has {live} unused codes; wait for one to expire"
             )
         expires = now + linkcodes.TTL_SECONDS
@@ -179,10 +194,30 @@ def new_link_code(conn: sqlite3.Connection, who: str, out: TextIO, now: float | 
             "VALUES (?, ?, ?, ?)",
             (linkcodes.hash_code(code), user["id"], now, expires),
         )
-        conn.execute("COMMIT")
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
+        return user, expires
+
+    user, expires = _transaction(conn, work)
+    return user, code, expires
+
+
+def remove_user(conn: sqlite3.Connection, who: str, out: TextIO) -> None:
+    user, sessions = do_remove_user(conn, who)
+    out.write(
+        f"removed {user['name']} (id {user['id']}); {sessions} session(s) ended. "
+        "Their messages stay. Open connections close within 30 seconds.\n"
+    )
+
+
+def revoke_tokens(conn: sqlite3.Connection, who: str, out: TextIO) -> None:
+    user, sessions = do_revoke_tokens(conn, who)
+    out.write(
+        f"{sessions} session(s) of {user['name']} ended; unused link codes deleted. "
+        "Open connections close within 30 seconds.\n"
+    )
+
+
+def new_link_code(conn: sqlite3.Connection, who: str, out: TextIO, now: float | None = None) -> str:
+    user, code, expires = do_new_link_code(conn, who, now)
     out.write(
         f"link code for {user['name']}: {code}\n"
         f"single use, valid until {utc_iso(expires)} (10 minutes)\n"

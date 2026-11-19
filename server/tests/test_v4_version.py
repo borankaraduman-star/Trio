@@ -18,7 +18,8 @@ def test_the_version_is_the_one_in_pyproject():
 
 
 def test_health_and_ready_carry_it(trio):
-    assert trio.client.get("/api/health").json() == {"ok": True, "version": VERSION}
+    health = trio.client.get("/api/health").json()
+    assert health["ok"] is True and health["version"] == VERSION
     with trio.ws(trio.user("Ali")) as sock:
         assert sock.ready["server_version"] == VERSION
 
