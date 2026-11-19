@@ -152,3 +152,13 @@ message family's jump, loading older pages as needed). test ids: `btn-media`,
   A repeated nonce is still answered with the message (V3 §10), never an
   error. Client: an error naming a pending row's nonce fails exactly that row;
   an error with no nonce falls back to the old rule (the send just made).
+
+## 6. With CONTRACT-V6-OPS §4 (a file its uploader deleted)
+
+- A tombstoned attachment (`{id, filename, deleted: true}`) carries none of the
+  §2 fields; the client checks `isDeletedAttachment` before anything else.
+- It is in neither `GET .../attachments` list, `GET /api/previews/{id}` is 404
+  for it, its preview file is removed with the file (`DELETE
+  /api/attachments/{id}`), and the start-up sweep removes any preview whose
+  attachment is deleted or gone. Quota and `GET /api/me/storage`
+  `used_bytes` count size + preview size of files not deleted.
