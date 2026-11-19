@@ -187,10 +187,10 @@ export function MediaGallery({
 
   return createPortal(
     <div className="gallery-backdrop" data-testid="gallery-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <section className="gallery-panel" role="dialog" aria-modal="true" aria-label={`#${channelName} medyası`} data-testid="media-gallery">
+      <section className="gallery-panel" role="dialog" aria-modal="true" aria-label={`#${channelName} kanalında paylaşılanlar`} data-testid="media-gallery">
         <header className="gallery-header">
           <h2>
-            Medya <span className="gallery-channel">#{channelName}</span>
+            Paylaşılanlar <span className="gallery-channel">#{channelName}</span>
           </h2>
           <button ref={closeRef} type="button" className="icon-button" data-testid="gallery-close" aria-label="Kapat" title="Kapat (Esc)" onClick={onClose}>
             <CloseIcon />

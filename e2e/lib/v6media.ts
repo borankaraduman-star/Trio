@@ -3,6 +3,7 @@
  * segment with an orientation and a GPS position, reading what the server
  * stored, and the attachments API.
  */
+import zlib from 'node:zlib'
 import type { Locator, Page } from '@playwright/test'
 import { baseUrl } from './server'
 import { expect, type Person } from './trio'
@@ -245,4 +246,92 @@ export async function dropPhoto(page: Page): Promise<void> {
     main.dispatchEvent(new DragEvent('dragenter', { dataTransfer: data, bubbles: true, cancelable: true }))
     main.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
   })
+}
+
+// --- seeding a channel through the API (not what the UI does; the UI is asserted on) ---------
+
+
+function crc32(buffer: Buffer): number {
+  let crc = ~0
+  for (const byte of buffer) {
+    crc ^= byte
+    for (let k = 0; k < 8; k += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1))
+  }
+  return ~crc >>> 0
+}
+
+function chunk(kind: string, body: Buffer): Buffer {
+  const head = Buffer.alloc(8)
+  head.writeUInt32BE(body.length, 0)
+  head.write(kind, 4, 'latin1')
+  const crc = Buffer.alloc(4)
+  crc.writeUInt32BE(crc32(Buffer.concat([Buffer.from(kind, 'latin1'), body])))
+  return Buffer.concat([head, body, crc])
+}
+
+/** A real PNG with a diagonal gradient between two colours (distinct per `hue`). */
+export function gradientPng(width: number, height: number, hue: number): Buffer {
+  const a = [(hue * 53) % 256, (hue * 97 + 80) % 256, (hue * 31 + 160) % 256]
+  const b = [255 - a[1], 255 - a[2], 255 - a[0]]
+  const rows: Buffer[] = []
+  for (let y = 0; y < height; y += 1) {
+    const row = Buffer.alloc(1 + width * 3)
+    for (let x = 0; x < width; x += 1) {
+      const t = (x / width + y / height) / 2
+      for (let c = 0; c < 3; c += 1) row[1 + x * 3 + c] = Math.round(a[c] + (b[c] - a[c]) * t)
+    }
+    rows.push(row)
+  }
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr.set([8, 2, 0, 0, 0], 8)
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))),
+    chunk('IEND', Buffer.alloc(0)),
+  ])
+}
+
+export async function apiUpload(
+  token: string,
+  file: { name: string; type: string; buffer: Buffer },
+  parts: Record<string, string | { name: string; type: string; buffer: Buffer }> = {},
+): Promise<WireAttachment> {
+  const form = new FormData()
+  form.append('file', new Blob([file.buffer], { type: file.type }), file.name)
+  for (const [key, value] of Object.entries(parts)) {
+    if (typeof value === 'string') form.append(key, value)
+    else form.append(key, new Blob([value.buffer], { type: value.type }), value.name)
+  }
+  const response = await fetch(`${baseUrl()}/api/uploads`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form })
+  if (response.status !== 201) throw new Error(`upload ${file.name}: ${response.status} ${await response.text()}`)
+  return ((await response.json()) as { attachment: WireAttachment }).attachment
+}
+
+/** A socket of `token`'s own, for sending messages from the test (each send waits for its echo). */
+export async function apiSocket(token: string): Promise<{ send: (channelId: number, content: string, ids?: string[]) => Promise<number>; close: () => void }> {
+  const ws = new WebSocket(`${baseUrl().replace('http', 'ws')}/ws?token=${encodeURIComponent(token)}`)
+  await new Promise<void>((resolve, reject) => {
+    ws.addEventListener('message', () => resolve(), { once: true })
+    ws.addEventListener('error', () => reject(new Error('socket')), { once: true })
+  })
+  const waiting = new Map<string, (id: number) => void>()
+  ws.addEventListener('message', (event) => {
+    const frame = JSON.parse(String(event.data)) as { type: string; nonce?: string; message?: { id: number }; code?: string }
+    if (frame.type === 'message.new' && frame.nonce && frame.message) waiting.get(frame.nonce)?.(frame.message.id)
+    if (frame.type === 'error') throw new Error(`send refused: ${frame.code}`)
+  })
+  let counter = 0
+  return {
+    send: (channelId, content, ids = []) =>
+      new Promise<number>((resolve) => {
+        counter += 1
+        const nonce = `seed-${counter}`
+        waiting.set(nonce, resolve)
+        ws.send(JSON.stringify({ type: 'message.send', channel_id: channelId, content, nonce, ...(ids.length ? { attachment_ids: ids } : {}) }))
+      }),
+    close: () => ws.close(),
+  }
 }
