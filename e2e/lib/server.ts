@@ -68,13 +68,27 @@ export async function freePort(): Promise<number> {
   })
 }
 
-function alive(pid: number): boolean {
+/**
+ * Is `pid` still THE SERVER this suite started on `port`? Not merely "does a
+ * process with that number exist": pid numbers are reused (a container's
+ * `pid_max` is often 32768, and browsers burn through that in minutes), so
+ * after our server died its number may belong to anything — another suite's
+ * server on the same machine, a browser. Signalling by number alone killed
+ * other runs' servers (seen as "server exited during start" with an empty log).
+ */
+function alive(pid: number, port: number): boolean {
+  let command: string
   try {
-    process.kill(pid, 0)
-    return true
+    command = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replaceAll('\0', ' ')
   } catch {
-    return false
+    try {
+      // No /proc (macOS): ask ps.
+      command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    } catch {
+      return false
+    }
   }
+  return command.includes('trio_server') && command.includes(`--port ${port}`)
 }
 
 async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: number, what: string) {
@@ -129,6 +143,14 @@ export async function startServer(
     ['-m', 'trio_server', '--host', '127.0.0.1', '--port', String(port), '--log-level', 'warning'],
     { cwd: serverDir(), env, stdio: ['ignore', log, log], detached: true },
   )
+  // How it ended goes into the log: a server killed from outside leaves no other trace.
+  child.on('exit', (code, signal) => {
+    try {
+      fs.appendFileSync(logFile, `--- exit ${new Date().toISOString()} pid=${child.pid} code=${code} signal=${signal}\n`)
+    } catch {
+      // The log is a convenience.
+    }
+  })
   child.unref()
   fs.closeSync(log)
   if (!child.pid) throw new Error('could not start the server')
@@ -137,7 +159,7 @@ export async function startServer(
 
   await waitFor(
     async () => {
-      if (!alive(child.pid!)) throw new Error(`server exited during start; see ${logFile}`)
+      if (!alive(child.pid!, port)) throw new Error(`server exited during start; see ${logFile}`)
       return healthy(port)
     },
     20000,
@@ -154,14 +176,14 @@ export async function stopServer(signal: NodeJS.Signals = 'SIGTERM'): Promise<vo
   } catch {
     return
   }
-  if (!alive(state.pid)) return
+  if (!alive(state.pid, state.port)) return
   try {
     process.kill(state.pid, signal)
   } catch {
     return
   }
-  await waitFor(() => !alive(state.pid), 10000, 'the server to exit').catch(() => {
-    process.kill(state.pid, 'SIGKILL')
+  await waitFor(() => !alive(state.pid, state.port), 10000, 'the server to exit').catch(() => {
+    if (alive(state.pid, state.port)) process.kill(state.pid, 'SIGKILL')
   })
 }
 
