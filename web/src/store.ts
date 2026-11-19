@@ -1,5 +1,6 @@
-import type { Channel, Member, Message, ServerEvent, User, VoiceParticipant } from './types'
+import type { Channel, Member, Message, ServerEvent, ServerProfile, User, VoiceParticipant } from './types'
 import { claimEchoes } from './lib/reconcile'
+import { DEFAULT_SERVER, normalizeUser, serverProfile } from './lib/identity'
 
 export type MessageStatus = 'sent' | 'pending' | 'failed'
 
@@ -47,6 +48,10 @@ export interface AppState {
   latest: Record<number, number>
   /** channel id → unread count (at least 1 when unread, exact for live messages). */
   unread: Record<number, number>
+  /** v4: the server's name and icon ("Trio" until a server says otherwise). */
+  server: ServerProfile
+  /** v4: `ready.server_version`, or null from a server that predates it. */
+  serverVersion: string | null
 }
 
 export type Action =
@@ -99,6 +104,8 @@ export function createInitialState(init: {
     lastRead: init.lastRead ?? {},
     latest: {},
     unread: {},
+    server: DEFAULT_SERVER,
+    serverVersion: null,
   }
 }
 
@@ -193,7 +200,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
   switch (event.type) {
     case 'ready': {
       const users: Record<number, Member> = {}
-      for (const user of event.users) users[user.id] = user
+      for (const user of event.users) users[user.id] = normalizeUser(user)
       const voice: Record<number, VoiceParticipant[]> = {}
       for (const [key, list] of Object.entries(event.voice ?? {})) voice[Number(key)] = list
       const activeChannelId = pickActiveChannel(event.channels, state.activeChannelId)
@@ -216,7 +223,9 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         ...state,
         connection: 'open',
         ready: true,
-        me: event.user,
+        me: normalizeUser(event.user),
+        server: serverProfile(event.server) ?? state.server,
+        serverVersion: typeof event.server_version === 'string' ? event.server_version : null,
         users,
         channels: event.channels,
         voice,
@@ -238,7 +247,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         ...state,
         users: {
           ...state.users,
-          [event.user.id]: { ...event.user, online: existing?.online ?? false },
+          [event.user.id]: { ...normalizeUser(event.user), online: existing?.online ?? false },
         },
       }
     }
@@ -257,6 +266,21 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
       if (voice !== next.voice) next = { ...next, voice }
       for (const channelId of Object.keys(next.typing)) next = removeTyping(next, Number(channelId), id)
       return next
+    }
+
+    case 'user.updated': {
+      // A rename or a new avatar. Old messages follow: rows read the author by id.
+      const user = normalizeUser(event.user)
+      let next = state
+      const existing = state.users[user.id]
+      if (existing) next = { ...next, users: { ...next.users, [user.id]: { ...user, online: existing.online } } }
+      if (user.id === state.me.id) next = { ...next, me: user }
+      return next
+    }
+
+    case 'server.updated': {
+      const server = serverProfile(event.server)
+      return server ? { ...state, server } : state
     }
 
     case 'channel.new': {

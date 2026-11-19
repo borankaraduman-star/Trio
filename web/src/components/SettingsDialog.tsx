@@ -6,6 +6,8 @@ import { useDevices } from '../useDevices'
 import type { NoiseState } from '../audio/pipeline'
 import { CloseIcon } from './icons2'
 import { AccountSection, type AccountProps } from './AccountSection'
+import { ServerSection, type ServerSettingsProps } from './ServerSection'
+import { VersionFooter } from './VersionFooter'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -136,6 +138,8 @@ export function SettingsDialog({
   isDesktop,
   account,
   onSignOut,
+  serverSettings,
+  serverVersion,
 }: {
   settings: Settings
   onChange: (patch: Partial<Omit<Settings, 'version'>>) => void
@@ -147,6 +151,10 @@ export function SettingsDialog({
   /** v3: the "Hesap" section (add a device, sign out). */
   account?: AccountProps
   onSignOut?: () => void
+  /** v4: the "Sunucu" section (name and icon). */
+  serverSettings?: ServerSettingsProps
+  /** v4: `ready.server_version` for the footer; undefined = no footer. */
+  serverVersion?: string | null
 }) {
   const { devices, requestLabels } = useDevices()
   const dialog = useRef<HTMLDivElement>(null)
@@ -292,6 +300,8 @@ export function SettingsDialog({
         </section>
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
+        {serverSettings && <ServerSection settings={serverSettings} />}
+        {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}
       </div>
     </div>
   )

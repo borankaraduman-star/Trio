@@ -6,6 +6,8 @@ import './message-list-jump.css'
 import type { ChannelMessages, UiMessage } from '../store'
 import { MessageAttachments } from './Attachments'
 import { Avatar } from './Avatar'
+import { resolveAuthor } from '../lib/identity'
+import type { Member, User } from '../types'
 
 const NEAR_EDGE_PX = 120
 
@@ -29,11 +31,14 @@ const Content = memo(function Content({ text }: { text: string }) {
 
 const MessageRow = memo(function MessageRow({
   message,
+  author = message.author,
   showHeader,
   former,
   onRetry,
 }: {
   message: UiMessage
+  /** v4: the author as shown now (current name and avatar), else the message's snapshot. */
+  author?: User
   showHeader: boolean
   /** v3: the author is no longer a member (removed by the admin). */
   former: boolean
@@ -50,7 +55,7 @@ const MessageRow = memo(function MessageRow({
     >
       <div className="message-gutter">
         {showHeader ? (
-          <Avatar id={message.author.id} name={message.author.name} size={38} />
+          <Avatar id={author.id} name={author.name} size={38} url={author.avatar_url} />
         ) : (
           <time className="message-hover-time">{time}</time>
         )}
@@ -58,7 +63,7 @@ const MessageRow = memo(function MessageRow({
       <div className="message-body">
         {showHeader && (
           <div className="message-header">
-            <strong>{message.author.name}</strong>
+            <strong data-testid="message-author">{author.name}</strong>
             {former && (
               <span className="author-former" data-testid="author-former" title="Bu hesap sunucudan kaldırıldı">
                 eski üye
@@ -91,8 +96,11 @@ export function MessageList({
   onJumpToLatest,
   onAtBottomChange,
   isMember,
+  users,
 }: {
   channel: ChannelMessages
+  /** v4: current members, so a row shows its author's current name and avatar. */
+  users?: Record<number, Member>
   myId: number
   /** Whether an author id is a current member; unknown authors are shown as former members. */
   isMember?: (userId: number) => boolean
@@ -179,6 +187,7 @@ export function MessageList({
             <MessageRow
               key={row.key}
               message={row.message}
+              author={resolveAuthor(row.message.author, users)}
               showHeader={row.showHeader}
               former={isMember ? !isMember(row.message.author.id) : false}
               onRetry={onRetry}

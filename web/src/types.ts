@@ -1,6 +1,15 @@
 export interface User {
   id: number
   name: string
+  /** v4: `/api/avatars/<id>/<hash>.<ext>` or null; missing from a server that predates it. */
+  avatar_url?: string | null
+}
+
+/** v4: the server's own name and icon (`ready.server`, `server.updated`). */
+export interface ServerProfile {
+  name: string
+  /** `/api/server/icon/<hash>.<ext>` or null. */
+  icon_url: string | null
 }
 
 export interface Member extends User {
@@ -62,11 +71,19 @@ export type ServerEvent =
       users: Member[]
       channels: Channel[]
       voice: Record<string, VoiceParticipant[]>
+      /** v4 (A2): a plain string; compare for equality only. */
+      server_version?: string
+      /** v4 (C) */
+      server?: ServerProfile
     }
   | { type: 'presence'; user_id: number; online: boolean }
   | { type: 'user.joined'; user: User }
   /** v3: the admin removed this account; drop it from the member list, keep its messages. */
   | { type: 'user.removed'; user_id: number }
+  /** v4: a rename or an avatar change (the actor's own sockets get it too). */
+  | { type: 'user.updated'; user: User }
+  /** v4: the server's name or icon changed. */
+  | { type: 'server.updated'; server: ServerProfile }
   | { type: 'channel.new'; channel: Channel }
   | { type: 'message.new'; message: Message; nonce?: string }
   | { type: 'typing'; channel_id: number; user_id: number }

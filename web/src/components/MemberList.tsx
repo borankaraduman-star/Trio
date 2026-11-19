@@ -25,7 +25,7 @@ export function MemberList({ users }: { users: Record<number, Member> }) {
               data-online={member.online}
             >
               <span className="member-avatar">
-                <Avatar id={member.id} name={member.name} size={30} />
+                <Avatar id={member.id} name={member.name} size={30} url={member.avatar_url} />
                 <span
                   className={member.online ? 'dot online' : 'dot'}
                   title={member.online ? 'Çevrimiçi' : 'Çevrimdışı'}
