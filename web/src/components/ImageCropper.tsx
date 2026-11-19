@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { clampCrop, initialCrop, maxZoom, panBy, sourceRect, zoomTo, type Crop } from '../lib/crop'
 import { encodeSquare, type DecodedImage } from '../lib/imageEncode'
@@ -130,6 +131,11 @@ export function ImageCropper({
     pointers.current.delete(event.pointerId)
   }
 
+  // Keyboard users land on the picture (arrows move it, +/- zoom).
+  useEffect(() => {
+    canvas.current?.focus({ preventScroll: true })
+  }, [])
+
   // The wheel needs a listener that may cancel scrolling (React's is passive).
   useEffect(() => {
     const element = canvas.current
@@ -181,7 +187,8 @@ export function ImageCropper({
 
   const working = busy || encoding
 
-  return (
+  // On the page itself, not inside the settings dialog (whose box would contain a fixed overlay).
+  return createPortal(
     <div className="cropper-backdrop" data-testid="cropper">
       <div
         className="cropper"
@@ -238,6 +245,7 @@ export function ImageCropper({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

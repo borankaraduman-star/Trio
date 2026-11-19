@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Page } from '@playwright/test'
 import { apiAvatar, avatarsOf, drawPicture, expectDecoded, openSettings } from '../lib/identity'
 import { E2E_DIR, freshServer } from '../lib/server'
-import { expect, expectConnected, joinVoice, sendThroughUi, test, threePeople } from '../lib/trio'
+import { expect, expectConnected, expectHearing, joinVoice, sendThroughUi, test, threePeople } from '../lib/trio'
 
 const OUT = path.join(E2E_DIR, 'screenshots')
 const DESKTOP = { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 }
@@ -49,6 +49,9 @@ test('screenshot 13: a conversation and a voice room with three avatars', async 
     await expectDecoded(where.voice.locator('img'))
     for (const message of await where.messages.all()) await expectDecoded(message.locator('img'))
   }
+  // Media is flowing before the shot, so a speaking ring can show (the fake microphone beeps).
+  await expectHearing(ayse, mehmet)
+  await expectHearing(ayse, zeynep)
   await expect(page.locator('[data-testid^="voice-user-"][data-speaking="true"]').first()).toBeVisible({ timeout: 15_000 })
   await shot(page, '13-avatars.png')
 })

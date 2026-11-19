@@ -23,6 +23,7 @@ import {
   apiJoin,
   expect,
   expectConnected,
+  expectHearing,
   joinVoice,
   newContext,
   personViaApi,
@@ -87,6 +88,7 @@ test('an avatar: cropped and re-encoded without EXIF, seen by everyone everywher
   await expectDecoded(ayse.page.locator('.user-panel .avatar img'))
 
   // In the voice room the speaking ring goes around the picture (the fake microphone beeps).
+  await expectHearing(mehmet, ayse)
   await expect(mehmet.page.locator(`[data-testid="voice-user-${ayse.user.id}"][data-speaking="true"] .avatar.speaking.has-image`)).toBeVisible({
     timeout: 20_000,
   })
@@ -367,13 +369,14 @@ test('phone width: the cropper works by touch (drag, pinch, slider) and every se
   for (let step = 1; step <= 6; step++) await touch('touchMove', [{ x: centre.x + step * 10, y: centre.y }])
   await touch('touchEnd', [])
   await expect.poll(async () => Number(await canvas.getAttribute('data-cx'))).toBeLessThan(cxBefore)
+  await cdp.detach()
 
-  // The slider, by touch too.
+  // The slider (the other way to zoom on a phone).
   await page.getByTestId('cropper-zoom').fill('1')
   await expect(canvas).toHaveAttribute('data-zoom', '1.000')
 
   const saved = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/me/avatar' && r.request().method() === 'PUT')
-  await page.getByTestId('cropper-save').tap()
+  await page.getByTestId('cropper-save').click()
   expect((await saved).status()).toBe(200)
   await expect(page.getByTestId('cropper')).toHaveCount(0)
   await expectDecoded(page.getByTestId('avatar').locator('.avatar-img'))
