@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useSinkId } from '../useSinkId'
+import { useRemoteVolume } from '../useRemoteVolume'
 import type { RemoteMedia } from '../voice'
 import { ExpandIcon } from './icons2'
 
@@ -129,9 +130,8 @@ function Tile({
     }
   }, [tile.stream])
 
-  useEffect(() => {
-    if (video.current) video.current.muted = muted
-  }, [muted])
+  // V6: deafen, and the "Yayın sesi" volume of a shared screen (0–200 %).
+  useRemoteVolume(video, tile.stream, tile.userId, 'stream', deafened, tile.silent)
 
   const fullscreen = () => {
     const element = figure.current

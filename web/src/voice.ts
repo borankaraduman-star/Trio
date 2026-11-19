@@ -1,6 +1,6 @@
 import { ContextKeeper } from './audio/contextKeeper'
 import { analyserSizeFor, loudestBlockRms } from './audio/speaking'
-import { MicPipeline, type NoiseState } from './audio/pipeline'
+import { MicPipeline, type GateState, type NoiseState } from './audio/pipeline'
 import { displayMediaOptions } from './audio/screenAudio'
 import type { PeerStat } from './lib/connReport'
 import { HeldActions } from './lib/heldActions'
@@ -80,6 +80,9 @@ export interface VoiceSnapshot {
   hiddenScreens: Readonly<Record<number, string>>
   /** V6: I am away (auto-AFK), announced as `afk` on voice.state. */
   afk: boolean
+  /** V6: the input gate after RNNoise, and whether it lets sound through now. */
+  gateState: GateState
+  gateOpen: boolean
 }
 
 /** Shown for `micLost`. */
@@ -105,6 +108,8 @@ export interface VoiceDeps {
   createNoiseNode?: (context: AudioContext) => Promise<AudioNode>
   /** V6: the remembered share profile and quality, read when a share starts. */
   sharePrefs?: () => { shareProfile: ShareProfile; shareQuality: ShareQuality }
+  /** V6: the input gate's threshold (peak amplitude) or null for none, read at join. */
+  gate?: () => number | null
 }
 
 interface Peer {
@@ -527,6 +532,8 @@ export class VoiceEngine {
       screenWatchers: this.screenStream ? peers.filter((peer) => peer.watching).map((peer) => peer.id) : [],
       hiddenScreens: Object.fromEntries(this.hiddenScreens),
       afk: this.afk,
+      gateState: this.pipeline?.gateState ?? 'off',
+      gateOpen: this.pipeline?.gateOpen ?? true,
     }
   }
 
@@ -584,6 +591,9 @@ export class VoiceEngine {
     }
     const stream = pipeline.stream
     this.micStream = stream
+    // V6: the input gate, if one is chosen (it never changes the sent track).
+    const gate = this.deps.gate?.() ?? null
+    if (gate !== null) void pipeline.setGate(gate)
     this.applyMute()
     this.startSpeakingDetection()
     this.watch(this.deps.myId, stream)
@@ -1217,6 +1227,16 @@ export class VoiceEngine {
     }
     if (hidden === 'screen') this.hiddenScreens.set(peer.id, current)
     this.signal(peer.id, { watch: { stream: current, on: false } })
+  }
+
+  /** V6: the input gate's threshold (peak amplitude), or null for none. Live. */
+  async setGate(thresholdLinear: number | null): Promise<void> {
+    await this.pipeline?.setGate(thresholdLinear)
+  }
+
+  /** V6: the microphone's level before the gate and the mute (0..1), or null when not in voice. */
+  inputPeak(): number | null {
+    return this.pipeline?.inputPeak() ?? null
   }
 
   /** Announce (or end) AFK on `voice.state`. */
