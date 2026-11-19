@@ -8,7 +8,7 @@
 import path from 'node:path'
 import { freshServer } from '../lib/server'
 import { expectTileDecoding } from '../lib/media'
-import { expect, expectHearing, expectSilence, joinVoice, personViaApi, SOHBET, test } from '../lib/trio'
+import { bulkSend, expect, expectHearing, expectSilence, GENEL, joinVoice, personViaApi, SOHBET, test } from '../lib/trio'
 import { DESKTOP, joinVoiceOnPhone, NO_SCREEN_SHARE, PHONE, SCREENSHOTS, settingsTab } from '../lib/v7phone'
 
 test.beforeEach(async () => {
@@ -117,4 +117,45 @@ test('a browser without getDisplayMedia offers no screen share anywhere', async 
   await settingsTab(desk.page, 'goruntu')
   await expect(desk.page.getByTestId('settings-screen-unsupported')).toBeVisible()
   await expect(desk.page.getByTestId('settings-screen-audio')).toHaveCount(0)
+})
+
+test('phone: in a call, the jump to the newest sits above the call bar and the composer, and works', async ({ browser, trio }) => {
+  // The call bar (CONTRACT-V7-PHONE §1) and the jump button (CONTRACT-V7-READING §3) came
+  // from two branches; neither could see the other at 390 px.
+  const ayse = trio.add(await personViaApi(browser, 'Ayşe', DESKTOP))
+  const mehmet = trio.add(await personViaApi(browser, 'Mehmet', PHONE))
+  const page = mehmet.page
+  await joinVoice(ayse)
+  await joinVoiceOnPhone(mehmet, SOHBET)
+  await expect(page.getByTestId('call-bar')).toBeInViewport({ ratio: 1 })
+
+  await bulkSend(ayse, GENEL, 40, 'mesaj')
+  await expect(page.getByTestId('message').filter({ hasText: 'mesaj 40' })).toBeVisible()
+  await page.getByTestId('message-list').evaluate((list) => list.scrollTo({ top: 0 }))
+  await bulkSend(ayse, GENEL, 3, 'sonra')
+  const jump = page.getByTestId('jump-to-bottom')
+  await expect(jump).toHaveAttribute('data-count', '3')
+  await expect(jump).toBeInViewport({ ratio: 1 })
+
+  const jumpBox = (await jump.boundingBox())!
+  const listBox = (await page.getByTestId('message-list').boundingBox())!
+  const barBox = (await page.getByTestId('call-bar').boundingBox())!
+  // Inside the message list, above the call bar (which is above the composer and "Gönder").
+  expect(jumpBox.y).toBeGreaterThanOrEqual(listBox.y)
+  expect(jumpBox.y + jumpBox.height).toBeLessThanOrEqual(listBox.y + listBox.height)
+  expect(jumpBox.y + jumpBox.height).toBeLessThanOrEqual(barBox.y)
+  expect(jumpBox.x + jumpBox.width).toBeLessThanOrEqual(390)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  // Nothing else is on top of it: the point under its middle is the button.
+  const hit = await page.evaluate(
+    ([x, y]) => document.elementFromPoint(x, y)?.closest('[data-testid="jump-to-bottom"]') !== null,
+    [jumpBox.x + jumpBox.width / 2, jumpBox.y + jumpBox.height / 2],
+  )
+  expect(hit).toBe(true)
+  await page.screenshot({ path: path.join(SCREENSHOTS, 'v7-phone-call-bar-jump.png') })
+
+  await jump.tap()
+  await expect(page.getByTestId('message').filter({ hasText: 'sonra 3' })).toBeInViewport()
+  await expect(jump).toHaveCount(0)
+  await expect(page.getByTestId('call-bar')).toBeInViewport({ ratio: 1 })
 })

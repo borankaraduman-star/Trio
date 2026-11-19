@@ -44,6 +44,13 @@ events and CSP console errors, and the automatic `cspGuard` fixture
 (`lib/trio.ts`) fails the test on any of them — the noise-suppression
 worklet and wasm, blob: and object URLs and the websocket all run under it.
 
+**In CI** (`.github/workflows/ci.yml`) the suite runs as four shards, one
+job each (`npm test -- --shard=N/4`, about 5–12 minutes of tests per shard on
+a GitHub runner; the job limit is 30). Playwright splits by file, so every
+spec file must pass on its own and in any order: each test starts its own
+fresh server, and nothing may depend on what an earlier file left behind.
+Run one shard locally the same way: `npx playwright test --shard=2/4`.
+
 Useful variables:
 
 | variable | effect |
@@ -149,3 +156,9 @@ holds, decrypts what the server sends, and drives the service worker with CDP
 `ServiceWorker.deliverPushMessage`. Specs 56–58 use Chromium's new headless
 mode (`channel: 'chromium'`): the headless shell reports the notification
 permission as "denied" and cannot show notifications.
+
+`deliverPush` returns only once the worker's `showNotification()` has resolved
+and a further second has passed: Chromium loses a notification from
+`getNotifications()` for good when the list is read while that notification's
+display is still completing, so a test that polled the list straight after a
+delivery lost one in about a third of runs.

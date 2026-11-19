@@ -62,6 +62,7 @@ luac5.1 -p addon/TrioDurum/TrioDurum.lua && lua5.1 addon/test/harness.lua
 
 # end to end (builds web, starts the real server itself)
 cd e2e && npm ci && npm test
+npx playwright test --shard=2/4     # one of CI's four shards (each spec file must pass alone)
 ```
 
 Before calling a change done: the checks of every package it touches, plus

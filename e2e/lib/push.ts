@@ -173,9 +173,48 @@ export async function setAway(page: Page, away: boolean): Promise<void> {
   }, away)
 }
 
-/** What the push service would hand the worker, delivered through CDP to the page's registration. */
+/**
+ * After the worker's `showNotification()` resolves, how long nothing reads the
+ * notification list. Chromium drops a notification from `getNotifications()`
+ * for good when the list is read while that notification's display is still
+ * being completed — which is a moment AFTER `showNotification()` resolves
+ * (web/public/sw.js, `show`). Polling the list straight after a delivery lost
+ * a notification in about one run in three (any of them: the ring, the
+ * fallback, a message); with this pause, none in 30.
+ */
+const DISPLAY_SETTLE_MS = 1000
+
+/** The worker counts the notifications it has finished showing (`self.__trioShown`). */
+async function shownCount(context: BrowserContext, origin: string): Promise<number> {
+  const worker = context.serviceWorkers().find((w) => w.url() === `${origin}/sw.js`)
+  if (!worker) throw new Error('no service worker for ' + origin)
+  return worker.evaluate(() => {
+    const scope = self as unknown as { registration: ServiceWorkerRegistration & { __trioWrapped?: boolean }; __trioShown?: number }
+    const registration = scope.registration
+    if (!registration.__trioWrapped) {
+      registration.__trioWrapped = true
+      scope.__trioShown = 0
+      const original = registration.showNotification.bind(registration)
+      registration.showNotification = async (...args: Parameters<ServiceWorkerRegistration['showNotification']>) => {
+        try {
+          return await original(...args)
+        } finally {
+          scope.__trioShown = (scope.__trioShown ?? 0) + 1
+        }
+      }
+    }
+    return scope.__trioShown ?? 0
+  })
+}
+
+/**
+ * What the push service would hand the worker, delivered through CDP to the
+ * page's registration. Returns once the worker has shown its notification and
+ * the display has settled (DISPLAY_SETTLE_MS), so the list can be read.
+ */
 export async function deliverPush(context: BrowserContext, page: Page, origin: string, payload: unknown): Promise<void> {
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
+  const before = await shownCount(context, origin)
   const cdp = await context.newCDPSession(page)
   const registrationId = new Promise<string>((resolve) => {
     cdp.on('ServiceWorker.workerRegistrationUpdated', (event: { registrations: { registrationId: string; isDeleted: boolean }[] }) => {
@@ -187,6 +226,12 @@ export async function deliverPush(context: BrowserContext, page: Page, origin: s
   const data = typeof payload === 'string' ? payload : JSON.stringify(payload)
   await cdp.send('ServiceWorker.deliverPushMessage', { origin, registrationId: await registrationId, data })
   await cdp.detach()
+  const deadline = Date.now() + 10_000
+  while ((await shownCount(context, origin)) <= before) {
+    if (Date.now() > deadline) throw new Error('the worker showed no notification for the push')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  await new Promise((resolve) => setTimeout(resolve, DISPLAY_SETTLE_MS))
 }
 
 export interface ShownNotification {

@@ -73,7 +73,7 @@ test('A3: a TURN entry that answers nothing — "yok veya ulaşılamıyor", no h
   // An ICE list with a TURN server on a port nothing listens on.
   await freshServer({ TRIO_TURN_HOST: '127.0.0.1', TRIO_TURN_SECRET: 'e2e-not-a-real-turn-secret' })
   const people = await threePeople(browser, trio)
-  const [ayse, mehmet] = people
+  const [ayse, mehmet, zeynep] = people
   await joinVoice(ayse)
   await joinVoice(mehmet)
   await expect(ayse.page.locator('.voice-status strong')).toHaveText('Ses bağlı')
@@ -81,6 +81,16 @@ test('A3: a TURN entry that answers nothing — "yok veya ulaşılamıyor", no h
   const section = await openTest(ayse.page)
   await expect(section.getByTestId('conn-turn')).toHaveAttribute('data-state', 'unreachable', { timeout: 15_000 })
   await expect(section.getByTestId('conn-turn')).toHaveText('TURN yok veya ulaşılamıyor')
+  // The result stays while the rest of the app re-renders (somebody joins the room): the
+  // probe ran once, it does not go back to "deneniyor…" on every update of the session.
+  await section.getByTestId('conn-turn').evaluate((element) => {
+    const seen: string[] = []
+    ;(window as unknown as { __turnStates: string[] }).__turnStates = seen
+    new MutationObserver(() => seen.push(element.getAttribute('data-state') ?? '')).observe(element, { attributes: true })
+  })
+  await joinVoice(zeynep)
+  await expect(section.getByTestId('conn-peer-' + zeynep.user.id)).toBeVisible()
+  expect(await ayse.page.evaluate(() => (window as unknown as { __turnStates: string[] }).__turnStates)).toEqual([])
   const report = await copiedReport(ayse)
   expect(report).toContain('TURN: TURN yok veya ulaşılamıyor')
   expect(report).not.toContain('127.0.0.1')

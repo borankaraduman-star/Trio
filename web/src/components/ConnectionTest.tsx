@@ -61,23 +61,31 @@ export function ConnectionTest({
   const stream = useRef<MediaStream | null>(null)
   const context = useRef<AudioContext | null>(null)
   const loopAudio = useRef<SinkAudio | null>(null)
+  // The callers pass fresh arrow functions on every render (the session
+  // re-renders on every presence, speaking or stats change). Effects keyed on
+  // them re-ran each time: the TURN probe went back to "deneniyor…" and
+  // started over, so in a busy call it could show a stale state or never
+  // settle, and "Raporu kopyala" copied "TURN deneniyor…". The latest
+  // functions are read through a ref instead; the effects run once.
+  const latest = useRef({ fetchIce, peerStats, onActiveChange })
+  latest.current = { fetchIce, peerStats, onActiveChange }
 
   useEffect(() => {
-    onActiveChange?.(true)
-    return () => onActiveChange?.(false)
-  }, [onActiveChange])
+    latest.current.onActiveChange?.(true)
+    return () => latest.current.onActiveChange?.(false)
+  }, [])
 
   // --- TURN -------------------------------------------------------------------
   const runProbe = useCallback(async () => {
     setTurn('checking')
     let servers: RTCIceServer[] = []
     try {
-      servers = await fetchIce()
+      servers = await latest.current.fetchIce()
     } catch {
       servers = []
     }
     setTurn(await probeTurn(servers, hasTurnServer(servers)))
-  }, [fetchIce])
+  }, [])
   useEffect(() => {
     void runProbe()
   }, [runProbe])
@@ -90,7 +98,7 @@ export function ConnectionTest({
     }
     let alive = true
     const poll = () =>
-      void peerStats().then((stats) => {
+      void latest.current.peerStats().then((stats) => {
         if (alive) setPeers(stats)
       })
     poll()
@@ -99,7 +107,7 @@ export function ConnectionTest({
       alive = false
       clearInterval(timer)
     }
-  }, [inVoice, peerStats])
+  }, [inVoice])
 
   // --- microphone -------------------------------------------------------------
   const stopMic = useCallback(() => {

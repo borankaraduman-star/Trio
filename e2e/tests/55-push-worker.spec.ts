@@ -63,7 +63,13 @@ test('a deploy still reloads a tab onto the new build, and the new worker takes 
 
   await restartServer()
   // The reconnect asks for index.html, sees a different entry and reloads.
-  await expect.poll(() => ayse.page.evaluate(() => (window as unknown as { __trioOldPage?: boolean }).__trioOldPage ?? false), { timeout: 30_000 }).toBe(false)
+  // A read that lands while the page is navigating has no page to read: still the old one.
+  await expect
+    .poll(
+      () => ayse.page.evaluate(() => (window as unknown as { __trioOldPage?: boolean }).__trioOldPage ?? false).catch(() => true),
+      { timeout: 30_000 },
+    )
+    .toBe(false)
   await expectConnected(ayse.page)
   expect(await ayse.page.evaluate(() => new URL(document.querySelector<HTMLScriptElement>('script[type="module"][src]')!.src).pathname)).toBe(newEntry)
   // The browser fetched the changed sw.js (no-cache) and the new worker is active.

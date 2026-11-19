@@ -7,6 +7,7 @@
 import path from 'node:path'
 import { baseUrl, E2E_DIR, freshServer } from '../lib/server'
 import { expect, expectConnected, newContext, personViaApi, test, type ContextOptions } from '../lib/trio'
+import { settingsTab } from '../lib/v7phone'
 
 const OUT = path.join(E2E_DIR, 'screenshots')
 const PHONE: ContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
@@ -18,6 +19,8 @@ test.beforeEach(async () => {
 test('the device code QR opens Trio with the code filled in', async ({ browser, trio }) => {
   const ayse = trio.add(await personViaApi(browser, 'Ayşe'))
   await ayse.page.getByTestId('btn-settings').click()
+  // Ayarlar opens in sections (CONTRACT-V7-PHONE): the code is under Hesap.
+  await settingsTab(ayse.page, 'hesap')
   const account = ayse.page.getByTestId('settings-account')
   await account.getByTestId('settings-add-device').click()
   const shown = (await account.getByTestId('link-code').textContent()) ?? ''

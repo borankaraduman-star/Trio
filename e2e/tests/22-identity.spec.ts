@@ -5,6 +5,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { CHANGELOG } from '../../web/src/changelog'
 import { freshServer, WEB_DIR } from '../lib/server'
 import {
   apiAvatar,
@@ -270,12 +271,24 @@ test('the settings footer shows the client and server versions; Yenilikler after
   await expectConnected(ayse.page)
   const card = ayse.page.getByTestId('whats-new')
   await expect(card).toBeVisible()
-  // Newer than 0.2.0: 0.4.0 in two parts (the voice work; messages and game status), 0.3.0 and 0.2.1.
-  await expect(card.getByTestId('whats-new-entry')).toHaveCount(4)
-  await expect(card.getByTestId('whats-new-entry').nth(1)).toHaveAttribute('data-version', WEB_VERSION)
-  await expect(card).toContainText('Mesajlara tepki')
-  await expect(card.getByTestId('whats-new-entry').first()).toHaveAttribute('data-version', WEB_VERSION)
-  await expect(card).toContainText('Profil fotoğrafı')
+  // CONTRACT-V4 A2: the entries newer than 0.2.0, newest first, at most three VERSIONS and
+  // every part of each. Derived from the changelog so a release does not break the count:
+  // 0.5.0 (three parts), 0.4.0 (two parts) and 0.3.0 at the time of writing; 0.2.1 drops out.
+  // (The changelog is newest first: what is newer than 0.2.0 is what comes before it.)
+  const newer = CHANGELOG.slice(0, CHANGELOG.findIndex((entry) => entry.version === '0.2.0'))
+  const shownVersions = [...new Set(newer.map((entry) => entry.version))].slice(0, 3)
+  expect(shownVersions[0]).toBe(WEB_VERSION)
+  const expected = CHANGELOG.filter((entry) => shownVersions.includes(entry.version))
+  const entries = card.getByTestId('whats-new-entry')
+  await expect(entries).toHaveCount(expected.length)
+  expect(await entries.evaluateAll((sections) => sections.map((s) => s.getAttribute('data-version')))).toEqual(expected.map((e) => e.version))
+  for (const [index, entry] of expected.entries()) {
+    if (entry.title) await expect(entries.nth(index)).toContainText(entry.title)
+    await expect(entries.nth(index)).toContainText(entry.lines[0])
+  }
+  // The oldest version shown is three back from this one; nothing older is listed.
+  const older = CHANGELOG.filter((entry) => !shownVersions.includes(entry.version))
+  for (const entry of older) await expect(card).not.toContainText(entry.lines[0])
   // It blocks nothing: typing and sending go on with it open.
   await sendThroughUi(ayse, 'kart açıkken yazdım')
   await card.getByTestId('whats-new-dismiss').click()
