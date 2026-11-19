@@ -52,6 +52,8 @@ def test_a_resume_inside_the_grace_keeps_the_member_without_voice_left(trio, thr
             "camera": False,
             "afk": False,
             "reconnecting": True,
+            "music": False,
+            "music_title": None,
         }
         expect(a, "presence")  # Berk had no other socket
         trio.clock.value += 9
@@ -87,6 +89,8 @@ def test_a_resume_inside_the_grace_keeps_the_member_without_voice_left(trio, thr
                 "camera": True,
                 "afk": False,
                 "reconnecting": False,
+                "music": False,
+                "music_title": None,
                 "resumed": True,
             }
             assert b.receive_json() == joined

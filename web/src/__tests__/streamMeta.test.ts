@@ -34,15 +34,15 @@ describe('classifyStreams', () => {
 
   it('uses meta to tell camera from screen', () => {
     const result = classifyStreams([mic, cam, screen], { camera: 'cam', screen: 'scr' })
-    expect(result).toEqual({ audio: mic, camera: cam, screen })
+    expect(result).toEqual({ audio: mic, camera: cam, screen, music: null })
   })
 
   it('a video stream named nowhere is the screen (v1 fallback); audio-only is the mic', () => {
-    expect(classifyStreams([mic, screen], EMPTY_META)).toEqual({ audio: mic, camera: null, screen })
+    expect(classifyStreams([mic, screen], EMPTY_META)).toEqual({ audio: mic, camera: null, screen, music: null })
   })
 
   it('a camera without a screen', () => {
-    expect(classifyStreams([mic, cam], { camera: 'cam', screen: null })).toEqual({ audio: mic, camera: cam, screen: null })
+    expect(classifyStreams([mic, cam], { camera: 'cam', screen: null })).toEqual({ audio: mic, camera: cam, screen: null, music: null })
   })
 
   it('the named screen wins over an unnamed video stream', () => {
@@ -57,6 +57,6 @@ describe('classifyStreams', () => {
   })
 
   it('meta naming a stream we never got changes nothing else', () => {
-    expect(classifyStreams([mic, screen], { camera: 'gone', screen: null })).toEqual({ audio: mic, camera: null, screen })
+    expect(classifyStreams([mic, screen], { camera: 'gone', screen: null })).toEqual({ audio: mic, camera: null, screen, music: null })
   })
 })

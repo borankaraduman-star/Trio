@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { VoiceSnapshot } from '../../voice'
 import { HangupIcon, HeadphonesIcon, MicIcon, ScreenIcon } from '../icons'
 import { CameraIcon } from '../icons2'
@@ -23,6 +24,7 @@ export function CallBar({
   onToggleScreen,
   onHangup,
   onOpenRoom,
+  musicButton,
 }: {
   voice: VoiceSnapshot
   me: number
@@ -34,6 +36,8 @@ export function CallBar({
   onToggleCamera: () => void
   onToggleScreen: () => void
   onHangup: () => void
+  /** V8: the music button (CONTRACT-V8-MUSIC §6), placed before leave. */
+  musicButton?: ReactNode
   /** The room line opens the drawer, where the room's people are listed. */
   onOpenRoom: () => void
 }) {
@@ -96,6 +100,7 @@ export function CallBar({
             <ScreenIcon size={22} />
           </button>
         )}
+        {musicButton}
         <button
           type="button"
           className="v7-call-button danger"

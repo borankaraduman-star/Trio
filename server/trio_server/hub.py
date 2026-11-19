@@ -112,6 +112,10 @@ class VoiceMember:
     camera: bool = False
     # CONTRACT-V6-VOICE: the member is away (auto-AFK); missing on the wire = false.
     afk: bool = False
+    # CONTRACT-V8-MUSIC: sharing computer sound, and the title shown (None when
+    # unknown, hidden or not sharing). Missing on the wire = false / null.
+    music: bool = False
+    music_title: str | None = None
     # App-clock time the grace ends; None when not reconnecting.
     grace_until: float | None = None
     # The client's random id for this call (``voice.join {session}``), or None.
@@ -121,7 +125,7 @@ class VoiceMember:
     def reconnecting(self) -> bool:
         return self.conn is None
 
-    def flags(self) -> dict[str, bool]:
+    def flags(self) -> dict[str, Any]:
         return {
             "muted": self.muted,
             "deafened": self.deafened,
@@ -129,6 +133,8 @@ class VoiceMember:
             "camera": self.camera,
             "afk": self.afk,
             "reconnecting": self.reconnecting,
+            "music": self.music,
+            "music_title": self.music_title if self.music else None,
         }
 
 
@@ -394,6 +400,8 @@ class Hub:
         resume: bool = False,
         session: str | None = None,
         afk: bool = False,
+        music: bool = False,
+        music_title: str | None = None,
     ) -> None:
         """Leave wherever the user was, then join, bound to ``conn``.
 
@@ -438,6 +446,8 @@ class Hub:
             screensharing=screensharing,
             session=session,
             afk=afk,
+            music=music,
+            music_title=music_title if music else None,
         )
         members[user_id] = member
         self.voice_of[user_id] = channel_id
@@ -471,12 +481,16 @@ class Hub:
         screensharing: bool,
         camera: bool = False,
         afk: bool = False,
+        music: bool = False,
+        music_title: str | None = None,
     ) -> None:
         channel_id = self.voice_of[user_id]
         member = self.voice[channel_id][user_id]
         member.muted, member.deafened = muted, deafened
         member.screensharing, member.camera = screensharing, camera
         member.afk = afk
+        member.music = music
+        member.music_title = music_title if music else None
         self.broadcast(
             {"type": "voice.state", "channel_id": channel_id, "user_id": user_id, **member.flags()}
         )

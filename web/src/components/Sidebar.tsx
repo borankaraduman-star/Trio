@@ -21,6 +21,7 @@ import { GameActivityLine } from './GameActivity'
 import { BackupDot } from './owner/BackupDot'
 import { ChannelAddButton } from './phone/ChannelAddButton'
 import { screenShareSupported } from '../lib/phone'
+import { MusicMark, NowPlayingLine } from '../music/MusicUi'
 
 export interface SidebarProps {
   open: boolean
@@ -57,6 +58,9 @@ export interface SidebarProps {
   voiceControls?: ReactNode
   /** V6: a participant row's right-click / long-press (the volume sheet). */
   participantMenu?: (userId: number) => HTMLAttributes<HTMLElement>
+  /** V8: the music button (in the user panel while in voice) and the panel while I share. */
+  musicButton?: ReactNode
+  musicPanel?: ReactNode
 }
 
 function AddChannelForm({
@@ -213,6 +217,7 @@ export function Sidebar(props: SidebarProps) {
                           data-speaking={speaking.has(participant.user_id)}
                           data-peer-health={mine ? voice.peerHealth[participant.user_id] : undefined}
                           data-afk={participant.afk === true}
+                          data-music={participant.music === true}
                           {...(mine && participant.user_id !== me.id ? props.participantMenu?.(participant.user_id) : undefined)}
                         >
                           <Avatar
@@ -224,6 +229,9 @@ export function Sidebar(props: SidebarProps) {
                           />
                           <span className="voice-user-name">{name}</span>
                           <GameActivityLine userId={participant.user_id} testid={`voice-activity-${participant.user_id}`} />
+                          {participant.music && (
+                            <NowPlayingLine userId={participant.user_id} name={name} title={participant.music_title} />
+                          )}
                           <span className="voice-user-icons">
                             {/* The server's grace says more than ICE does (and ICE waits for it). */}
                             {mine && !participant.reconnecting && (
@@ -239,6 +247,7 @@ export function Sidebar(props: SidebarProps) {
                                 <ScreenIcon size={13} />
                               </span>
                             )}
+                            {participant.music && <MusicMark />}
                             {participant.afk && (
                               <span className="afk-mark" title="Klavye başında değil (AFK)" data-testid={`afk-${participant.user_id}`}>
                                 AFK
@@ -334,6 +343,7 @@ export function Sidebar(props: SidebarProps) {
           </button>
         </div>
       )}
+      {inVoice && props.musicPanel}
 
       <footer className="user-panel">
         <Avatar id={me.id} name={me.name} size={32} speaking={speaking.has(me.id)} url={me.avatar_url} />
@@ -341,6 +351,7 @@ export function Sidebar(props: SidebarProps) {
           <strong>{me.name}</strong>
           <span>{props.connection === 'open' ? 'Çevrimiçi' : 'Bağlanıyor…'}</span>
         </div>
+        {inVoice && props.musicButton}
         <button
           type="button"
           className={voice.muted || voice.micLost ? 'icon-button off' : 'icon-button'}

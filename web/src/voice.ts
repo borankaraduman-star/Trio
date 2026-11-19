@@ -10,6 +10,10 @@ import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
 // CONTRACT-V6-VOICE: share profiles, "İzlemeyi bırak", AFK.
 import { profileSettings, trackConstraints, type ShareProfile, type ShareQuality } from './lib/shareProfiles'
 import { parseWatch, watchApplies, type WatchSignal } from './lib/watch'
+// CONTRACT-V8-MUSIC: the sound playing on my computer, as a third outgoing stream.
+import { captureMusic, defaultCaptureEnv, type CaptureEnv } from './music/capture'
+import { cleanTitle } from './music/musicPrefs'
+import { midsForStream, MUSIC_MAX_BITRATE, withStereo } from './music/opusStereo'
 
 export interface RemoteMedia {
   userId: number
@@ -83,6 +87,13 @@ export interface VoiceSnapshot {
   /** V6: the input gate after RNNoise, and whether it lets sound through now. */
   gateState: GateState
   gateOpen: boolean
+  /** V8: this tab shares its computer's sound, and the title it announces (null: none). */
+  music: boolean
+  musicTitle: string | null
+  /** V8: a music share is being started (the picker is open). */
+  musicStarting: boolean
+  /** V8: the music of remote peers, by user id; never in `remoteAudio`. */
+  remoteMusic: readonly RemoteMedia[]
 }
 
 /** Shown for `micLost`. */
@@ -110,6 +121,8 @@ export interface VoiceDeps {
   sharePrefs?: () => { shareProfile: ShareProfile; shareQuality: ShareQuality }
   /** V6: the input gate's threshold (peak amplitude) or null for none, read at join. */
   gate?: () => number | null
+  /** V8: where music is captured from (tests may stub it). */
+  captureEnv?: () => CaptureEnv
 }
 
 interface Peer {
@@ -181,6 +194,11 @@ interface Peer {
   shareParamsKey: string
   /** V6: `setParameters` writes, one at a time. */
   shareParamsChain: Promise<void>
+  /** V8: senders of my music track, and the remote peer's music stream. */
+  musicSenders: RTCRtpSender[]
+  music: MediaStream | null
+  /** V8: the music senders' bitrate has been applied (false: retried when stable). */
+  musicParamsSet: boolean
 }
 
 interface Monitor {
@@ -476,6 +494,11 @@ export class VoiceEngine {
   private readonly hiddenScreens = new Map<number, string>()
   private afk = false
 
+  // --- V8: music ----------------------------------------------------------------
+  private musicStream: MediaStream | null = null
+  private musicTitle: string | null = null
+  private musicStarting = false
+
   constructor(private readonly deps: VoiceDeps) {
     const remembered = deps.sharePrefs?.()
     if (remembered) {
@@ -536,6 +559,12 @@ export class VoiceEngine {
       afk: this.afk,
       gateState: this.pipeline?.gateState ?? 'off',
       gateOpen: this.pipeline?.gateOpen ?? true,
+      music: this.musicStream !== null,
+      musicTitle: this.musicStream ? this.musicTitle : null,
+      musicStarting: this.musicStarting,
+      remoteMusic: peers
+        .filter((peer) => peer.music !== null)
+        .map((peer) => ({ userId: peer.id, stream: peer.music as MediaStream })),
     }
   }
 
@@ -747,6 +776,7 @@ export class VoiceEngine {
       screensharing: this.screenStream !== null,
       session: this.session,
       ...(this.afk ? { afk: true } : {}),
+      ...this.musicFields(),
       ...(resume ? { resume: true } : {}),
     })
     this.joinSent = sent
@@ -779,6 +809,9 @@ export class VoiceEngine {
     stopStream(this.micStream)
     stopStream(this.screenStream)
     stopStream(this.cameraStream)
+    stopStream(this.musicStream)
+    this.musicStream = null
+    this.musicTitle = null
     this.micStream = null
     this.screenStream = null
     this.cameraStream = null
@@ -845,7 +878,13 @@ export class VoiceEngine {
       screensharing: this.screenStream !== null,
       camera: this.cameraStream !== null,
       ...(this.afk ? { afk: true } : {}),
+      ...this.musicFields(),
     })
+  }
+
+  /** V8: `music` and `music_title`, only while sharing (an old server ignores them). */
+  private musicFields(): { music?: true; music_title?: string | null } {
+    return this.musicStream ? { music: true, music_title: this.musicTitle } : {}
   }
 
   // --- screen sharing ------------------------------------------------------
@@ -941,6 +980,145 @@ export class VoiceEngine {
     }
     peer.shareParamsKey = ''
     this.applyShareParams(peer)
+  }
+
+  // --- V8: music (CONTRACT-V8-MUSIC) -------------------------------------------
+  //
+  // One audio-only stream beside the microphone, its own sender per peer, never
+  // through the microphone's graph: mute, push-to-talk, noise suppression, the
+  // gate and AFK do not touch it. Starting and stopping it renegotiate through
+  // `onnegotiationneeded`, so through the turn-taking, and stopping stops its
+  // transceivers (stopSenders). Its m-lines carry stereo Opus (opusStereo.ts)
+  // at MUSIC_MAX_BITRATE. Across a signalling drop it is kept like every other
+  // track; a fallback to fresh connections adds it again (ensurePeer) and the
+  // rejoin announces it.
+
+  /** Start or stop the music share. Call it directly from the click (the picker needs it). */
+  async toggleMusic(): Promise<void> {
+    if (this.musicStream) this.stopMusic()
+    else await this.startMusic()
+  }
+
+  async startMusic(): Promise<void> {
+    if (this.status === 'idle' || this.musicStream || this.musicStarting) return
+    const generation = this.generation
+    this.musicStarting = true
+    this.emit()
+    // Nothing is awaited before the capture: it needs the click's activation.
+    const result = await captureMusic(this.deps.captureEnv?.() ?? defaultCaptureEnv())
+    this.musicStarting = false
+    if (!result.ok) {
+      if (result.message !== null && generation === this.generation && !this.isIdle()) this.error = result.message
+      this.emit()
+      return
+    }
+    const stream = result.stream
+    if (generation !== this.generation || this.isIdle() || this.musicStream) {
+      stopStream(stream)
+      this.emit()
+      return
+    }
+    this.musicStream = stream
+    if (result.title !== null && this.musicTitle === null) this.musicTitle = cleanTitle(result.title)
+    for (const track of stream.getAudioTracks()) {
+      // The tab closed, "stop sharing" in the browser's bar, the device went: the share ends.
+      track.onended = () => {
+        if (this.musicStream === stream) this.stopMusic()
+      }
+    }
+    // Which stream is the music goes out BEFORE its track does (CONTRACT-V2 §4).
+    this.sendMetaToAll()
+    for (const peer of this.peers.values()) this.addMusicTracks(peer)
+    this.sendState()
+    this.emit()
+  }
+
+  stopMusic(): void {
+    const stream = this.musicStream
+    if (!stream) return
+    this.musicStream = null
+    this.musicTitle = null
+    for (const peer of this.peers.values()) {
+      stopSenders(peer.pc, peer.musicSenders)
+      peer.musicSenders = []
+      peer.musicParamsSet = false
+    }
+    stopStream(stream)
+    this.sendMetaToAll()
+    this.sendState()
+    this.emit()
+  }
+
+  /** The title announced with the share (null: none). Only kept while sharing. */
+  setMusicTitle(title: string | null): void {
+    const next = this.musicStream ? cleanTitle(title) : null
+    if (next === this.musicTitle) return
+    this.musicTitle = next
+    this.sendState()
+    this.emit()
+  }
+
+  private addMusicTracks(peer: Peer): void {
+    const stream = this.musicStream
+    if (!stream) return
+    for (const track of stream.getAudioTracks()) {
+      if (track.readyState !== 'live') continue
+      try {
+        peer.musicSenders.push(peer.pc.addTrack(track, stream))
+      } catch (error) {
+        console.warn('trio: could not add the music track', error)
+      }
+    }
+    peer.musicParamsSet = false
+    this.applyMusicParams(peer)
+  }
+
+  /** The music senders' bitrate (not in the description: no renegotiation). */
+  private applyMusicParams(peer: Peer): void {
+    if (peer.musicSenders.length === 0 || peer.musicParamsSet) return
+    peer.musicParamsSet = true
+    peer.shareParamsChain = peer.shareParamsChain.then(async () => {
+      if (this.peers.get(peer.id) !== peer) return
+      for (const sender of [...peer.musicSenders]) {
+        try {
+          const params = sender.getParameters()
+          // Before the first negotiation there is no encoding yet: retried when stable.
+          if (!params.encodings || params.encodings.length === 0) {
+            peer.musicParamsSet = false
+            continue
+          }
+          for (const encoding of params.encodings) encoding.maxBitrate = MUSIC_MAX_BITRATE
+          await sender.setParameters(params)
+        } catch (error) {
+          console.warn('trio: could not apply the music bitrate', error)
+          peer.musicParamsSet = false
+        }
+      }
+    })
+  }
+
+  /** The mids whose Opus is made stereo in my descriptions to this peer: music both ways. */
+  private stereoMids(peer: Peer): Set<string> {
+    const mids = new Set<string>(midsForStream(peer.pc.remoteDescription?.sdp, peer.meta.music))
+    const remoteTracks = peer.music?.getTracks() ?? []
+    for (const transceiver of peer.pc.getTransceivers()) {
+      const mid = transceiver.mid
+      if (mid === null || transceiver.currentDirection === 'stopped') continue
+      if (peer.musicSenders.includes(transceiver.sender) || remoteTracks.includes(transceiver.receiver.track)) mids.add(mid)
+    }
+    return mids
+  }
+
+  /** setLocalDescription, with stereo music m-lines when there are any (opusStereo.ts). */
+  private async setLocal(peer: Peer, type: 'offer' | 'answer'): Promise<void> {
+    const { pc } = peer
+    const mids = this.stereoMids(peer)
+    if (mids.size === 0) {
+      await pc.setLocalDescription()
+      return
+    }
+    const description = type === 'offer' ? await pc.createOffer() : await pc.createAnswer()
+    await pc.setLocalDescription({ type, sdp: withStereo(description.sdp ?? '', mids) })
   }
 
   // --- v2: camera ------------------------------------------------------------
@@ -1099,7 +1277,11 @@ export class VoiceEngine {
   // --- v2: stream identity -----------------------------------------------------
 
   private currentMeta(): StreamMeta {
-    return { camera: this.cameraStream?.id ?? null, screen: this.screenStream?.id ?? null }
+    return {
+      camera: this.cameraStream?.id ?? null,
+      screen: this.screenStream?.id ?? null,
+      music: this.musicStream?.id ?? null,
+    }
   }
 
   private sendMeta(peer: Peer): void {
@@ -1465,6 +1647,13 @@ export class VoiceEngine {
           peer.camera = null
           this.emit()
         }
+        // V8: a music share that ended goes away now as well.
+        if (peer?.music && event.music !== true) {
+          peer.retired.add(peer.music.id)
+          peer.streams.delete(peer.music.id)
+          peer.music = null
+          this.emit()
+        }
         if (event.screensharing) return
         if (peer?.video) {
           peer.streams.delete(peer.video.id)
@@ -1572,6 +1761,9 @@ export class VoiceEngine {
       watching: true,
       shareParamsKey: '',
       shareParamsChain: Promise.resolve(),
+      musicSenders: [],
+      music: null,
+      musicParamsSet: false,
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
@@ -1622,6 +1814,7 @@ export class VoiceEngine {
     }
     this.addScreenTracks(peer)
     this.addCameraTracks(peer)
+    this.addMusicTracks(peer)
     this.updateHealth(peer)
     return peer
   }
@@ -1639,8 +1832,8 @@ export class VoiceEngine {
         peer.streams.delete(id)
       }
     }
-    const { audio, screen: video, camera } = classifyStreams(peer.streams.values(), peer.meta)
-    if (audio === peer.audio && video === peer.video && camera === peer.camera) return
+    const { audio, screen: video, camera, music } = classifyStreams(peer.streams.values(), peer.meta)
+    if (audio === peer.audio && video === peer.video && camera === peer.camera && music === peer.music) return
     if (audio !== peer.audio) {
       if (audio) this.watch(peer.id, audio)
       else this.unwatch(peer.id)
@@ -1648,14 +1841,16 @@ export class VoiceEngine {
     peer.audio = audio
     peer.video = video
     peer.camera = camera
+    // V8: music is never watched by the speaking detector (nor AFK, which reads my own microphone).
+    peer.music = music
     this.emit()
   }
 
   /** A `meta` signal, applied in its place in the peer's signal queue. */
   private applyMeta(peer: Peer, meta: StreamMeta): void {
     if (this.peers.get(peer.id) !== peer || sameMeta(peer.meta, meta)) return
-    const named = new Set([meta.camera, meta.screen])
-    for (const id of [peer.meta.camera, peer.meta.screen]) {
+    const named = new Set([meta.camera, meta.screen, meta.music ?? null])
+    for (const id of [peer.meta.camera, peer.meta.screen, peer.meta.music ?? null]) {
       if (id !== null && !named.has(id)) peer.retired.add(id)
     }
     peer.meta = meta
@@ -1714,7 +1909,7 @@ export class VoiceEngine {
     }
     try {
       peer.makingOffer = true
-      await pc.setLocalDescription()
+      await this.setLocal(peer, 'offer')
       if (this.peers.get(peer.id) === peer && pc.localDescription) {
         this.signal(peer.id, { description: pc.localDescription.toJSON() })
       }
@@ -1784,9 +1979,32 @@ export class VoiceEngine {
     }
   }
 
+  /**
+   * V8: a transceiver that neither side sends on any more is stopped, so its
+   * m-line is rejected and then recycled. stopSenders leaves a transceiver
+   * that the OTHER side also sent on (sendrecv) receiving; when the other side
+   * stops too, nothing sends on it and nobody stopped it: every time two people
+   * turned the same kind of media off together, the description kept one more
+   * m-line (measured in e2e 72: +1.2 KB per such music cycle). Stopping is a
+   * negotiation, through `onnegotiationneeded` and so through the turn-taking.
+   */
+  private stopIdleTransceivers(peer: Peer): void {
+    for (const transceiver of peer.pc.getTransceivers()) {
+      if (transceiver.currentDirection !== 'inactive' || transceiver.sender.track !== null) continue
+      if (transceiver.direction === 'stopped' || transceiver.direction === 'sendonly' || transceiver.direction === 'sendrecv') continue
+      try {
+        transceiver.stop()
+      } catch {
+        // Closed meanwhile.
+      }
+    }
+  }
+
   private onStable(peer: Peer): void {
     // V6: a sender's encodings exist once negotiated; apply what could not be applied before.
     if (peer.screenSenders.length > 0 && peer.shareParamsKey === '') this.applyShareParams(peer)
+    if (!peer.musicParamsSet) this.applyMusicParams(peer)
+    this.stopIdleTransceivers(peer)
     if (peer.polite) {
       if (peer.offerWhenStable && !peer.makingOffer) {
         peer.offerWhenStable = false
@@ -1826,7 +2044,7 @@ export class VoiceEngine {
         await pc.setRemoteDescription(description)
         peer.settingRemoteAnswer = false
         if (description.type === 'offer') {
-          await pc.setLocalDescription()
+          await this.setLocal(peer, 'answer')
           if (alive() && pc.localDescription) {
             this.signal(peer.id, { description: pc.localDescription.toJSON() })
           }
@@ -2208,9 +2426,11 @@ export class VoiceEngine {
     peer.audio = null
     peer.video = null
     peer.camera = null
+    peer.music = null
     peer.screenSenders = []
     peer.cameraSenders = []
     peer.micSenders = []
+    peer.musicSenders = []
     this.unwatch(peer.id)
     try {
       pc.close()
