@@ -113,14 +113,17 @@ Chromium 153 facts the specs depend on, measured here:
 | `20-limits` | the per-address and the global join limits worded with `Retry-After` and counted down, 4429 with ten sockets open, the desktop app's join screen |
 | `21-invite-link` | `/#davet=<code>`: only a name to type, the fragment gone at once, the link in Ayarlar › Hesap, a wrong code from a link, the name remembered |
 | `22-identity` | an avatar picked as a 1600 px JPEG with EXIF GPS, cropped in the app, stored as a 256 px WebP with no EXIF and decoded by all three in the member list, on old and new messages and in the voice room (ring around the picture); removed for everyone; HEIC, a text file and broken bytes refused in Turkish; rename live on old messages, `NAME_TAKEN` and `INVALID_NAME` worded as on joining, the left name free again; server name and icon live for all three, after a reload, with the `(n) ` title; the versions footer against `/api/health`; Yenilikler only after an update and held while a dialog is open; the cropper by touch (CDP pinch and drag) and the sections at 390 px |
-| `23-identity-screenshots` | `13-avatars.png`, `14-profile-settings.png`, `14b-avatar-cropper.png` |
+| `23-messages` | CONTRACT-V4 B for all three: edit in place (Enter/Esc, the "(düzenlendi)" mark, up-arrow edits the last message, only the author may edit or delete); delete (gone for everybody, its file 404s, the quota comes back); reactions aggregated and toggled, names in the tooltip, a reaction re-renders only its own row, the 20-key limit as a quiet notice, a reaction far up does not move a reader; a reply's quote for everybody, a jump to an older page, the quote following the target's edit and deletion; pins newest first, jump and unpin, the 50-pin limit; a reconnect in the middle converging; the long-press sheet and picker at 390 px |
+| `24-identity-screenshots` | `13-avatars.png`, `14-profile-settings.png`, `14b-avatar-cropper.png` |
+| `25-message-screenshots` | `11-reactions-reply.png`, `12-pins.png`, `15-mobile-sheet.png` (with the three avatars) |
 
 ## Screenshots
 
 `tests/08-screenshots.spec.ts` writes the release screenshots to
 `e2e/screenshots/` (`01-join.png` … `10-join-with-code.png`, device scale factor 2;
 `09-add-device.png` is a device code in Ayarlar › Hesap, `10-join-with-code.png`
-the join screen's "Zaten hesabım var").
+the join screen's "Zaten hesabım var"); `24-identity-screenshots` writes 13–14b
+and `25-message-screenshots` 11, 12 and 15.
 The chat history is typed through the UI and then re-dated in the SQLite
 file (yesterday evening / the last minutes, Europe/Istanbul) so that a day
 separator appears.

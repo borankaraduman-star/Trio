@@ -262,9 +262,21 @@ test('screenshot 09: adding a device, the code in Ayarlar › Hesap', async ({ b
   await account.getByTestId('settings-add-device').click()
   await expect(account.getByTestId('link-code')).toHaveText(/^\w{5}-\w{5}$/)
   await expect(account.getByTestId('link-code-countdown')).toHaveText(/^(10:00|9:5\d)$/)
-  await account.scrollIntoViewIfNeeded()
-  await page.getByTestId('settings-dialog').evaluate((el) => (el.scrollTop = el.scrollHeight))
-  await expect(account.getByTestId('link-code-card')).toBeInViewport({ ratio: 1 })
+  // Ayarlar › Hesap is taller since v4 (picture and name above "Cihaz ekle"): bring the
+  // card itself to the middle of the dialog's scroller, whatever is above or below it.
+  const card = account.getByTestId('link-code-card')
+  await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+  await expect(card).toBeInViewport({ ratio: 1 })
+  // In the dialog's visible box too (the page viewport alone does not see the dialog's clip).
+  expect(
+    await card.evaluate((el) => {
+      let box = el.parentElement
+      while (box && getComputedStyle(box).overflowY !== 'auto' && getComputedStyle(box).overflowY !== 'scroll') box = box.parentElement
+      const clip = (box ?? document.documentElement).getBoundingClientRect()
+      const rect = el.getBoundingClientRect()
+      return rect.top >= clip.top && rect.bottom <= clip.bottom
+    }),
+  ).toBe(true)
   await shot(page, '09-add-device.png')
 })
 
