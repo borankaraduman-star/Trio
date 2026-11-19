@@ -6,8 +6,12 @@
  */
 import path from 'node:path'
 import { E2E_DIR, freshServer } from '../lib/server'
-import { expect, personViaApi, test, type Person } from '../lib/trio'
-import { barAction, chip, longPress, menuAction, pick, row, send } from '../lib/messages'
+import { expect, personViaApi, personWithSession, test, type Person } from '../lib/trio'
+import { barAction, chip, longPress, menuAction, pick, row as anyRow, send } from '../lib/messages'
+import type { Page } from '@playwright/test'
+
+/** The first row with the text: the original, not a reply quoting it further down. */
+const row = (page: Page, text: string) => anyRow(page, text).first()
 
 const OUT = path.join(E2E_DIR, 'screenshots')
 const DESKTOP = { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 }
@@ -87,10 +91,12 @@ test('screenshot 13: the long-press sheet on a phone', async ({ browser, trio })
   const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
   const ayse = trio.add(await personViaApi(browser, 'Ayşe', DESKTOP))
   const mehmet = trio.add(await personViaApi(browser, 'Mehmet', DESKTOP))
-  const zeynep = trio.add(await personViaApi(browser, 'Zeynep', phone))
+  const zeynep = trio.add(await personViaApi(browser, 'Zeynep', DESKTOP))
   await conversation([ayse, mehmet, zeynep])
+  // Zeynep's phone (the same account).
+  const onPhone = trio.add(await personWithSession(browser, 'Zeynep', { token: zeynep.token, user: zeynep.user }, phone))
 
-  const page = zeynep.page
+  const page = onPhone.page
   const sheet = page.getByTestId('message-menu')
   await longPress(page, row(page, 'yer buldum'), sheet)
   await expect(sheet.getByTestId('menu-reactions')).toContainText('Mehmet ve Zeynep')
