@@ -17,15 +17,19 @@ test.beforeEach(async () => {
 /** Poll the sender towards `viewer` until `check` holds; the last reading. */
 async function settled(sharer: Person, viewer: Person, check: (out: ScreenOut) => boolean, what: string): Promise<ScreenOut> {
   let last: ScreenOut | null = null
-  await expect
-    .poll(
-      async () => {
-        last = await screenOut(sharer, viewer)
-        return check(last)
-      },
-      { timeout: 20_000, message: `${what}: ${JSON.stringify(last)}` },
-    )
-    .toBe(true)
+  try {
+    await expect
+      .poll(
+        async () => {
+          last = await screenOut(sharer, viewer)
+          return check(last)
+        },
+        { timeout: 20_000, message: what },
+      )
+      .toBe(true)
+  } catch (error) {
+    throw new Error(`${what}; last reading ${JSON.stringify(last)}\n${String(error)}`)
+  }
   return last as unknown as ScreenOut
 }
 
@@ -111,6 +115,10 @@ test('share profiles: parameters reach every sender, switching never renegotiate
     (o) => o.maxFramerate[0] === 60 && o.maxBitrate[0] === 3_000_000 && (o.trackSettings?.height ?? 9999) <= 720,
     'Oyun/Orta towards Mehmet (720p cap)',
   )
+  // Metin after Oyun/Orta: the 720p cap is lifted again (the source's full size).
+  await ayse.page.getByTestId('share-profile-text').click()
+  await settled(ayse, mehmet, (o) => o.contentHint === 'detail' && (o.trackSettings?.height ?? 0) >= 1080, 'Metin lifts the cap')
+  await ayse.page.getByTestId('share-profile-game').click()
 
   for (const [i, person] of people.entries()) {
     expect(await negotiationCounts(person.page), `${person.name}: no renegotiation from a profile switch`).toEqual({

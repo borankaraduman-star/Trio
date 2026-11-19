@@ -179,6 +179,8 @@ interface Peer {
   watching: boolean
   /** V6: the sender parameters last applied to the screen senders ('' = not yet). */
   shareParamsKey: string
+  /** V6: `setParameters` writes, one at a time. */
+  shareParamsChain: Promise<void>
 }
 
 interface Monitor {
@@ -1148,25 +1150,39 @@ export class VoiceEngine {
     }
   }
 
-  /** The screen senders' encodings for this peer: the profile, and paused if it does not watch. */
+  /**
+   * The screen senders' encodings for this peer: the profile, and paused if
+   * it does not watch. Writes are queued per peer: a `setParameters` started
+   * while another is in flight on the same sender is refused (its
+   * `getParameters` transaction is stale), which left the older values in
+   * place when two choices came quickly.
+   */
   private applyShareParams(peer: Peer): void {
     if (peer.screenSenders.length === 0) return
-    const settings = profileSettings(this.shareProfile, this.shareQuality)
     const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}`
     if (peer.shareParamsKey === key) return
-    let applied = true
-    for (const sender of peer.screenSenders) {
+    peer.shareParamsKey = key
+    peer.shareParamsChain = peer.shareParamsChain.then(() => this.writeShareParams(peer))
+  }
+
+  private async writeShareParams(peer: Peer): Promise<void> {
+    if (this.peers.get(peer.id) !== peer) return
+    // The values as they are NOW: a later choice queued behind this one finds them too.
+    const settings = profileSettings(this.shareProfile, this.shareQuality)
+    const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}`
+    let complete = true
+    for (const sender of [...peer.screenSenders]) {
       const video = sender.track?.kind === 'video'
       let params: RTCRtpSendParameters
       try {
         params = sender.getParameters()
       } catch {
-        applied = false
+        complete = false
         continue
       }
       // Before the first negotiation there may be no encoding yet: retried when stable.
       if (!params.encodings || params.encodings.length === 0) {
-        applied = false
+        complete = false
         continue
       }
       for (const encoding of params.encodings) {
@@ -1180,12 +1196,14 @@ export class VoiceEngine {
         ;(params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference =
           settings.degradationPreference
       }
-      void sender.setParameters(params).catch((error: unknown) => {
+      try {
+        await sender.setParameters(params)
+      } catch (error) {
         console.warn('trio: could not apply the share parameters', error)
-        if (this.peers.get(peer.id) === peer) peer.shareParamsKey = ''
-      })
+        complete = false
+      }
     }
-    peer.shareParamsKey = applied ? key : ''
+    if (!complete && peer.shareParamsKey === key) peer.shareParamsKey = ''
   }
 
   /** Viewer side: stop or start watching `userId`'s shared screen (local, and told to them). */
@@ -1553,6 +1571,7 @@ export class VoiceEngine {
       awaitTimer: null,
       watching: true,
       shareParamsKey: '',
+      shareParamsChain: Promise.resolve(),
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
