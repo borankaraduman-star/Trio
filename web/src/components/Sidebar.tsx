@@ -20,6 +20,7 @@ import { EmptyState } from './EmptyState'
 import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
 import { heldCameraTitle, RingButton, TurnHint, type RingButtonProps } from './VoiceExtras'
 import { GameActivityLine } from './GameActivity'
+import { BackupDot } from './owner/BackupDot'
 
 export interface SidebarProps {
   open: boolean
@@ -374,6 +375,7 @@ export function Sidebar(props: SidebarProps) {
             onClick={props.onOpenSettings}
           >
             <SettingsIcon />
+            <BackupDot />
           </button>
         )}
         <button

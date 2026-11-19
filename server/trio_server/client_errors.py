@@ -33,7 +33,11 @@ LIST_LIMIT = 50
 MAX_VERSIONS = 5
 LIMITS = {"message": 500, "stack": 2048, "version": 40, "build": 40, "context": 120, "browser": 40}
 
-_URL_TAIL = re.compile(r"((?:https?|wss?|blob):[^\s?#()'\"]*)[?#][^\s()'\"]*", re.IGNORECASE)
+# The query/fragment of a URL, up to a stack frame's ":line:col" (kept) or the URL's end.
+_URL_TAIL = re.compile(
+    r"((?:https?|wss?|blob):[^\s?#()'\"]*)[?#][^\s()'\"]*?(?=(?::\d+){1,2}(?=[\s)'\"]|$)|[\s()'\"]|$)",
+    re.IGNORECASE,
+)
 _SECRET = re.compile(r"((?:token|ticket|code|key|password)=)[^&\s\"']+", re.IGNORECASE)
 _FRAME = re.compile(r"^\s*(at\s|\S*@\S)")
 

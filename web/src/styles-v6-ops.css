@@ -1,0 +1,471 @@
+/* CONTRACT-V6-OPS: Ayarlar › Depolama and › Yönetim, the tombstone of a deleted
+   file, the backup dot on the settings button. Colours from design/palette.md
+   via theme.css's variables; this file is loaded before theme.css. */
+
+/* --- the tombstone in a message ------------------------------------------------ */
+
+.attachment-deleted {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px dashed var(--trio-border, #2b303a);
+  border-radius: 8px;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.attachment-deleted svg {
+  flex: none;
+  opacity: 0.6;
+}
+
+.attachment-deleted > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-deleted-name {
+  font-style: normal;
+  opacity: 0.75;
+}
+
+/* --- the dot on the settings button --------------------------------------------- */
+
+[data-testid='btn-settings'] {
+  position: relative;
+}
+
+.ops-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--trio-danger, #e4777f);
+  box-shadow: 0 0 0 2px var(--trio-side, #171a20);
+  pointer-events: none;
+}
+
+/* --- shared pieces ---------------------------------------------------------------- */
+
+.ops-section h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-strong, #f2f1ed);
+}
+
+.ops-error {
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--trio-danger, #e4777f);
+}
+
+.ops-ok {
+  margin: 6px 0;
+  font-size: 13px;
+  color: var(--trio-online, #69b9aa);
+}
+
+.ops-warn {
+  color: var(--trio-danger, #e4777f);
+}
+
+.ops-bar {
+  position: relative;
+  height: 8px;
+  margin: 6px 0 10px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--trio-raised, #232730);
+}
+
+.ops-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--trio-online, #69b9aa);
+  transition: width 0.25s ease;
+}
+
+.ops-bar.mid > span {
+  background: var(--trio-coral, #ee997f);
+}
+
+.ops-bar.high > span {
+  background: var(--trio-danger, #e4777f);
+}
+
+.ops-usage {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong, #f2f1ed);
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-usage .settings-hint {
+  margin: 0;
+}
+
+/* --- Depolama: my files --------------------------------------------------------------- */
+
+.ops-files {
+  list-style: none;
+  margin: 4px 0 10px;
+  padding: 0;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: var(--radius, 10px);
+}
+
+.ops-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  min-height: 48px;
+}
+
+.ops-file + .ops-file {
+  border-top: 1px solid var(--trio-border, #2b303a);
+}
+
+.ops-file-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ops-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #e6e5e0);
+  font-size: 14px;
+}
+
+.ops-file-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted, #a0a6b2);
+}
+
+.ops-file-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.ops-file .ghost,
+.ops-file .danger {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+
+.ops-people-usage {
+  margin-top: 12px;
+}
+
+.ops-people-usage ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.ops-people-usage li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 10px;
+  align-items: baseline;
+}
+
+.ops-people-usage li .settings-hint {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-people-usage li .ops-bar {
+  grid-column: 1 / -1;
+  margin: 4px 0 10px;
+  height: 6px;
+}
+
+/* --- Yönetim: cards ------------------------------------------------------------------- */
+
+.ops-grid {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.ops-card {
+  padding: 12px 14px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: var(--radius, 10px);
+  background: var(--trio-base, #111318);
+}
+
+.ops-card p {
+  margin: 6px 0;
+}
+
+.ops-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ops-card-head .settings-hint {
+  margin: 0;
+}
+
+.ops-card-tools {
+  display: flex;
+  gap: 6px;
+}
+
+.ops-card-tools .ghost {
+  padding: 4px 10px;
+  min-height: 32px;
+}
+
+.ops-backup {
+  border-color: rgb(238 153 127 / 35%);
+}
+
+.ops-backup.stale {
+  border-color: rgb(228 119 127 / 55%);
+}
+
+.ops-backup .primary {
+  width: 100%;
+  min-height: 44px;
+  margin: 6px 0;
+}
+
+.ops-progress .ops-bar {
+  margin-bottom: 2px;
+}
+
+.ops-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.ops-facts dt {
+  color: var(--text-muted, #a0a6b2);
+}
+
+.ops-facts dd {
+  margin: 0;
+  text-align: right;
+  color: var(--text, #e6e5e0);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ops-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ops-person {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 0;
+}
+
+.ops-person + .ops-person {
+  border-top: 1px solid var(--trio-border, #2b303a);
+}
+
+.ops-person > .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.ops-person-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ops-person-text .settings-hint {
+  margin: 0;
+}
+
+.ops-person-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text-strong, #f2f1ed);
+  overflow-wrap: anywhere;
+}
+
+.ops-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--trio-pill, #5e3d37);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ops-person-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ops-person-actions .ghost {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.ops-link-code {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--trio-raised, #232730);
+}
+
+.ops-link-code .settings-hint {
+  margin: 0 0 4px;
+}
+
+.ops-link-code code {
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  color: var(--trio-coral, #ee997f);
+  user-select: all;
+}
+
+.ops-errors ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ops-error-row + .ops-error-row {
+  border-top: 1px solid var(--trio-border, #2b303a);
+}
+
+.ops-error-row summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ops-error-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.ops-error-message {
+  font-size: 13px;
+  color: var(--text, #e6e5e0);
+  overflow-wrap: anywhere;
+}
+
+.ops-error-row summary .settings-hint {
+  margin: 0;
+}
+
+.ops-stack {
+  max-height: 200px;
+  margin: 0 0 8px;
+  padding: 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--trio-raised, #232730);
+  color: var(--text-muted, #a0a6b2);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- the confirm-code dialog ----------------------------------------------------------- */
+
+.ops-confirm-backdrop {
+  z-index: 60;
+}
+
+.ops-confirm {
+  width: min(400px, 100%);
+  padding: 20px;
+}
+
+.ops-confirm h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: var(--text-strong, #f2f1ed);
+}
+
+.ops-confirm-label {
+  display: block;
+  margin: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ops-confirm input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--trio-border, #2b303a);
+  background: var(--trio-base, #111318);
+  color: var(--text-strong, #f2f1ed);
+  font-size: 16px; /* 16px: iOS does not zoom into the field */
+}
+
+.ops-confirm input:focus {
+  outline: none;
+  border-color: var(--trio-coral, #ee997f);
+}
+
+.ops-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.ops-confirm-actions button {
+  min-height: 40px;
+  padding: 8px 16px;
+}
+
+@media (max-width: 480px) {
+  .ops-confirm-actions button {
+    flex: 1;
+  }
+}
