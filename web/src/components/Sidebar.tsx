@@ -17,6 +17,7 @@ import {
 import { CameraIcon, SettingsIcon } from './icons2'
 import { ServerMark } from './ServerMark'
 import { EmptyState } from './EmptyState'
+import { GameActivityLine } from './GameActivity'
 
 export interface SidebarProps {
   open: boolean
@@ -215,6 +216,7 @@ export function Sidebar(props: SidebarProps) {
                             speaking={speaking.has(participant.user_id)}
                           />
                           <span className="voice-user-name">{name}</span>
+                          <GameActivityLine userId={participant.user_id} testid={`voice-activity-${participant.user_id}`} />
                           <span className="voice-user-icons">
                             {participant.camera && (
                               <span className="badge-live" title="Kamerası açık">

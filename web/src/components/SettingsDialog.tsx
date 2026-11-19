@@ -8,6 +8,7 @@ import { CloseIcon } from './icons2'
 import { AccountSection, type AccountProps } from './AccountSection'
 import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
+import { GameShareSetting } from './GameActivity'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -299,6 +300,7 @@ export function SettingsDialog({
           )}
         </section>
 
+        <GameShareSetting />
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
         {serverSettings && <ServerSection settings={serverSettings} />}
         {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}

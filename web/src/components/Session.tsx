@@ -19,7 +19,7 @@ import {
   voiceChannelOf,
   type UiMessage,
 } from '../store'
-import type { ChannelKind, ServerEvent } from '../types'
+import type { ChannelKind, ClientEvent, ServerEvent } from '../types'
 import { VoiceEngine } from '../voice'
 import { Composer } from './Composer'
 import { HashIcon, MenuIcon } from './icons'
@@ -44,6 +44,7 @@ import { LogoutDialog } from './LogoutDialog'
 import { WhatsNewCard } from './WhatsNewCard'
 import { useIdentity } from '../useIdentity'
 import { pageTitle } from '../lib/title'
+import { activityStore, GameForwarder, gameShare, gameStatusBridge } from '../gameActivity'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -88,6 +89,16 @@ export function Session({
   const identity = useIdentity({ token, me: state.me, server: state.server, ready: state.ready, dispatch, onLogout })
 
   const [socket] = useState(() => new TrioSocket(token))
+  // CONTRACT-V5: the desktop app's game status, forwarded over this socket.
+  const [gameForwarder] = useState(
+    () =>
+      new GameForwarder(
+        (frame) => socket.send(frame as unknown as ClientEvent),
+        gameStatusBridge(),
+        gameShare,
+        () => stateRef.current.me.id,
+      ),
+  )
   const [engine] = useState(
     () =>
       new VoiceEngine({
@@ -253,6 +264,8 @@ export function Session({
     const onEvent = (event: ServerEvent) => {
       const before = stateRef.current
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
+      activityStore.handleEvent(event as unknown as { type: string } & Record<string, unknown>)
+      if (event.type === 'ready') gameForwarder.onReady()
       engine.handleEvent(event)
       if (event.type === 'message.new' && event.nonce !== undefined) sendTimers.clear(event.nonce)
 
@@ -323,18 +336,21 @@ export function Session({
       onTooMany: (streak) => setTooMany(streak > 0),
     }
     socket.connect()
+    gameForwarder.start()
 
     api.me(token).catch((error: unknown) => {
       if (error instanceof ApiError && error.status === 401) onLogout()
     })
 
     return () => {
+      gameForwarder.stop()
+      activityStore.reset()
       socket.handlers = {}
       socket.close()
       engine.destroy()
       sendTimers.clearAll()
     }
-  }, [socket, engine, sendTimers, token, onLogout, loadLatest, probeUnread])
+  }, [socket, engine, sendTimers, token, onLogout, loadLatest, probeUnread, gameForwarder])
 
   // --- effects that follow the state ---------------------------------------------
 

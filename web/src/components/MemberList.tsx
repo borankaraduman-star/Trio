@@ -1,5 +1,6 @@
 import type { Member } from '../types'
 import { Avatar } from './Avatar'
+import { GameActivityLine } from './GameActivity'
 
 function byName(a: Member, b: Member): number {
   return a.name.localeCompare(b.name, 'tr')
@@ -32,6 +33,7 @@ export function MemberList({ users }: { users: Record<number, Member> }) {
                 />
               </span>
               <span className="member-name">{member.name}</span>
+              <GameActivityLine userId={member.id} testid={`member-activity-${member.id}`} />
             </li>
           ))}
         </ul>
