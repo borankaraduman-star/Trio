@@ -57,6 +57,11 @@ at once (the client does not forbid it; the UI shows each).
   `autoGainControl: false`, stereo. The music never passes through RNNoise,
   the input gate, mute, push-to-talk or AFK: muting the microphone does not
   stop the music; "Müziği durdur" does. Hanging up stops it.
+  As built: a signalling drop (CONTRACT-V4 A) KEEPS the share — the call's
+  connections and their music senders stay, and the resume's `voice.join`
+  carries `music`/`music_title` again; after the 30 s fallback to fresh
+  connections the share is added to the new ones and announced on the rejoin
+  (e2e 74 checks the drop: same connection, still stereo, title kept).
 - Sent as Opus music: stereo, a target of ~128 kbit/s.
 
   **Measured (web part, 19 Nov 2026, Chromium 153 of the e2e suite)** with a
