@@ -503,6 +503,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           screensharing: event.screensharing,
           ...cameraFlag(event),
           ...reconnectingFlag(event),
+          ...(event.afk === true ? { afk: true } : {}),
         },
       ]
       return { ...state, voice }
@@ -536,6 +537,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
                   screensharing: event.screensharing,
                   ...cameraFlag(event),
                   ...reconnectingFlag(event),
+                  ...(event.afk === true ? { afk: true } : {}),
                 }
               : participant,
           ),

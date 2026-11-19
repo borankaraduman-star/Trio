@@ -77,6 +77,8 @@ export interface VoiceParticipant {
    * 10 s grace before `voice.left`. Missing (older servers) = false.
    */
   reconnecting?: boolean
+  /** V6: away (auto-AFK). Missing (older servers) = false. */
+  afk?: boolean
 }
 
 /** v2: which of a peer's outgoing streams is the camera and which the screen. */
@@ -158,6 +160,8 @@ export type ClientEvent =
       resume?: boolean
       /** V4 A1: this call's random id, repeated on every resume. */
       session?: string
+      /** V6 */
+      afk?: boolean
     }
   | { type: 'voice.leave' }
   | { type: 'voice.ring'; channel_id: number }
@@ -167,6 +171,8 @@ export type ClientEvent =
       deafened: boolean
       screensharing: boolean
       camera?: boolean
+      /** V6 */
+      afk?: boolean
     }
-  | { type: 'signal'; to: number; data: SignalData | { meta: StreamMeta } }
+  | { type: 'signal'; to: number; data: SignalData | { meta: StreamMeta } | { watch: { stream: string; on: boolean } } }
   | { type: 'ping' }

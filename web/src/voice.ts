@@ -7,6 +7,9 @@ import { HeldActions } from './lib/heldActions'
 import { classifyStreams, EMPTY_META, parseMeta, sameMeta } from './lib/streamMeta'
 import { planResume, resumeDecision } from './lib/voiceResume'
 import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
+// CONTRACT-V6-VOICE: share profiles, "İzlemeyi bırak", AFK.
+import { profileSettings, trackConstraints, type ShareProfile, type ShareQuality } from './lib/shareProfiles'
+import { parseWatch, watchApplies, type WatchSignal } from './lib/watch'
 
 export interface RemoteMedia {
   userId: number
@@ -68,6 +71,15 @@ export interface VoiceSnapshot {
   heldCamera: boolean | null
   /** V4 A3: the ICE list has a TURN server (null before it was loaded). */
   turnConfigured: boolean | null
+  /** V6: the profile and quality my screen share uses. */
+  shareProfile: ShareProfile
+  shareQuality: ShareQuality
+  /** V6: while I share, the peers that watch it (the others told me they stopped). */
+  screenWatchers: readonly number[]
+  /** V6: remote screens I chose not to watch, by user id (the share's stream id). */
+  hiddenScreens: Readonly<Record<number, string>>
+  /** V6: I am away (auto-AFK), announced as `afk` on voice.state. */
+  afk: boolean
 }
 
 /** Shown for `micLost`. */
@@ -91,6 +103,8 @@ export interface VoiceDeps {
   prefs?: () => VoiceMediaPrefs
   /** v2: creates the RNNoise node (lazy import by default; tests may stub it). */
   createNoiseNode?: (context: AudioContext) => Promise<AudioNode>
+  /** V6: the remembered share profile and quality, read when a share starts. */
+  sharePrefs?: () => { shareProfile: ShareProfile; shareQuality: ShareQuality }
 }
 
 interface Peer {
@@ -156,6 +170,10 @@ interface Peer {
   recoverWanted: boolean
   /** V4 A1: kept across a resume but not listed by the server: closed if it does not come back. */
   awaitTimer: ReturnType<typeof setTimeout> | null
+  /** V6: this peer watches my screen share (it said `watch on:false` otherwise). */
+  watching: boolean
+  /** V6: the sender parameters last applied to the screen senders ('' = not yet). */
+  shareParamsKey: string
 }
 
 interface Monitor {
@@ -300,6 +318,7 @@ function parseReset(data: unknown): number | 'request' | null {
 type WireSignal =
   | SignalData
   | { meta: StreamMeta }
+  | { watch: WatchSignal }
   | { reset: number | 'request'; why?: ResetReason }
 
 /**
@@ -443,7 +462,19 @@ export class VoiceEngine {
   private speaking = new Set<number>()
   private speakingTimer: ReturnType<typeof setInterval> | null = null
 
+  // --- V6 ---------------------------------------------------------------------
+  private shareProfile: ShareProfile = 'film'
+  private shareQuality: ShareQuality = 'mid'
+  /** Remote screens I do not watch: user id -> the share's stream id. */
+  private readonly hiddenScreens = new Map<number, string>()
+  private afk = false
+
   constructor(private readonly deps: VoiceDeps) {
+    const remembered = deps.sharePrefs?.()
+    if (remembered) {
+      this.shareProfile = remembered.shareProfile
+      this.shareQuality = remembered.shareQuality
+    }
     this.snapshot = this.buildSnapshot()
   }
 
@@ -491,6 +522,11 @@ export class VoiceEngine {
       signalling: this.signallingDown || this.resuming ? 'down' : 'up',
       heldCamera: this.heldCamera,
       turnConfigured: this.iceLoaded ? hasTurnServer(this.iceServers) : null,
+      shareProfile: this.shareProfile,
+      shareQuality: this.shareQuality,
+      screenWatchers: this.screenStream ? peers.filter((peer) => peer.watching).map((peer) => peer.id) : [],
+      hiddenScreens: Object.fromEntries(this.hiddenScreens),
+      afk: this.afk,
     }
   }
 
@@ -698,6 +734,7 @@ export class VoiceEngine {
       camera: this.cameraStream !== null,
       screensharing: this.screenStream !== null,
       session: this.session,
+      ...(this.afk ? { afk: true } : {}),
       ...(resume ? { resume: true } : {}),
     })
     this.joinSent = sent
@@ -740,6 +777,8 @@ export class VoiceEngine {
     this.endSignallingDown()
     this.held.clear()
     this.heldCamera = null
+    this.hiddenScreens.clear()
+    this.afk = false
   }
 
   // --- local controls ------------------------------------------------------
@@ -793,6 +832,7 @@ export class VoiceEngine {
       deafened: this.deafened,
       screensharing: this.screenStream !== null,
       camera: this.cameraStream !== null,
+      ...(this.afk ? { afk: true } : {}),
     })
   }
 
@@ -832,7 +872,18 @@ export class VoiceEngine {
       return
     }
 
+    // V6: the profile shapes the capture before anybody gets it (no renegotiation).
+    await this.applyShareTrack(stream)
+    if (generation !== this.generation || this.isIdle() || this.screenStream) {
+      stopStream(stream)
+      return
+    }
     this.screenStream = stream
+    // A new share: everybody watches it until they say otherwise.
+    for (const peer of this.peers.values()) {
+      peer.watching = true
+      peer.shareParamsKey = ''
+    }
     for (const track of stream.getTracks()) {
       // The browser's own "stop sharing" bar ends the track.
       track.onended = () => {
@@ -876,6 +927,8 @@ export class VoiceEngine {
         console.warn('trio: could not add screen track', error)
       }
     }
+    peer.shareParamsKey = ''
+    this.applyShareParams(peer)
   }
 
   // --- v2: camera ------------------------------------------------------------
@@ -1043,6 +1096,157 @@ export class VoiceEngine {
 
   private sendMetaToAll(): void {
     for (const peer of this.peers.values()) this.sendMeta(peer)
+  }
+
+  // --- V6: share profiles, "İzlemeyi bırak", AFK (CONTRACT-V6-VOICE) ------------
+  //
+  // None of this renegotiates: the profile acts on the captured track
+  // (`contentHint`, `applyConstraints`) and on each screen sender's encoding
+  // (`setParameters`: max bitrate and frame rate, degradation preference, and
+  // `active` for a peer that does not watch). Parameters are not part of the
+  // session description, so no `negotiationneeded` fires.
+
+  /** Choose the profile and quality; applied at once to a share in progress. */
+  async setShareProfile(profile: ShareProfile, quality: ShareQuality): Promise<void> {
+    if (profile === this.shareProfile && quality === this.shareQuality) return
+    this.shareProfile = profile
+    this.shareQuality = quality
+    this.emit()
+    const stream = this.screenStream
+    if (!stream) return
+    await this.applyShareTrack(stream)
+    if (this.screenStream !== stream) return
+    for (const peer of this.peers.values()) {
+      peer.shareParamsKey = ''
+      this.applyShareParams(peer)
+    }
+  }
+
+  private async applyShareTrack(stream: MediaStream): Promise<void> {
+    const settings = profileSettings(this.shareProfile, this.shareQuality)
+    for (const track of stream.getVideoTracks()) {
+      try {
+        track.contentHint = settings.contentHint
+      } catch {
+        // Not supported: the encoder's own default.
+      }
+      try {
+        await track.applyConstraints(trackConstraints(settings))
+      } catch (error) {
+        console.warn('trio: the share profile could not shape the capture', error)
+      }
+    }
+  }
+
+  /** The screen senders' encodings for this peer: the profile, and paused if it does not watch. */
+  private applyShareParams(peer: Peer): void {
+    if (peer.screenSenders.length === 0) return
+    const settings = profileSettings(this.shareProfile, this.shareQuality)
+    const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}`
+    if (peer.shareParamsKey === key) return
+    let applied = true
+    for (const sender of peer.screenSenders) {
+      const video = sender.track?.kind === 'video'
+      let params: RTCRtpSendParameters
+      try {
+        params = sender.getParameters()
+      } catch {
+        applied = false
+        continue
+      }
+      // Before the first negotiation there may be no encoding yet: retried when stable.
+      if (!params.encodings || params.encodings.length === 0) {
+        applied = false
+        continue
+      }
+      for (const encoding of params.encodings) {
+        encoding.active = peer.watching
+        if (video) {
+          encoding.maxBitrate = settings.maxBitrate
+          encoding.maxFramerate = settings.maxFramerate
+        }
+      }
+      if (video) {
+        ;(params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference =
+          settings.degradationPreference
+      }
+      void sender.setParameters(params).catch((error: unknown) => {
+        console.warn('trio: could not apply the share parameters', error)
+        if (this.peers.get(peer.id) === peer) peer.shareParamsKey = ''
+      })
+    }
+    peer.shareParamsKey = applied ? key : ''
+  }
+
+  /** Viewer side: stop or start watching `userId`'s shared screen (local, and told to them). */
+  setWatching(userId: number, on: boolean): void {
+    const peer = this.peers.get(userId)
+    const stream = peer?.meta.screen ?? this.hiddenScreens.get(userId) ?? 'screen'
+    if (on) {
+      if (!this.hiddenScreens.delete(userId)) return
+    } else {
+      if (this.hiddenScreens.get(userId) === stream) return
+      this.hiddenScreens.set(userId, stream)
+    }
+    if (peer) this.signal(userId, { watch: { stream, on } })
+    this.emit()
+  }
+
+  /** Sharer side: a peer's `watch`, applied in its place in the peer's signal queue. */
+  private applyWatch(peer: Peer, watch: WatchSignal): void {
+    if (this.peers.get(peer.id) !== peer) return
+    if (!watchApplies(watch, this.screenStream?.id ?? null)) return
+    if (peer.watching === watch.on) return
+    peer.watching = watch.on
+    this.applyShareParams(peer)
+    this.emit()
+  }
+
+  /**
+   * Viewer side, on the sharer's `meta`: a new share (another stream id) is
+   * watched again; the same share on a fresh connection is told "off" again.
+   */
+  private syncHidden(peer: Peer): void {
+    const hidden = this.hiddenScreens.get(peer.id)
+    if (hidden === undefined) return
+    const current = peer.meta.screen
+    if (current === null || (hidden !== 'screen' && hidden !== current)) {
+      this.hiddenScreens.delete(peer.id)
+      this.emit()
+      return
+    }
+    if (hidden === 'screen') this.hiddenScreens.set(peer.id, current)
+    this.signal(peer.id, { watch: { stream: current, on: false } })
+  }
+
+  /** Announce (or end) AFK on `voice.state`. */
+  setAfk(afk: boolean): void {
+    if (afk === this.afk || this.status === 'idle') return
+    this.afk = afk
+    this.sendState()
+    this.emit()
+  }
+
+  /** Per peer while sharing: whether it watches, and its sender's bandwidth estimate (bps). */
+  async shareStats(): Promise<{ userId: number; watching: boolean; available: number | null }[]> {
+    const result: { userId: number; watching: boolean; available: number | null }[] = []
+    for (const peer of [...this.peers.values()].sort((a, b) => a.id - b.id)) {
+      let available: number | null = null
+      try {
+        const report = await peer.pc.getStats()
+        const byId = new Map<string, Record<string, unknown>>()
+        report.forEach((entry: Record<string, unknown>) => byId.set(String(entry.id), entry))
+        for (const entry of byId.values()) {
+          if (entry.type !== 'transport' || typeof entry.selectedCandidatePairId !== 'string') continue
+          const pair = byId.get(entry.selectedCandidatePairId)
+          if (typeof pair?.availableOutgoingBitrate === 'number') available = pair.availableOutgoingBitrate
+        }
+      } catch {
+        // Closed meanwhile.
+      }
+      result.push({ userId: peer.id, watching: peer.watching, available })
+    }
+    return result
   }
 
   // --- v2: microphone settings and push-to-talk ----------------------------------
@@ -1241,6 +1445,13 @@ export class VoiceEngine {
         }
         // A signal of an earlier connection of this pair: it has nowhere to go.
         if (signalEpoch(event.data) !== (this.pairEpochs.get(event.from) ?? 0)) return
+        // V6: "İzlemeyi bırak" / "İzle", in the same per-peer queue as the rest.
+        const watch = parseWatch(event.data)
+        if (watch) {
+          const watcher = this.peers.get(event.from)
+          if (watcher) watcher.signals = watcher.signals.then(() => this.applyWatch(watcher, watch))
+          return
+        }
         const meta = parseMeta(event.data)
         const data = meta ? null : parseSignal(event.data)
         if (!meta && !data) return
@@ -1320,6 +1531,8 @@ export class VoiceEngine {
       negotiationWanted: false,
       recoverWanted: false,
       awaitTimer: null,
+      watching: true,
+      shareParamsKey: '',
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
@@ -1408,6 +1621,7 @@ export class VoiceEngine {
     }
     peer.meta = meta
     this.classifyStreams(peer)
+    this.syncHidden(peer)
   }
 
   // --- turn-taking --------------------------------------------------------
@@ -1532,6 +1746,8 @@ export class VoiceEngine {
   }
 
   private onStable(peer: Peer): void {
+    // V6: a sender's encodings exist once negotiated; apply what could not be applied before.
+    if (peer.screenSenders.length > 0 && peer.shareParamsKey === '') this.applyShareParams(peer)
     if (peer.polite) {
       if (peer.offerWhenStable && !peer.makingOffer) {
         peer.offerWhenStable = false
