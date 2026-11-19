@@ -11,10 +11,14 @@
  * `onGameStatus(cb) → unsubscribe`; the first subscriber starts detection in
  * the main process, the last one leaving stops it.
  *
+ * CONTRACT-V8-MUSIC §5: `musicCaptureSupport()`, `prepareMusicCapture()`,
+ * `setNowPlayingWatch(on)` and `onNowPlaying(cb) → unsubscribe`.
+ *
  * On the app's own connect page it exposes `window.trioConnect` instead. The
  * main process checks the sender's origin on every message regardless.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import type { MusicSupport, NowPlaying, PrepareResult, TrioDesktopMusicBridge } from "../shared/bridge";
 
 const LOCAL_PROTOCOL = "trio-app:";
 
@@ -42,6 +46,28 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
   });
 } else {
   let gameListeners = 0;
+  // CONTRACT-V8-MUSIC §5: sharing the computer's sound without Trio's own.
+  const music: TrioDesktopMusicBridge = {
+    musicCaptureSupport(): Promise<MusicSupport | null> {
+      return ipcRenderer.invoke("trio:music-support") as Promise<MusicSupport | null>;
+    },
+    prepareMusicCapture(): Promise<PrepareResult | null> {
+      return ipcRenderer.invoke("trio:music-prepare") as Promise<PrepareResult | null>;
+    },
+    setNowPlayingWatch(on: boolean): void {
+      ipcRenderer.send("trio:now-playing-watch", on === true);
+    },
+    onNowPlaying(cb: (info: NowPlaying | null) => void): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      const listener = (_event: IpcRendererEvent, info: unknown): void => {
+        cb((info as NowPlaying | null) ?? null);
+      };
+      ipcRenderer.on("trio:now-playing", listener);
+      return () => {
+        ipcRenderer.removeListener("trio:now-playing", listener);
+      };
+    },
+  };
   contextBridge.exposeInMainWorld("trioDesktop", {
     isDesktop: true,
     // CONTRACT-V6-VOICE "Desktop version": absent (undefined) only if argv lacked it.
@@ -86,6 +112,7 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
     getSystemIdleTime(): Promise<number | null> {
       return ipcRenderer.invoke("trio:system-idle") as Promise<number | null>;
     },
+    ...music,
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {
       if (typeof cb !== "function") return () => undefined;
