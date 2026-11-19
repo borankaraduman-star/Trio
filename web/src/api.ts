@@ -24,7 +24,7 @@ interface RequestOptions {
   empty?: boolean
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return (await requestWithHeaders<T>(path, options)).payload
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialState, reducer, type AppState } from '../store'
 import type { Message, ServerEvent } from '../types'
-import { DEFAULT_SERVER, normalizeUser, resolveAuthor, serverProfile } from '../lib/identity'
+import { DEFAULT_SERVER, namesSignature, normalizeUser, resolveAuthor, serverProfile, stablePeople } from '../lib/identity'
 
 const ME = { id: 1, name: 'Ada', avatar_url: null }
 const BORA = { id: 2, name: 'Bora', avatar_url: '/api/avatars/2/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.webp' }
@@ -117,5 +117,41 @@ describe('wire helpers', () => {
   it('normalizeUser leaves a v3 user unchanged', () => {
     const user = { id: 1, name: 'Ada' }
     expect(normalizeUser(user)).toBe(user)
+  })
+})
+
+describe('stablePeople and namesSignature (memoised message rows)', () => {
+  const members = { 1: { ...ME, online: true }, 2: { ...BORA, online: false } }
+
+  it('gives back the same map when only presence changed', () => {
+    const first = stablePeople({}, members)
+    expect(first[2]).toEqual({ id: 2, name: 'Bora', avatar_url: BORA.avatar_url })
+    const again = stablePeople(first, { ...members, 2: { ...BORA, online: true } })
+    expect(again).toBe(first)
+  })
+
+  it('a rename is a new map in which only that person is a new object', () => {
+    const first = stablePeople({}, members)
+    const renamed = stablePeople(first, { ...members, 2: { ...BORA, name: 'Boracık', online: false } })
+    expect(renamed).not.toBe(first)
+    expect(renamed[1]).toBe(first[1])
+    expect(renamed[2].name).toBe('Boracık')
+  })
+
+  it('a new avatar and a member leaving are changes too', () => {
+    const first = stablePeople({}, members)
+    expect(stablePeople(first, { ...members, 1: { ...ME, avatar_url: '/api/avatars/1/bb.png', online: true } })[1]).not.toBe(first[1])
+    const left = stablePeople(first, { 1: members[1] })
+    expect(left).not.toBe(first)
+    expect(left[2]).toBeUndefined()
+  })
+
+  it('the signature changes exactly when a shown name changes', () => {
+    const first = stablePeople({}, members)
+    const renamed = stablePeople(first, { ...members, 2: { ...BORA, name: 'Boracık', online: false } })
+    expect(namesSignature([1], renamed)).toBe(namesSignature([1], first))
+    expect(namesSignature([1, 2], renamed)).not.toBe(namesSignature([1, 2], first))
+    // A former member (not in the map) has a stable, empty entry.
+    expect(namesSignature([9], first)).toBe(namesSignature([9], renamed))
   })
 })

@@ -122,13 +122,17 @@ Chromium 153 facts the specs depend on, measured here:
 | `29-ring` | V4 A4: Çağır, the band, ringtone and notification (asserted on the WebAudio graph and a stand-in Notification), Katıl, "rahatsız etme", the ringer leaving, the server's 30 s limit, not to those already in the room; cue sounds for mute/deafen/join/leave, deafened and switched off; 390 px |
 | `30-connection-test` | V4 A3: Ayarlar › Bağlantı testi with no TURN (`yapılandırılmamış`, the voice panel hint) and with a TURN entry that answers nothing (`yok veya ulaşılamıyor`), per-peer path and RTT, the microphone meter, the copied report has no token/IP/ids; 390 px. "TURN çalışıyor" needs a real TURN server: not verified here |
 | `31-voice-ui-screenshots` | the voice review's peer-health dot, lost-microphone notice and "Ekran sesini de paylaş", and the V4 settings sections, with the theme at desktop and 390 px (screenshots; no overflow) |
+| `32-messages` | CONTRACT-V4 B for all three: edit in place (Enter/Esc, the "(düzenlendi)" mark, up-arrow edits the last message, only the author may edit or delete); delete (gone for everybody, its file 404s, the quota comes back); reactions aggregated and toggled, names in the tooltip, a reaction re-renders only its own row, the 20-key limit as a quiet notice, a reaction far up does not move a reader; a reply's quote for everybody, a jump to an older page, the quote following the target's edit and deletion; pins newest first, jump and unpin, the 50-pin limit; a reconnect in the middle converging; the long-press sheet and picker at 390 px |
+| `33-message-screenshots` | `11-reactions-reply.png`, `12-pins.png`, `15-mobile-sheet.png` (with the three avatars) |
+| `34-scroll-anchor` | a scroll followed by a render in the same task (before the browser's scroll event) keeps the reader where they scrolled, at the bottom and up in history; two people reacting in bursts above, in and below the view while the reader's avatar pictures arrive late, under 6x CPU throttling, at 1280 and 390 px, move the row being read by 0 px |
 
 ## Screenshots
 
 `tests/08-screenshots.spec.ts` writes the release screenshots to
 `e2e/screenshots/` (`01-join.png` … `10-join-with-code.png`, device scale factor 2;
 `09-add-device.png` is a device code in Ayarlar › Hesap, `10-join-with-code.png`
-the join screen's "Zaten hesabım var").
+the join screen's "Zaten hesabım var"); `23-identity-screenshots` writes 13–14b
+and `33-message-screenshots` 11, 12 and 15.
 The chat history is typed through the UI and then re-dated in the SQLite
 file (yesterday evening / the last minutes, Europe/Istanbul) so that a day
 separator appears.

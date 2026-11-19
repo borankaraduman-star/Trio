@@ -54,8 +54,11 @@ export function WhatsNewCard({ ready, busy }: { ready: boolean; busy: () => bool
         </button>
       </header>
       {entries.map((entry) => (
-        <section key={entry.version} data-testid="whats-new-entry" data-version={entry.version}>
-          <h3>Trio {entry.version}</h3>
+        <section key={`${entry.version} ${entry.title ?? ''}`} data-testid="whats-new-entry" data-version={entry.version}>
+          <h3>
+            Trio {entry.version}
+            {entry.title ? ` · ${entry.title}` : ''}
+          </h3>
           <ul>
             {entry.lines.map((line) => (
               <li key={line}>{line}</li>

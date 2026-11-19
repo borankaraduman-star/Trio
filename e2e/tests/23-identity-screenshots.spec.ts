@@ -5,7 +5,7 @@
  */
 import path from 'node:path'
 import type { Page } from '@playwright/test'
-import { apiAvatar, avatarsOf, drawPicture, expectDecoded, openSettings } from '../lib/identity'
+import { apiAvatar, AVATAR_LOOKS as LOOKS, avatarsOf, drawPicture, expectDecoded, giveAvatars, openSettings } from '../lib/identity'
 import { E2E_DIR, freshServer } from '../lib/server'
 import { expect, expectConnected, expectHearing, joinVoice, sendThroughUi, test, threePeople } from '../lib/trio'
 
@@ -20,21 +20,11 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(OUT, name), animations: 'disabled', caret: 'hide' })
 }
 
-/** Three distinct pictures, in the palette's tones. */
-const LOOKS = [
-  { background: '#ee997f', disc: '#f2f1ed', band: '#5e3d37' },
-  { background: '#3e6e85', disc: '#85d9c5', band: '#111318' },
-  { background: '#86652f', disc: '#ddb174', band: '#2b303a' },
-]
-
 test('screenshot 13: a conversation and a voice room with three avatars', async ({ browser, trio }) => {
   test.setTimeout(150_000)
   const people = await threePeople(browser, trio, DESKTOP)
   const [ayse, mehmet, zeynep] = people
-  for (const [index, person] of people.entries()) {
-    const buffer = await drawPicture(person.page, { width: 256, height: 256, ...LOOKS[index] })
-    await apiAvatar(person.token, { name: 'avatar.png', mimeType: 'image/png', buffer })
-  }
+  await giveAvatars(people)
   await sendThroughUi(ayse, 'Fotoğrafları yükledik, artık herkes yüzüyle görünüyor 🙂')
   await sendThroughUi(mehmet, 'Benimki biraz mavi oldu ama olsun')
   await sendThroughUi(zeynep, 'Akşam 9’da sesli kanalda mıyız?')

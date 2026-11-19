@@ -262,9 +262,37 @@ test('screenshot 09: adding a device, the code in Ayarlar › Hesap', async ({ b
   await account.getByTestId('settings-add-device').click()
   await expect(account.getByTestId('link-code')).toHaveText(/^\w{5}-\w{5}$/)
   await expect(account.getByTestId('link-code-countdown')).toHaveText(/^(10:00|9:5\d)$/)
-  await account.scrollIntoViewIfNeeded()
-  await page.getByTestId('settings-dialog').evaluate((el) => (el.scrollTop = el.scrollHeight))
-  await expect(account.getByTestId('link-code-card')).toBeInViewport({ ratio: 1 })
+  // Ayarlar › Hesap is taller since v4 (picture and name above "Cihaz ekle"): bring the
+  // "Cihaz ekle" field (its heading, the hint and the card) to the top of the dialog's scroller.
+  const card = account.getByTestId('link-code-card')
+  await card.evaluate((el) => {
+    const field = el.closest<HTMLElement>('.settings-field') ?? el
+    const dialog = el.closest<HTMLElement>('[data-testid="settings-dialog"]')!
+    // The dialog scrolls under its own sticky header: the field starts just below it.
+    const header = dialog.querySelector('.modal-header')!.getBoundingClientRect().bottom
+    let scroller: HTMLElement | null = field.parentElement
+    while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
+    if (scroller) scroller.scrollTop += field.getBoundingClientRect().top - header - 12
+  })
+  // Nothing of the field is under the header.
+  expect(
+    await card.evaluate((el) => {
+      const field = el.closest<HTMLElement>('.settings-field') ?? el
+      const header = el.closest('[data-testid="settings-dialog"]')!.querySelector('.modal-header')!.getBoundingClientRect().bottom
+      return field.getBoundingClientRect().top >= header
+    }),
+  ).toBe(true)
+  await expect(card).toBeInViewport({ ratio: 1 })
+  // In the dialog's visible box too (the page viewport alone does not see the dialog's clip).
+  expect(
+    await card.evaluate((el) => {
+      let box = el.parentElement
+      while (box && getComputedStyle(box).overflowY !== 'auto' && getComputedStyle(box).overflowY !== 'scroll') box = box.parentElement
+      const clip = (box ?? document.documentElement).getBoundingClientRect()
+      const rect = el.getBoundingClientRect()
+      return rect.top >= clip.top && rect.bottom <= clip.bottom
+    }),
+  ).toBe(true)
   await shot(page, '09-add-device.png')
 })
 

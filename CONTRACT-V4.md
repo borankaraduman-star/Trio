@@ -189,7 +189,9 @@ restart), and afterwards camera/screen toggles work.
   moves a stale tab; after such a reload — and on the first open after an
   update — a small "Yenilikler" card lists the entries of `web/src/changelog.ts`
   (Turkish, newest first, each with a version) newer than the version this
-  device last acknowledged (`localStorage` `trio.seenVersion`).
+  device last acknowledged (`localStorage` `trio.seenVersion`). A version
+  may be split into several entries, each with a `title`; the card shows at
+  most three versions, all parts of each.
 
 ## A3. Connection self-test (Ayarlar › Bağlantı testi)
 

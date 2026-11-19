@@ -1,0 +1,125 @@
+/**
+ * Screenshots of the message family (CONTRACT-V4 B), taken through the real
+ * UI: `11-reactions-reply.png` (reactions, a reply quote, an edited mark),
+ * `12-pins.png` (the Sabitlenenler panel) and `15-mobile-sheet.png` (the
+ * long-press sheet at 390 px). The three have pictures, so the rows and the
+ * pins panel show avatars. Each also asserts what it shows.
+ */
+import path from 'node:path'
+import { E2E_DIR, freshServer } from '../lib/server'
+import { expect, personViaApi, personWithSession, test, type Person } from '../lib/trio'
+import { barAction, chip, longPress, menuAction, pick, row as anyRow, send } from '../lib/messages'
+import type { Locator, Page } from '@playwright/test'
+import { giveAvatars } from '../lib/identity'
+
+/** The first row with the text: the original, not a reply quoting it further down. */
+const row = (page: Page, text: string) => anyRow(page, text).first()
+
+const OUT = path.join(E2E_DIR, 'screenshots')
+const DESKTOP = { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 }
+
+test.beforeEach(async () => {
+  await freshServer()
+})
+
+/** Every picture inside `scope` is decoded (none still loading, none broken). */
+async function picturesDecoded(scope: Locator, atLeast: number): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        scope.locator('.avatar-img').evaluateAll((images) => {
+          const all = images as HTMLImageElement[]
+          return all.every((img) => img.complete && img.naturalWidth > 0) ? all.length : -1
+        }),
+      { message: 'avatars should be decoded' },
+    )
+    .toBeGreaterThanOrEqual(atLeast)
+}
+
+async function conversation(people: Person[]): Promise<void> {
+  const [ayse, mehmet, zeynep] = people
+  await giveAvatars(people)
+  await send(ayse.page, 'Cumartesi kamp için yer buldum: Kazdağları, Ayazma tarafı 🏕️')
+  await send(mehmet.page, 'Harika! Kaç kişilik çadır lazım?')
+  await send(zeynep.page, 'Ben arabayı alabilirim, sabah 7 gibi çıkarız')
+  await send(ayse.page, 'İki çadır yeter, benimki dört kişilik')
+
+  // Mehmet edits his question.
+  await barAction(row(mehmet.page, 'çadır lazım'), 'edit')
+  await mehmet.page.getByTestId('message-editor-input').fill('Harika! Kaç çadır lazım, uyku tulumu da alalım mı?')
+  await mehmet.page.getByTestId('message-editor-input').press('Enter')
+
+  // Zeynep answers Ayşe's first message.
+  await barAction(row(zeynep.page, 'yer buldum'), 'reply')
+  await send(zeynep.page, 'Orayı çok seviyorum, şelaleye de yürürüz')
+
+  // Reactions from everybody.
+  await barAction(row(mehmet.page, 'yer buldum'), 'react')
+  await pick(mehmet.page, '🔥')
+  await chip(row(zeynep.page, 'yer buldum'), '🔥').click()
+  await barAction(row(ayse.page, 'arabayı alabilirim'), 'react')
+  await pick(ayse.page, '🙏')
+  await barAction(row(mehmet.page, 'arabayı alabilirim'), 'react')
+  await pick(mehmet.page, '👍')
+  await barAction(row(zeynep.page, 'İki çadır'), 'react')
+  await pick(zeynep.page, '👌')
+  for (const person of people) {
+    await expect(chip(row(person.page, 'yer buldum'), '🔥')).toContainText('2')
+    await expect(chip(row(person.page, 'İki çadır'), '👌')).toContainText('1')
+  }
+}
+
+test('screenshot 11: reactions, a reply and an edited message', async ({ browser, trio }) => {
+  const ayse = trio.add(await personViaApi(browser, 'Ayşe', DESKTOP))
+  const mehmet = trio.add(await personViaApi(browser, 'Mehmet', DESKTOP))
+  const zeynep = trio.add(await personViaApi(browser, 'Zeynep', DESKTOP))
+  await conversation([ayse, mehmet, zeynep])
+
+  const page = ayse.page
+  await expect(row(page, 'şelaleye').getByTestId('reply-quote')).toContainText('Ayşe')
+  await expect(row(page, 'uyku tulumu').getByTestId('edited-mark')).toHaveCount(1)
+  // Ayşe is about to answer Zeynep: the reply strip above the composer, the bar on a hovered row.
+  await barAction(row(page, 'şelaleye'), 'reply')
+  await page.getByTestId('composer').fill('Ben de termos getiririm ☕')
+  await picturesDecoded(page.getByTestId('message-list'), 3)
+  await row(page, 'uyku tulumu').hover()
+  await expect(row(page, 'uyku tulumu').getByTestId('msg-action-react')).toBeVisible()
+  await page.screenshot({ path: path.join(OUT, '11-reactions-reply.png') })
+})
+
+test('screenshot 12: the pinned messages panel', async ({ browser, trio }) => {
+  const ayse = trio.add(await personViaApi(browser, 'Ayşe', DESKTOP))
+  const mehmet = trio.add(await personViaApi(browser, 'Mehmet', DESKTOP))
+  const zeynep = trio.add(await personViaApi(browser, 'Zeynep', DESKTOP))
+  await conversation([ayse, mehmet, zeynep])
+  await menuAction(ayse.page, row(ayse.page, 'yer buldum'), 'pin')
+  await menuAction(zeynep.page, row(zeynep.page, 'arabayı alabilirim'), 'pin')
+
+  const page = mehmet.page
+  await expect(row(page, 'yer buldum').getByTestId('pin-mark')).toHaveCount(1)
+  await page.getByTestId('btn-pins').click()
+  const items = page.getByTestId('pins-panel').getByTestId('pin-item')
+  await expect(items).toHaveCount(2)
+  await expect(items.first()).toContainText('arabayı alabilirim')
+  await expect(items.first().getByTestId('pin-author')).toHaveText('Zeynep')
+  await picturesDecoded(page.getByTestId('pins-panel'), 2)
+  await page.mouse.move(0, 0)
+  await page.screenshot({ path: path.join(OUT, '12-pins.png') })
+})
+
+test('screenshot 15: the long-press sheet on a phone', async ({ browser, trio }) => {
+  const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
+  const ayse = trio.add(await personViaApi(browser, 'Ayşe', DESKTOP))
+  const mehmet = trio.add(await personViaApi(browser, 'Mehmet', DESKTOP))
+  const zeynep = trio.add(await personViaApi(browser, 'Zeynep', DESKTOP))
+  await conversation([ayse, mehmet, zeynep])
+  // Zeynep's phone (the same account).
+  const onPhone = trio.add(await personWithSession(browser, 'Zeynep', { token: zeynep.token, user: zeynep.user }, phone))
+
+  const page = onPhone.page
+  const sheet = page.getByTestId('message-menu')
+  await picturesDecoded(page.getByTestId('message-list'), 3)
+  await longPress(page, row(page, 'yer buldum'), sheet)
+  await expect(sheet.getByTestId('menu-reactions')).toContainText('Mehmet ve Zeynep')
+  await page.screenshot({ path: path.join(OUT, '15-mobile-sheet.png') })
+})

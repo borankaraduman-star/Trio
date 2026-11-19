@@ -13,7 +13,7 @@ export const SEEN_VERSION_KEY = 'trio.seenVersion'
  */
 export const VERSION_BEFORE_CARD = '0.2.0'
 
-/** At most this many entries on the card (a device back after a long time). */
+/** At most this many VERSIONS on the card (a device back after a long time); a split version counts once. */
 export const MAX_ENTRIES = 3
 
 /** `1.2.3` → [1, 2, 3]; a pre-release or build suffix is ignored; anything else is null. */
@@ -46,10 +46,16 @@ export function entriesSince(
 ): ChangelogEntry[] {
   const since = parseVersion(stored) ? (stored as string) : knownDevice ? VERSION_BEFORE_CARD : null
   if (since === null) return []
-  return changelog
+  const newer = changelog
     .filter((entry) => compareVersions(entry.version, since) > 0 && compareVersions(entry.version, current) <= 0)
     .sort((a, b) => compareVersions(b.version, a.version))
-    .slice(0, MAX_ENTRIES)
+  const kept: string[] = []
+  return newer.filter((entry) => {
+    if (kept.some((version) => compareVersions(version, entry.version) === 0)) return true
+    if (kept.length >= MAX_ENTRIES) return false
+    kept.push(entry.version)
+    return true
+  })
 }
 
 export function loadSeenVersion(): string | null {

@@ -159,3 +159,18 @@ export async function apiAvatar(token: string, picture: Picture): Promise<void> 
   const response = await fetch(`${baseUrl()}/api/me/avatar`, { method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: form })
   if (!response.ok) throw new Error(`avatar: ${response.status} ${await response.text()}`)
 }
+
+/** Three distinct pictures in the palette's tones (the screenshot specs give one to each person). */
+export const AVATAR_LOOKS = [
+  { background: '#ee997f', disc: '#f2f1ed', band: '#5e3d37' },
+  { background: '#3e6e85', disc: '#85d9c5', band: '#111318' },
+  { background: '#86652f', disc: '#ddb174', band: '#2b303a' },
+] as const
+
+/** Gives each person their picture (by REST, as uploaded through the cropper: 256 px). */
+export async function giveAvatars(people: Person[]): Promise<void> {
+  for (const [index, person] of people.entries()) {
+    const buffer = await drawPicture(person.page, { width: 256, height: 256, ...AVATAR_LOOKS[index % AVATAR_LOOKS.length] })
+    await apiAvatar(person.token, { name: 'avatar.png', mimeType: 'image/png', buffer })
+  }
+}

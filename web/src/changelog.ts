@@ -8,18 +8,30 @@
  */
 export interface ChangelogEntry {
   version: string
+  /** Only for a version split into several entries: what this part is about. */
+  title?: string
   lines: string[]
 }
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
     version: '0.4.0',
+    title: 'Sesli görüşme',
     lines: [
       'Sunucu yeniden başlarken ya da bağlantın kısa bir süre kopunca sesli görüşme kesilmiyor; üstte “ses sürüyor” yazar.',
       'Ses odasında “Çağır” ile arkadaşlarını odaya çağırabilirsin; çağrı zil sesi ve bildirimle gelir (Ayarlar › Sesler’de “Rahatsız etme”).',
       'Sessize alma, kulaklık, odaya giren ve çıkan için kısa uyarı sesleri; Ayarlar › Sesler’den kısılır ya da kapatılır.',
       'Ayarlar › Bağlantı testi; katılımcı satırlarında bağlantı göstergesi ve “Mikrofon bağlantısı kesildi” uyarısı.',
       'Kamerayı ve ekran paylaşımını tekrar tekrar açıp kapatmak artık görüşmeyi bozmuyor; ekranın sesi yalnız “Ekran sesini de paylaş” seçiliyse gider.',
+    ],
+  },
+  {
+    version: '0.4.0',
+    title: 'Mesajlar',
+    lines: [
+      'Mesajlara tepki: üstüne gel ya da telefonda basılı tut, bir emoji seç; kimin verdiğini üzerine gelince görürsün.',
+      'Yanıtla: alıntı yanıtın üstünde durur, tıklayınca asıl mesaja gider. Önemli mesajları sabitle; başlıktaki Sabitlenenler hepsini gösterir.',
+      'Kendi mesajını yerinde düzenle (boş yazı kutusunda ↑ son mesajını açar) ya da sil; düzenlenen mesajda “(düzenlendi)” yazar.',
     ],
   },
   {

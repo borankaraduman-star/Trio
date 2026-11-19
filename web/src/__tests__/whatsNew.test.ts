@@ -41,6 +41,17 @@ describe('what is new since the stored version', () => {
     expect(entriesSince(LOG, '0.0.1', '0.10.0', true)).toHaveLength(MAX_ENTRIES)
   })
 
+  it('keeps every part of a version split into several entries, and caps by versions', () => {
+    const split: ChangelogEntry[] = [
+      { version: '0.4.0', title: 'a', lines: ['a'] },
+      { version: '0.4.0', title: 'b', lines: ['b'] },
+      ...LOG.slice(1),
+    ]
+    const shown = entriesSince(split, '0.0.1', '0.4.0', true)
+    expect(shown.map((entry) => `${entry.version}${entry.title ?? ''}`)).toEqual(['0.4.0a', '0.4.0b', '0.3.0', '0.2.1'])
+    expect(new Set(versions(shown)).size).toBe(MAX_ENTRIES)
+  })
+
   it('shows nothing on a first visit, missing or garbage value alike', () => {
     expect(entriesSince(LOG, null, '0.3.0', false)).toEqual([])
     expect(entriesSince(LOG, 'banana', '0.3.0', false)).toEqual([])
@@ -63,7 +74,14 @@ describe('what is new since the stored version', () => {
 describe('the changelog itself', () => {
   it('is newest first, each entry 2–5 lines, and has an entry for this version', () => {
     for (let i = 1; i < CHANGELOG.length; i++) {
-      expect(compareVersions(CHANGELOG[i - 1].version, CHANGELOG[i].version)).toBeGreaterThan(0)
+      const order = compareVersions(CHANGELOG[i - 1].version, CHANGELOG[i].version)
+      expect(order).toBeGreaterThanOrEqual(0)
+      // A version in several entries: each part has its own title.
+      if (order === 0) {
+        expect(CHANGELOG[i - 1].title).toBeTruthy()
+        expect(CHANGELOG[i].title).toBeTruthy()
+        expect(CHANGELOG[i].title).not.toBe(CHANGELOG[i - 1].title)
+      }
     }
     for (const entry of CHANGELOG) {
       expect(entry.lines.length).toBeGreaterThanOrEqual(2)
