@@ -103,6 +103,8 @@ def test_ready_carries_who_is_in_voice(trio, three):
                         "camera": False,
                         "afk": False,
                         "reconnecting": False,
+                        "music": False,
+                        "music_title": None,
                     }
                 ]
             }
@@ -320,6 +322,8 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "camera": False,
             "afk": False,
             "reconnecting": False,
+            "music": False,
+            "music_title": None,
             "resumed": False,
         }
         for sock in (a, b, c):  # everyone, the joiner included
@@ -343,6 +347,8 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "camera": False,
             "afk": False,
             "reconnecting": False,
+            "music": False,
+            "music_title": None,
             "resumed": False,
         }
         for sock in (a, b, c):
@@ -366,6 +372,8 @@ def test_voice_join_peers_joined_state_and_left(trio, three):
             "camera": False,
             "afk": False,
             "reconnecting": False,
+            "music": False,
+            "music_title": None,
         }
         for sock in (a, b, c):
             assert sock.receive_json() == state
@@ -434,6 +442,8 @@ def test_joining_again_from_another_channel_leaves_the_old_one_first(trio, three
             "camera": False,
             "afk": False,
             "reconnecting": False,
+            "music": False,
+            "music_title": None,
             "resumed": False,
         }
         assert a.receive_json() == left

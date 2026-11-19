@@ -27,7 +27,7 @@ from trio_server.hub import (
     Hub,
 )
 from trio_server.uploads import ATTACHMENT_ID, MAX_ATTACHMENTS, ORPHAN_SECONDS
-from trio_server.validation import CONTENT_MAX, is_int
+from trio_server.validation import CONTENT_MAX, clean_music_title, is_int
 
 logger = logging.getLogger("trio.ws")
 
@@ -86,6 +86,17 @@ def _reply_to(frame: dict[str, Any]) -> int | None:
     if not is_int(value):
         raise FrameError("BAD_REQUEST", "'reply_to' must be a message id")
     return value
+
+
+def _music(frame: dict[str, Any]) -> tuple[bool, str | None]:
+    """CONTRACT-V8-MUSIC §2: ``music`` (missing = false) and ``music_title``."""
+    music = _bool(frame, "music", default=False)
+    raw = frame.get("music_title")
+    if raw is not None and not isinstance(raw, str):
+        raise FrameError("BAD_REQUEST", "'music_title' must be a string or null")
+    if not music or raw is None:
+        return music, None
+    return music, clean_music_title(raw)
 
 
 def _bool(frame: dict[str, Any], key: str, *, default: bool | None = None) -> bool:
@@ -286,6 +297,7 @@ class Session:
         screensharing = _bool(frame, "screensharing", default=False)
         resume = _bool(frame, "resume", default=False)
         afk = _bool(frame, "afk", default=False)
+        music, music_title = _music(frame)
         session = frame.get("session")
         if session is not None and not (
             isinstance(session, str) and 1 <= len(session) <= VOICE_SESSION_MAX
@@ -301,6 +313,8 @@ class Session:
             resume=resume,
             session=session,
             afk=afk,
+            music=music,
+            music_title=music_title,
         )
 
     async def on_voice_ring(self, frame: dict[str, Any]) -> None:
@@ -338,8 +352,18 @@ class Session:
         screensharing = _bool(frame, "screensharing")
         camera = _bool(frame, "camera", default=False)
         afk = _bool(frame, "afk", default=False)
+        music, music_title = _music(frame)
         self._own_voice_channel()
-        self.hub.voice_state(self.user["id"], muted, deafened, screensharing, camera, afk)
+        self.hub.voice_state(
+            self.user["id"],
+            muted,
+            deafened,
+            screensharing,
+            camera,
+            afk,
+            music=music,
+            music_title=music_title,
+        )
 
     async def on_signal(self, frame: dict[str, Any]) -> None:
         to = frame.get("to")

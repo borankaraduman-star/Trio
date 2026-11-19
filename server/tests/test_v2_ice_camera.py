@@ -249,6 +249,8 @@ def test_camera_round_trip(trio):
                     "camera": True,
                     "afk": False,
                     "reconnecting": False,
+                    "music": False,
+                    "music_title": None,
                 }
             ]
         # A v1 client's voice.state (no camera) means camera off.

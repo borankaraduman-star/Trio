@@ -6,6 +6,7 @@ import unicodedata
 from typing import Any
 
 NAME_MAX = 32
+MUSIC_TITLE_MAX = 120
 CONTENT_MAX = 4000
 CHANNEL_KINDS = ("text", "voice")
 
@@ -51,3 +52,24 @@ def clean_content(value: Any) -> str | None:
     if not 1 <= len(content) <= CONTENT_MAX:
         return None
     return content
+
+
+def clean_music_title(value: str) -> str | None:
+    """CONTRACT-V8-MUSIC §2: the "now playing" title, one line of visible text.
+
+    Unlike a name, a title comes from somebody else's player (a tab title, the
+    system media session), so it is cleaned rather than refused: control and
+    format characters (newlines, bidi overrides, zero-width marks) are removed,
+    whitespace runs become one space, and it is cut to 120 characters after
+    trimming. Nothing left: None.
+    """
+    text = unicodedata.normalize("NFC", value)
+    kept = "".join(
+        " " if ch.isspace() else ch
+        for ch in text
+        if ch.isspace() or unicodedata.category(ch) not in ("Cc", "Cf", "Cs", "Co", "Cn")
+    )
+    title = " ".join(kept.split())
+    if not title:
+        return None
+    return title[:MUSIC_TITLE_MAX].rstrip()
