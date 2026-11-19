@@ -190,6 +190,8 @@ export function MessageList({
   /** The row being read; kept in place across every change of the list (lib/scrollAnchor.ts). */
   const anchor = useRef<Anchor | null>(null)
   const reportedAtBottom = useRef(true)
+  /** scrollTop when the list last knew where the reader is (null before the first layout). */
+  const observedTop = useRef<number | null>(null)
   const rows = useMemo(() => buildRows(channel.items), [channel.items])
   const { items, hasMore, loadingOlder, loaded } = channel
   const rowFamily = useRowFamily(family, myId)
@@ -197,6 +199,31 @@ export function MessageList({
   const peopleRef = useRef<People>({})
   const people = useMemo(() => (peopleRef.current = stablePeople(peopleRef.current, users)), [users])
   const jumpHandled = useRef(0)
+
+  /** Where the reader is, from the DOM as they see it: bottom or not, and the row being read. */
+  const observe = (element: HTMLDivElement) => {
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    const atBottom = distance < NEAR_EDGE_PX
+    if (atBottom !== reportedAtBottom.current) {
+      reportedAtBottom.current = atBottom
+      onAtBottomChange?.(atBottom)
+    }
+    stickToBottom.current = atBottom
+    anchor.current = captureAnchor(element)
+    observedTop.current = element.scrollTop
+  }
+
+  // The browser tells us about a scroll with an event at the next frame, AFTER
+  // the scroll. A render in between (a reaction, a typing line, a click) would
+  // otherwise be laid out against where the reader WAS: a reader who had just
+  // left the bottom was put back there, one up in history had their scroll
+  // undone. So before React changes the DOM (this is the render, the DOM is
+  // still what the reader sees), a scroll nobody has heard of yet is heard now.
+  // Only reads the DOM and writes refs, so rendering twice is harmless.
+  {
+    const element = scroller.current
+    if (element && observedTop.current !== null && element.scrollTop !== observedTop.current) observe(element)
+  }
 
   const maybeLoadOlder = () => {
     const element = scroller.current
@@ -231,6 +258,7 @@ export function MessageList({
       }
     }
     anchor.current = captureAnchor(element)
+    observedTop.current = element.scrollTop
     // A page that does not fill the view cannot be scrolled to ask for more.
     maybeLoadOlder()
   })
@@ -238,14 +266,7 @@ export function MessageList({
   const onScroll = () => {
     const element = scroller.current
     if (!element) return
-    const distance = element.scrollHeight - element.scrollTop - element.clientHeight
-    const atBottom = distance < NEAR_EDGE_PX
-    if (atBottom !== reportedAtBottom.current) {
-      reportedAtBottom.current = atBottom
-      onAtBottomChange?.(atBottom)
-    }
-    stickToBottom.current = atBottom
-    anchor.current = captureAnchor(element)
+    observe(element)
     maybeLoadOlder()
   }
 

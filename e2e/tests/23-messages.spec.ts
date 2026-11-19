@@ -215,6 +215,43 @@ test('reactions: two people aggregate, toggle, names in the tooltip; only that r
   await expect(mehmet.page.getByTestId('emoji-picker')).toHaveCount(0)
 })
 
+test('a rename reads the same everywhere: header, quote, tooltip, pin mark, pins panel; only the rows that show the name re-render', async ({ browser, trio }) => {
+  const [ayse, mehmet, zeynep] = await threePeople(browser, trio)
+  await send(mehmet.page, 'çadırı ben getiririm')
+  await send(ayse.page, 'hava güzel olacakmış')
+  await send(zeynep.page, 'ben de termos')
+  await barAction(row(ayse.page, 'çadırı ben').first(), 'reply')
+  await send(ayse.page, 'süper, teşekkürler')
+  await barAction(row(mehmet.page, 'hava güzel'), 'react')
+  await pick(mehmet.page, '👍')
+  await menuAction(mehmet.page, row(mehmet.page, 'ben de termos'), 'pin')
+  await expect(row(zeynep.page, 'ben de termos').getByTestId('pin-mark')).toHaveAttribute('title', 'Sabitlendi (Mehmet)')
+  await expect(chip(row(zeynep.page, 'hava güzel'), '👍')).toHaveAttribute('title', 'Mehmet: 👍')
+
+  await zeynep.page.evaluate(() => ((window as unknown as { __trioRowRenders: object }).__trioRowRenders = {}))
+  await restOk(mehmet.token, '/api/me', 'PATCH', { name: 'Memo' })
+
+  const page = zeynep.page
+  await expect(row(page, 'çadırı ben').first().getByTestId('message-author')).toHaveText('Memo')
+  await expect(row(page, 'süper, teşekkürler').getByTestId('reply-quote')).toContainText('Memo')
+  await expect(chip(row(page, 'hava güzel'), '👍')).toHaveAttribute('title', 'Memo: 👍')
+  await expect(row(page, 'ben de termos').getByTestId('pin-mark')).toHaveAttribute('title', 'Sabitlendi (Memo)')
+  // Rows that do not name him stayed put; the four that do were drawn again.
+  const renders = await page.evaluate(() => (window as unknown as { __trioRowRenders: Record<string, number> }).__trioRowRenders)
+  const keys = await Promise.all(
+    // The original first: the reply further down quotes its text.
+    ['çadırı ben', 'süper, teşekkürler', 'hava güzel', 'ben de termos'].map((text) => row(page, text).first().getAttribute('data-key')),
+  )
+  expect(Object.keys(renders).sort()).toEqual([...keys].sort())
+
+  await page.getByTestId('btn-pins').click()
+  const pin = page.getByTestId('pins-panel').getByTestId('pin-item')
+  await expect(pin).toHaveCount(1)
+  await expect(pin.getByTestId('pin-author')).toHaveText('Zeynep')
+  await expect(pin).toContainText('Sabitleyen: Memo')
+  await expect(pin.locator('.avatar')).toHaveCount(1)
+})
+
 test('reactions: the limit is a quiet notice; a reaction far up does not move another reader', async ({ browser, trio }) => {
   const [ayse, mehmet, zeynep] = await threePeople(browser, trio)
   await bulkSend(mehmet, GENEL, 120, 'geçmiş')
