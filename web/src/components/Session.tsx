@@ -43,6 +43,9 @@ import { Sidebar } from './Sidebar'
 import { LogoutDialog } from './LogoutDialog'
 import { CallAlerts } from '../callAlerts'
 import { RingBand } from './RingBand'
+import { WhatsNewCard } from './WhatsNewCard'
+import { useIdentity } from '../useIdentity'
+import { pageTitle } from '../lib/title'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -84,6 +87,7 @@ export function Session({
   )
   const stateRef = useRef(state)
   stateRef.current = state
+  const identity = useIdentity({ token, me: state.me, server: state.server, ready: state.ready, dispatch, onLogout })
 
   const [socket] = useState(() => new TrioSocket(token))
   const [engine] = useState(
@@ -193,7 +197,9 @@ export function Session({
     unsentMessages: Object.values(stateRef.current.messages).some((channel) =>
       channel.items.some((item) => item.status !== 'sent'),
     ),
+    profileEdit: identity.editing(),
   }))
+  const busyForNews = useCallback(() => reloadBlocker(reloadState.current()) !== null, [])
 
   // --- loading messages ------------------------------------------------------
 
@@ -390,11 +396,11 @@ export function Session({
 
   const unreadTotal = totalUnread(state)
   useEffect(() => {
-    document.title = unreadTotal > 0 ? `(${unreadTotal}) Trio` : 'Trio'
+    document.title = pageTitle(unreadTotal, state.server.name)
     return () => {
       document.title = 'Trio'
     }
-  }, [unreadTotal])
+  }, [unreadTotal, state.server.name])
 
   useEffect(() => {
     const onVisibility = () => {
@@ -631,6 +637,7 @@ export function Session({
         onRetryMic={() => void engine.retryMic()}
         onAskNotifications={askNotifications}
         onLogout={() => setLogoutOpen(true)}
+        server={state.server}
       />
       {drawerOpen && (
         <button
@@ -715,6 +722,7 @@ export function Session({
               onAtBottomChange={(value) => (atBottom.current = value)}
               onRetry={retryMessage}
               isMember={state.ready ? (userId) => userId in state.users : undefined}
+              users={state.users}
             />
             <div className="typing-line" data-testid="typing" aria-live="polite">
               {typingLabel(typing)}
@@ -772,7 +780,10 @@ export function Session({
             createLinkCode,
             createAtOnce: settingsCode,
             inviteLink: invite === null ? null : inviteLinkUrl(window.location.origin, invite),
+            profile: identity.profile,
           }}
+          serverSettings={identity.serverSettings}
+          serverVersion={state.serverVersion}
           onSignOut={() => {
             closeSettings()
             setLogoutOpen(true)
@@ -793,6 +804,8 @@ export function Session({
           }}
         />
       )}
+
+      <WhatsNewCard ready={state.ready} busy={busyForNews} />
 
       <div hidden>
         {voice.remoteAudio.map((media) => (

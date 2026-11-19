@@ -8,6 +8,8 @@ import { SCREEN_AUDIO_WARNING } from '../audio/screenAudio'
 import { ConnectionTest, SoundsSection, type ConnectionTestProps } from './ConnectionTest'
 import { CloseIcon } from './icons2'
 import { AccountSection, type AccountProps } from './AccountSection'
+import { ServerSection, type ServerSettingsProps } from './ServerSection'
+import { VersionFooter } from './VersionFooter'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
   active: 'Gürültü engelleme çalışıyor.',
@@ -139,6 +141,8 @@ export function SettingsDialog({
   account,
   onSignOut,
   connectionTest,
+  serverSettings,
+  serverVersion,
 }: {
   settings: Settings
   onChange: (patch: Partial<Omit<Settings, 'version'>>) => void
@@ -152,6 +156,10 @@ export function SettingsDialog({
   onSignOut?: () => void
   /** V4 A3: Bağlantı testi. */
   connectionTest?: ConnectionTestProps
+  /** v4: the "Sunucu" section (name and icon). */
+  serverSettings?: ServerSettingsProps
+  /** v4: `ready.server_version` for the footer; undefined = no footer. */
+  serverVersion?: string | null
 }) {
   const { devices, requestLabels } = useDevices()
   const dialog = useRef<HTMLDivElement>(null)
@@ -323,6 +331,8 @@ export function SettingsDialog({
         )}
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
+        {serverSettings && <ServerSection settings={serverSettings} />}
+        {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}
       </div>
     </div>
   )

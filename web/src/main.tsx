@@ -5,6 +5,7 @@ import './styles.css'
 import './styles-v2.css'
 import './styles-v3.css'
 import './styles-v4-voice.css'
+import './styles-v4-identity.css'
 import './theme.css'
 
 const root = document.getElementById('root')

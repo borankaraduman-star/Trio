@@ -22,7 +22,7 @@ async function noOverflow(page: Page): Promise<void> {
   )
 }
 
-/** Drop every ICE candidate this page signals to `to` (as in 25-ice-health). */
+/** Drop every ICE candidate this page signals to `to` (as in 27-ice-health). */
 async function blockCandidates(page: Page, to: number): Promise<void> {
   await page.evaluate((target) => {
     const send = WebSocket.prototype.send

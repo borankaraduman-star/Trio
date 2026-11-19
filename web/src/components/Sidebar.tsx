@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import type { Channel, ChannelKind, Member, User, VoiceParticipant } from '../types'
+import type { Channel, ChannelKind, Member, ServerProfile, User, VoiceParticipant } from '../types'
 import type { ConnectionStatus } from '../store'
 import type { VoiceSnapshot } from '../voice'
 import { Avatar } from './Avatar'
@@ -15,7 +15,7 @@ import {
   SpeakerIcon,
 } from './icons'
 import { CameraIcon, SettingsIcon } from './icons2'
-import { BrandMark } from './BrandMark'
+import { ServerMark } from './ServerMark'
 import { EmptyState } from './EmptyState'
 import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
 import { heldCameraTitle, RingButton, TurnHint, type RingButtonProps } from './VoiceExtras'
@@ -48,6 +48,8 @@ export interface SidebarProps {
   ring?: RingButtonProps
   onAskNotifications: () => void
   onLogout: () => void
+  /** v4: the server's name and icon for the header (default "Trio"). */
+  server?: ServerProfile
 }
 
 function AddChannelForm({
@@ -142,8 +144,7 @@ export function Sidebar(props: SidebarProps) {
   return (
     <nav className={props.open ? 'sidebar open' : 'sidebar'} aria-label="Kanallar">
       <header className="sidebar-header">
-        <BrandMark size={22} />
-        Trio
+        <ServerMark server={props.server} />
       </header>
 
       <div className="sidebar-scroll">
@@ -216,6 +217,7 @@ export function Sidebar(props: SidebarProps) {
                             id={participant.user_id}
                             name={name}
                             size={22}
+                            url={users[participant.user_id]?.avatar_url}
                             speaking={speaking.has(participant.user_id)}
                           />
                           <span className="voice-user-name">{name}</span>
@@ -319,7 +321,7 @@ export function Sidebar(props: SidebarProps) {
       )}
 
       <footer className="user-panel">
-        <Avatar id={me.id} name={me.name} size={32} speaking={speaking.has(me.id)} />
+        <Avatar id={me.id} name={me.name} size={32} speaking={speaking.has(me.id)} url={me.avatar_url} />
         <div className="user-panel-name">
           <strong>{me.name}</strong>
           <span>{props.connection === 'open' ? 'Çevrimiçi' : 'Bağlanıyor…'}</span>

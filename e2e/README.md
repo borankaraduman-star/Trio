@@ -112,11 +112,23 @@ Chromium 153 facts the specs depend on, measured here:
 | `19-uploads-v3` | files of one message upload one at a time (at most one request in flight; a queued file cancelled), another device's upload in progress (429 → wait → retry), quota exceeded and a full disk (the message waits), avif inline, heic and quicktime as file rows |
 | `20-limits` | the per-address and the global join limits worded with `Retry-After` and counted down, 4429 with ten sockets open, the desktop app's join screen |
 | `21-invite-link` | `/#davet=<code>`: only a name to type, the fragment gone at once, the link in Ayarlar › Hesap, a wrong code from a link, the name remembered |
-| `22-renegotiation-growth` | 30 camera and 15 screen-with-audio cycles on one connection: the SDP stays the same size, the last tiles decode, every pair hears; screen audio is off unless chosen |
-| `23-refused-signal` | a description the server refuses (`TOO_LARGE`, forced by padding one frame in the page): the pair starts again on fresh connections, from either side, and gives up after three |
-| `24-mic-lost` | the microphone track ends and cannot be reopened: the notice, nothing sent, recovery on `devicechange` and from the retry button |
-| `25-ice-health` | ICE candidates dropped between two of three peers: reconnecting, then failed with the TURN hint, then healed when unblocked |
-| `26-call-survives` | V4 A1: the server killed and restarted with three in voice — inbound audio bytes keep growing on every pair before, during and after, on the same RTCPeerConnection objects, then camera and screen work; a one-sided blip under 10 s (others show `reconnecting`, audio never stops); over 10 s (`voice.left`, normal rejoin); a camera held while down applies after resume; past 30 s the fallback; the banner and a reconnecting row at desktop and 390 px |
-| `27-ring` | V4 A4: Çağır, the band, ringtone and notification (asserted on the WebAudio graph and a stand-in Notification), Katıl, "rahatsız etme", the ringer leaving, the server's 30 s limit, not to those already in the room; cue sounds for mute/deafen/join/leave, deafened and switched off; 390 px |
-| `28-connection-test` | V4 A3: Ayarlar › Bağlantı testi with no TURN (`yapılandırılmamış`, the voice panel hint) and with a TURN entry that answers nothing (`yok veya ulaşılamıyor`), per-peer path and RTT, the microphone meter, the copied report has no token/IP/ids; 390 px. "TURN çalışıyor" needs a real TURN server: not verified here |
-| `29-voice-ui-screenshots` | the voice review's peer-health dot, lost-microphone notice and "Ekran sesini de paylaş", and the V4 settings sections, with the theme at desktop and 390 px (screenshots; no overflow) |
+| `22-identity` | an avatar picked as a 1600 px JPEG with EXIF GPS, cropped in the app, stored as a 256 px WebP with no EXIF and decoded by all three in the member list, on old and new messages and in the voice room (ring around the picture); removed for everyone; HEIC, a text file and broken bytes refused in Turkish; rename live on old messages, `NAME_TAKEN` and `INVALID_NAME` worded as on joining, the left name free again; server name and icon live for all three, after a reload, with the `(n) ` title; the versions footer against `/api/health`; Yenilikler only after an update and held while a dialog is open; the cropper by touch (CDP pinch and drag) and the sections at 390 px |
+| `23-identity-screenshots` | `13-avatars.png`, `14-profile-settings.png`, `14b-avatar-cropper.png` |
+| `24-renegotiation-growth` | 30 camera and 15 screen-with-audio cycles on one connection: the SDP stays the same size, the last tiles decode, every pair hears; screen audio is off unless chosen |
+| `25-refused-signal` | a description the server refuses (`TOO_LARGE`, forced by padding one frame in the page): the pair starts again on fresh connections, from either side, and gives up after three |
+| `26-mic-lost` | the microphone track ends and cannot be reopened: the notice, nothing sent, recovery on `devicechange` and from the retry button |
+| `27-ice-health` | ICE candidates dropped between two of three peers: reconnecting, then failed with the TURN hint, then healed when unblocked |
+| `28-call-survives` | V4 A1: the server killed and restarted with three in voice — inbound audio bytes keep growing on every pair before, during and after, on the same RTCPeerConnection objects, then camera and screen work; a one-sided blip under 10 s (others show `reconnecting`, audio never stops); over 10 s (`voice.left`, normal rejoin); a camera held while down applies after resume; past 30 s the fallback; the banner and a reconnecting row at desktop and 390 px |
+| `29-ring` | V4 A4: Çağır, the band, ringtone and notification (asserted on the WebAudio graph and a stand-in Notification), Katıl, "rahatsız etme", the ringer leaving, the server's 30 s limit, not to those already in the room; cue sounds for mute/deafen/join/leave, deafened and switched off; 390 px |
+| `30-connection-test` | V4 A3: Ayarlar › Bağlantı testi with no TURN (`yapılandırılmamış`, the voice panel hint) and with a TURN entry that answers nothing (`yok veya ulaşılamıyor`), per-peer path and RTT, the microphone meter, the copied report has no token/IP/ids; 390 px. "TURN çalışıyor" needs a real TURN server: not verified here |
+| `31-voice-ui-screenshots` | the voice review's peer-health dot, lost-microphone notice and "Ekran sesini de paylaş", and the V4 settings sections, with the theme at desktop and 390 px (screenshots; no overflow) |
+
+## Screenshots
+
+`tests/08-screenshots.spec.ts` writes the release screenshots to
+`e2e/screenshots/` (`01-join.png` … `10-join-with-code.png`, device scale factor 2;
+`09-add-device.png` is a device code in Ayarlar › Hesap, `10-join-with-code.png`
+the join screen's "Zaten hesabım var").
+The chat history is typed through the UI and then re-dated in the SQLite
+file (yesterday evening / the last minutes, Europe/Istanbul) so that a day
+separator appears.

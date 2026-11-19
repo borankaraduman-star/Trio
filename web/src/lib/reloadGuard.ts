@@ -15,13 +15,15 @@ export interface ReloadState {
   draft: boolean
   /** A message still sending or failed: it exists only in this page. */
   unsentMessages: boolean
+  /** v4: the picture cropper is open, or a name (own or the server's) is typed but not saved. */
+  profileEdit: boolean
 }
 
 export type ReloadBlocker = keyof ReloadState
 
 /** The first thing a reload would lose, or null when it is safe. */
 export function reloadBlocker(state: ReloadState): ReloadBlocker | null {
-  for (const key of ['inCall', 'dialogOpen', 'pendingFiles', 'draft', 'unsentMessages'] as const) {
+  for (const key of ['inCall', 'dialogOpen', 'pendingFiles', 'draft', 'unsentMessages', 'profileEdit'] as const) {
     if (state[key]) return key
   }
   return null

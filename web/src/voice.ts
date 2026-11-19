@@ -352,7 +352,7 @@ function stopStream(stream: MediaStream | null): void {
  * 1). A stopped transceiver's m-line is rejected (port 0) in the next offer,
  * and once that is negotiated Chromium recycles the m-line for the next new
  * transceiver, so the description stays the size of what is live
- * (`e2e/tests/22-renegotiation-growth.spec.ts` measures it). Stopping goes
+ * (`e2e/tests/24-renegotiation-growth.spec.ts` measures it). Stopping goes
  * through `onnegotiationneeded`, so through the turn-taking, as removeTrack did.
  */
 function stopSenders(pc: RTCPeerConnection, senders: readonly RTCRtpSender[]): void {
