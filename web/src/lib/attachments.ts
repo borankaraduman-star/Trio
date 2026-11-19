@@ -3,7 +3,7 @@
 export type AttachmentKind = 'image' | 'video' | 'audio' | 'file'
 
 /** Exactly the types the server serves inline (CONTRACT-V2 §2); svg and html are NOT here. */
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
+const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
 const VIDEO_TYPES = new Set(['video/mp4', 'video/webm'])
 const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/ogg', 'audio/wav'])
 

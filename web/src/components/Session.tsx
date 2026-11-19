@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
 import { api, ApiError, type Auth } from '../api'
+import { newerBuildIsLive } from '../lib/buildCheck'
 import { typingLabel } from '../lib/grouping'
 import { TrioSocket } from '../socket'
 import {
@@ -207,6 +208,13 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
             : (textIds[0] ?? null)
         // After a reconnect the open channel may have missed messages.
         if (before.ready && active !== null) void loadLatest(active)
+        // A reconnect is usually a deploy: if a newer client is live, load it,
+        // unless that would drop a call (then the next reconnect tries again).
+        if (before.ready) {
+          void newerBuildIsLive().then((newer) => {
+            if (newer && engine.getSnapshot().status === 'idle') window.location.reload()
+          })
+        }
         probeUnread(textIds.filter((id) => id !== active))
         engine.handleReady()
       } else if (event.type === 'message.new') {
