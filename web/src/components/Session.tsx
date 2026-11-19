@@ -81,6 +81,12 @@ function newNonce(): string {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** V7-READING §5: once per switch, for the composer of the channel switched to. */
+function takeComposerFocus(flag: { current: boolean | number }, channelId: number): boolean {
+  if (flag.current === true) flag.current = channelId
+  return flag.current === channelId
+}
+
 function notificationsAskable(): boolean {
   return typeof Notification !== 'undefined' && Notification.permission === 'default'
 }
@@ -637,7 +643,10 @@ export function Session({
     void notifyHub.enableHere().finally(() => setCanAskNotifications(notificationsAskable()))
   }, [])
 
+  /** V7-READING §5: the next composer to mount was asked for (a channel switch). */
+  const focusComposer = useRef<boolean | number>(false)
   const selectChannel = useCallback((channelId: number) => {
+    if (channelId !== stateRef.current.activeChannelId) focusComposer.current = true
     dispatch({ type: 'channel.select', channelId })
     setDrawerOpen(false)
   }, [])
@@ -856,6 +865,7 @@ export function Session({
               onJumpToLatest={() => void loadLatest(activeChannel.id, { jump: true })}
               onAtBottomChange={(value) => (atBottom.current = value)}
               onRetry={retryMessage}
+              divider={state.divider?.channelId === activeChannel.id ? state.divider.after : null}
               isMember={state.ready ? (userId) => userId in state.users : undefined}
               users={state.users}
               family={{
@@ -893,6 +903,7 @@ export function Session({
               onEditLast={familyActions.editLast}
               focusSignal={family.composerFocus}
               initialText={drafts.textOf(activeChannel.id)}
+              focusOnMount={takeComposerFocus(focusComposer, activeChannel.id)}
               onTextChange={(text) => drafts.setText(activeChannel.id, text)}
               voice={{ onRecorded: sendVoice, onError: setSendNotice }}
               attachments={{

@@ -1,0 +1,78 @@
+/* CONTRACT-V7-READING: the "Yeni mesajlar" line, the jump to the newest, the
+   composer on touch, the channel menu's dialogs and the device-code QR. */
+
+/* --- "Yeni mesajlar" ------------------------------------------------------------ */
+.new-messages-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 6px;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.new-messages-divider::before {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--red);
+  opacity: 0.8;
+}
+
+.new-messages-divider span {
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: var(--red);
+  color: #1a1012;
+}
+
+/* --- jump to the newest ----------------------------------------------------------- */
+/* A dock of no height at the end of the list: sticky to the bottom of the
+   view, so it costs the list no space and never changes where "bottom" is. */
+.jump-to-bottom-dock {
+  position: sticky;
+  bottom: 0;
+  height: 0;
+  z-index: 3;
+}
+
+.jump-to-bottom {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-input);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+}
+
+.jump-to-bottom:hover {
+  background: var(--bg-active);
+}
+
+.jump-to-bottom.has-new {
+  background: var(--accent);
+  border-color: transparent;
+  color: #1a1012;
+}
+
+.jump-to-bottom.has-new:hover {
+  background: var(--accent-hover);
+}
+
+.jump-to-bottom-count {
+  min-width: 1ch;
+}
