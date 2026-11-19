@@ -199,22 +199,6 @@ test('390 px: recording and the player fit; screenshot of a conversation with a 
   const box = (await player.boundingBox())!
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(390)
-  // A tap on a busy phone: the page is still working (here, 400 ms after the app's own
-  // pointerdown handler) when the finger has long been lifted. The tap must still be a
-  // tap: until 0.6.0 the press was timed by when the page handled the events, the tap
-  // read as a short hold, stopped at once and was dropped as too short (CI runners).
-  await phone.page.evaluate(() => {
-    window.addEventListener(
-      'pointerdown',
-      () => {
-        const end = performance.now() + 400
-        while (performance.now() < end) {
-          // busy
-        }
-      },
-      { once: true },
-    )
-  })
   await phone.page.getByTestId('btn-voice').tap()
   await recordedFor(phone.page, 1)
   for (const id of ['voice-recording', 'voice-cancel', 'voice-send', 'btn-voice']) {

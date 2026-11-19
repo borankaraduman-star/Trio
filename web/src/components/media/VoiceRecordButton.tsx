@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { formatDuration, HOLD_MS, MAX_RECORDING_MS, micErrorMessage, MIN_RECORDING_MS, slidAway } from '../../lib/voiceNote'
+import { swallowPressEndClick } from '../../lib/pressEnd'
 import { VoiceRecorder, type Recording } from '../../lib/voiceRecorder'
 
 type Phase = 'idle' | 'starting' | 'recording'
@@ -133,6 +134,11 @@ export function VoiceRecordButton({
     // was then taken for a short hold, stopped at once and dropped as too short.
     press.current = { x: event.clientX, y: event.clientY, at: event.timeStamp, pointerId: event.pointerId }
     setHeld(true)
+    // The recording bar takes the composer's place under the finger: on a phone
+    // whose fonts make the bar wider, the click that ends a TAP landed on its ✕
+    // and cancelled the recording it had just started (CLAUDE.md, a press that
+    // changes what is under the finger). That click is swallowed.
+    swallowPressEndClick(document)
     void begin()
   }
   const onPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
