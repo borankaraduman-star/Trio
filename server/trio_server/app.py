@@ -35,6 +35,7 @@ from trio_server.db import (
     hash_token,
     utc_iso,
 )
+from trio_server.downloads import DownloadConfig, register_download_routes
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
@@ -128,6 +129,7 @@ def create_app(
     now: Callable[[], float] = time.time,
     http_transport: httpx.AsyncBaseTransport | None = None,
     disk_free: Callable[[Path], int] | None = None,
+    downloads: DownloadConfig | None = None,
 ) -> FastAPI:
     """Build the app.
 
@@ -499,6 +501,17 @@ def create_app(
     )
 
     app.add_api_websocket_route("/ws", websocket_endpoint)
+
+    # CONTRACT-V6-DOWNLOAD: the public download page, before the static fallback.
+    register_download_routes(
+        app,
+        downloads or DownloadConfig.from_env(),
+        now=now,
+        http_transport=http_transport,
+        static_dir=settings.static_dir,
+        page_headers=shell_headers,
+        trusted_proxy_hops=settings.trusted_proxy_hops,
+    )
 
     # Registered after every real /api route: an unknown one is a JSON 404 for
     # any method, and never falls through to the client's index.html.
