@@ -156,6 +156,12 @@ def test_message_send_reaches_everyone_and_the_nonce_only_the_sender(trio, three
             "content",
             "created_at",
             "attachments",
+            "edited_at",
+            "reply_to",
+            "reactions",
+            "pinned_at",
+            "pinned_by",
+            "rev",
         }
         assert message["attachments"] == []
         assert message["channel_id"] == TEXT

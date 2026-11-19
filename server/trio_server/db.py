@@ -62,6 +62,24 @@ CREATE TABLE IF NOT EXISTS link_codes (
     expires_ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_link_codes_user ON link_codes (user_id, expires_ts);
+-- v4 (CONTRACT-V4 B): reactions and pins. A message's rows go with it (the
+-- delete removes them explicitly too, so it does not depend on the pragma).
+CREATE TABLE IF NOT EXISTS reactions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,  -- order of first use
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    key        TEXT NOT NULL,                      -- one emoji, or :name:
+    user_id    INTEGER NOT NULL REFERENCES users(id),
+    UNIQUE (message_id, key, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reactions_message ON reactions (message_id, id);
+CREATE TABLE IF NOT EXISTS pins (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,  -- newest pin = largest id
+    message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+    channel_id INTEGER NOT NULL,
+    pinned_by  INTEGER NOT NULL REFERENCES users(id),
+    pinned_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pins_channel ON pins (channel_id, id);
 """
 
 # v3 columns on tables an older database already has. CREATE TABLE IF NOT
@@ -69,7 +87,18 @@ CREATE INDEX IF NOT EXISTS idx_link_codes_user ON link_codes (user_id, expires_t
 #   users.removed_at: set by `python -m trio_server.admin remove-user`. The row
 #   (and its name) stays so that old messages still show who wrote them; its
 #   name_key is replaced, which frees the name for somebody new.
-UPGRADE_COLUMNS = {"users": {"removed_at": "ALTER TABLE users ADD COLUMN removed_at TEXT"}}
+#   messages.edited_at / reply_to_id / rev (v4): an edit's time, the id of the
+#   message replied to (no foreign key: the target may be deleted later and the
+#   reply then shows it as deleted), and a counter of later changes.
+# No index may be created on these columns in SCHEMA: SCHEMA runs before them.
+UPGRADE_COLUMNS = {
+    "users": {"removed_at": "ALTER TABLE users ADD COLUMN removed_at TEXT"},
+    "messages": {
+        "edited_at": "ALTER TABLE messages ADD COLUMN edited_at TEXT",
+        "reply_to_id": "ALTER TABLE messages ADD COLUMN reply_to_id INTEGER",
+        "rev": "ALTER TABLE messages ADD COLUMN rev INTEGER NOT NULL DEFAULT 0",
+    },
+}
 
 # SQLite's INTEGER is a signed 64-bit value; a larger Python int cannot be bound.
 SQL_INT_MAX = 2**63 - 1
@@ -121,6 +150,43 @@ def _attachment(row: sqlite3.Row) -> dict[str, Any]:
 
 class InvalidAttachmentError(Exception):
     pass
+
+
+class InvalidReplyError(Exception):
+    """``reply_to`` names no message in the same channel."""
+
+
+class MessageNotFoundError(Exception):
+    pass
+
+
+class NotAuthorError(Exception):
+    pass
+
+
+class EmptyMessageError(Exception):
+    """An edit would leave a message with neither content nor attachments."""
+
+
+class ReactionLimitError(Exception):
+    pass
+
+
+class PinLimitError(Exception):
+    pass
+
+
+EXCERPT_CHARS = 140
+# Every column a Message is built from; the joins are the same everywhere.
+_MESSAGE_COLUMNS = (
+    "m.id, m.channel_id, m.content, m.created_at, m.edited_at, m.reply_to_id, m.rev, "
+    "u.id AS author_id, u.name AS author_name"
+)
+_MESSAGE_FROM = "FROM messages m JOIN users u ON u.id = m.author_id"
+
+
+def _marks(values: Sequence[Any]) -> str:
+    return ",".join("?" * len(values))
 
 
 class NameTakenError(Exception):
@@ -344,15 +410,18 @@ class Database:
         attachment_ids: Sequence[str] = (),
         *,
         not_before_ts: float | None = None,
+        reply_to: int | None = None,
     ) -> dict[str, Any]:
         """Insert a message and claim its attachments, all or nothing.
+
+        ``reply_to`` must be a message in the same channel, else
+        ``InvalidReplyError`` and nothing is written.
 
         Every id must be the author's own upload, not on a message yet and (when
         ``not_before_ts`` is given) not older than it; otherwise
         ``InvalidAttachmentError`` and nothing is written. The caller holds
         ``write_lock``.
         """
-        attachments: list[dict[str, Any]] = []
         if attachment_ids:
             if len(set(attachment_ids)) != len(attachment_ids):
                 raise InvalidAttachmentError
@@ -365,13 +434,18 @@ class Database:
                 raise InvalidAttachmentError
             if not_before_ts is not None and any(r["created_ts"] < not_before_ts for r in rows):
                 raise InvalidAttachmentError
-            attachments = [_attachment(by_id[i]) for i in attachment_ids]
+        if reply_to is not None:
+            target = await self._all(
+                "SELECT 1 FROM messages WHERE id = ? AND channel_id = ?", (reply_to, channel_id)
+            )
+            if not target:
+                raise InvalidReplyError
         now = utc_now()
         try:
             cur = await self.conn.execute(
-                "INSERT INTO messages (channel_id, author_id, content, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (channel_id, author["id"], content, now),
+                "INSERT INTO messages (channel_id, author_id, content, created_at, reply_to_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (channel_id, author["id"], content, now, reply_to),
             )
             message_id = cur.lastrowid
             await self.conn.executemany(
@@ -384,24 +458,15 @@ class Database:
             if is_disk_full(exc):
                 raise StorageFullError from exc
             raise
-        return {
-            "id": message_id,
-            "channel_id": channel_id,
-            "author": {"id": author["id"], "name": author["name"]},
-            "content": content,
-            "created_at": now,
-            "attachments": attachments,
-        }
+        message = await self.get_message(message_id)
+        assert message is not None  # noqa: S101 - written just above, under the lock
+        return message
 
     async def list_messages(
         self, channel_id: int, before: int | None, limit: int
     ) -> tuple[list[dict[str, Any]], bool]:
         """The newest ``limit`` messages older than ``before``, oldest first."""
-        sql = (
-            "SELECT m.id, m.channel_id, m.content, m.created_at, u.id AS author_id, "
-            "u.name AS author_name FROM messages m JOIN users u ON u.id = m.author_id "
-            "WHERE m.channel_id = ?"
-        )
+        sql = f"SELECT {_MESSAGE_COLUMNS} {_MESSAGE_FROM} WHERE m.channel_id = ?"  # noqa: S608
         params: list[Any] = [channel_id]
         if before is not None:
             sql += " AND m.id < ?"
@@ -412,25 +477,250 @@ class Database:
         has_more = len(rows) > limit
         page = rows[:limit]
         page.reverse()
-        by_message: dict[int, list[dict[str, Any]]] = {r["id"]: [] for r in page}
-        if page:
-            marks = ",".join("?" * len(page))
-            # Only "?" placeholders are formatted into the statement.
-            sql = f"SELECT * FROM attachments WHERE message_id IN ({marks})"  # noqa: S608
-            for a in await self._all(sql + " ORDER BY message_id, position", tuple(by_message)):
-                by_message[a["message_id"]].append(_attachment(a))
-        messages = [
-            {
+        return await self._hydrate(page), has_more
+
+    # -- the message family (CONTRACT-V4 B) -----------------------------------
+
+    async def _hydrate(self, rows: Sequence[sqlite3.Row]) -> list[dict[str, Any]]:
+        """Messages from their rows: attachments, reactions, pin and reply
+        target in one query each, whatever the page size (statements stay
+        under SQLite's variable limit: pages are at most 100, pins 50)."""
+        if not rows:
+            return []
+        ids = [r["id"] for r in rows]
+        marks = _marks(ids)
+        attachments: dict[int, list[dict[str, Any]]] = {i: [] for i in ids}
+        # Only "?" placeholders are formatted into these statements.
+        sql = f"SELECT * FROM attachments WHERE message_id IN ({marks})"  # noqa: S608
+        for a in await self._all(sql + " ORDER BY message_id, position", tuple(ids)):
+            attachments[a["message_id"]].append(_attachment(a))
+        reactions: dict[int, dict[str, list[int]]] = {i: {} for i in ids}
+        sql = f"SELECT message_id, key, user_id FROM reactions WHERE message_id IN ({marks})"  # noqa: S608
+        for r in await self._all(sql + " ORDER BY id", tuple(ids)):
+            # dicts keep insertion order: keys by first use, users by when.
+            reactions[r["message_id"]].setdefault(r["key"], []).append(r["user_id"])
+        sql = f"SELECT message_id, pinned_by, pinned_at FROM pins WHERE message_id IN ({marks})"  # noqa: S608
+        pins = {p["message_id"]: p for p in await self._all(sql, tuple(ids))}
+        targets = await self._reply_targets({r["reply_to_id"] for r in rows} - {None})
+        messages = []
+        for r in rows:
+            pin = pins.get(r["id"])
+            reply_id = r["reply_to_id"]
+            messages.append(
+                {
+                    "id": r["id"],
+                    "channel_id": r["channel_id"],
+                    "author": {"id": r["author_id"], "name": r["author_name"]},
+                    "content": r["content"],
+                    "created_at": r["created_at"],
+                    "attachments": attachments[r["id"]],
+                    "edited_at": r["edited_at"],
+                    "reply_to": (
+                        None
+                        if reply_id is None
+                        else targets.get(reply_id, {"id": reply_id, "deleted": True})
+                    ),
+                    "reactions": [
+                        {"key": key, "count": len(users), "user_ids": users}
+                        for key, users in reactions[r["id"]].items()
+                    ],
+                    "pinned_at": pin["pinned_at"] if pin else None,
+                    "pinned_by": pin["pinned_by"] if pin else None,
+                    "rev": r["rev"],
+                }
+            )
+        return messages
+
+    async def _reply_targets(self, ids: set[int]) -> dict[int, dict[str, Any]]:
+        if not ids:
+            return {}
+        wanted = sorted(ids)
+        # Only "?" placeholders are formatted into the statement.
+        sql = (
+            "SELECT m.id, m.content, u.id AS author_id, u.name AS author_name, "  # noqa: S608
+            "(SELECT a.filename FROM attachments a WHERE a.message_id = m.id "
+            "ORDER BY a.position LIMIT 1) AS first_file "
+            f"{_MESSAGE_FROM} WHERE m.id IN ({_marks(wanted)})"
+        )
+        found = {}
+        for r in await self._all(sql, tuple(wanted)):
+            excerpt = r["content"][:EXCERPT_CHARS]
+            if not excerpt and r["first_file"] is not None:
+                excerpt = "📎 " + r["first_file"]
+            found[r["id"]] = {
                 "id": r["id"],
-                "channel_id": r["channel_id"],
                 "author": {"id": r["author_id"], "name": r["author_name"]},
-                "content": r["content"],
-                "created_at": r["created_at"],
-                "attachments": by_message[r["id"]],
+                "excerpt": excerpt,
             }
-            for r in page
+        return found
+
+    async def get_message(self, message_id: int) -> dict[str, Any] | None:
+        rows = await self._all(
+            f"SELECT {_MESSAGE_COLUMNS} {_MESSAGE_FROM} WHERE m.id = ?",  # noqa: S608
+            (message_id,),
+        )
+        found = await self._hydrate(rows)
+        return found[0] if found else None
+
+    async def _message_row(self, message_id: int) -> sqlite3.Row:
+        rows = await self._all(
+            "SELECT id, channel_id, author_id, content FROM messages WHERE id = ?", (message_id,)
+        )
+        if not rows:
+            raise MessageNotFoundError
+        return rows[0]
+
+    async def _write(self, statements: Sequence[tuple[str, tuple[Any, ...]]]) -> None:
+        """Run ``statements`` as one transaction."""
+        try:
+            for sql, params in statements:
+                await self.conn.execute(sql, params)
+            await self.conn.commit()
+        except BaseException as exc:
+            await self.conn.rollback()
+            if is_disk_full(exc):
+                raise StorageFullError from exc
+            raise
+
+    async def _changed(self, message_id: int, *extra: tuple[str, tuple[Any, ...]]) -> None:
+        await self._write(
+            [*extra, ("UPDATE messages SET rev = rev + 1 WHERE id = ?", (message_id,))]
+        )
+
+    async def edit_message(
+        self, message_id: int, user_id: int, content: str, edited_at: str
+    ) -> tuple[dict[str, Any], bool]:
+        """Replace the content: (the message, whether anything changed).
+
+        The caller holds ``write_lock``. Raises ``MessageNotFoundError``,
+        ``NotAuthorError`` or ``EmptyMessageError``; nothing is written then.
+        """
+        row = await self._message_row(message_id)
+        if row["author_id"] != user_id:
+            raise NotAuthorError
+        if not content:
+            has_files = await self._all(
+                "SELECT 1 FROM attachments WHERE message_id = ? LIMIT 1", (message_id,)
+            )
+            if not has_files:
+                raise EmptyMessageError
+        changed = content != row["content"]
+        if changed:
+            await self._changed(
+                message_id,
+                (
+                    "UPDATE messages SET content = ?, edited_at = ? WHERE id = ?",
+                    (content, edited_at, message_id),
+                ),
+            )
+        message = await self.get_message(message_id)
+        assert message is not None  # noqa: S101
+        return message, changed
+
+    async def delete_message(self, message_id: int, user_id: int) -> tuple[int, list[str]]:
+        """Delete a message and everything hanging off it in ONE transaction:
+        (its channel, the ids of its attachment files to unlink afterwards).
+
+        The files are not touched here. Unlinking after the commit means a
+        crash in between leaves files without rows (swept at the next start),
+        never rows without files. The caller holds ``write_lock``.
+        """
+        row = await self._message_row(message_id)
+        if row["author_id"] != user_id:
+            raise NotAuthorError
+        files = [
+            r["id"]
+            for r in await self._all(
+                "SELECT id FROM attachments WHERE message_id = ?", (message_id,)
+            )
         ]
-        return messages, has_more
+        await self._write(
+            [
+                ("DELETE FROM reactions WHERE message_id = ?", (message_id,)),
+                ("DELETE FROM pins WHERE message_id = ?", (message_id,)),
+                ("DELETE FROM attachments WHERE message_id = ?", (message_id,)),
+                ("DELETE FROM messages WHERE id = ?", (message_id,)),
+            ]
+        )
+        return row["channel_id"], files
+
+    async def set_reaction(
+        self, message_id: int, user_id: int, key: str, on: bool, max_keys: int
+    ) -> tuple[dict[str, Any], bool]:
+        """Add (``on``) or remove the user's reaction ``key``: (the message,
+        whether anything changed). The caller holds ``write_lock``."""
+        await self._message_row(message_id)
+        mine = await self._all(
+            "SELECT id FROM reactions WHERE message_id = ? AND key = ? AND user_id = ?",
+            (message_id, key, user_id),
+        )
+        changed = False
+        if on and not mine:
+            keys = await self._all(
+                "SELECT DISTINCT key FROM reactions WHERE message_id = ?", (message_id,)
+            )
+            if key not in {k["key"] for k in keys} and len(keys) >= max_keys:
+                raise ReactionLimitError
+            await self._changed(
+                message_id,
+                (
+                    "INSERT INTO reactions (message_id, key, user_id) VALUES (?, ?, ?)",
+                    (message_id, key, user_id),
+                ),
+            )
+            changed = True
+        elif not on and mine:
+            await self._changed(
+                message_id, ("DELETE FROM reactions WHERE id = ?", (mine[0]["id"],))
+            )
+            changed = True
+        message = await self.get_message(message_id)
+        assert message is not None  # noqa: S101
+        return message, changed
+
+    async def set_pin(
+        self, message_id: int, user_id: int, on: bool, pinned_at: str, max_pins: int
+    ) -> tuple[dict[str, Any], bool]:
+        """Pin or unpin (anyone may): (the message, whether anything changed).
+        Pinning a pinned message keeps the first pin. The caller holds ``write_lock``."""
+        row = await self._message_row(message_id)
+        pinned = await self._all("SELECT 1 FROM pins WHERE message_id = ?", (message_id,))
+        changed = False
+        if on and not pinned:
+            (count,) = await self._all(
+                "SELECT count(*) AS n FROM pins WHERE channel_id = ?", (row["channel_id"],)
+            )
+            if count["n"] >= max_pins:
+                raise PinLimitError
+            await self._changed(
+                message_id,
+                (
+                    "INSERT INTO pins (message_id, channel_id, pinned_by, pinned_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (message_id, row["channel_id"], user_id, pinned_at),
+                ),
+            )
+            changed = True
+        elif not on and pinned:
+            await self._changed(
+                message_id, ("DELETE FROM pins WHERE message_id = ?", (message_id,))
+            )
+            changed = True
+        message = await self.get_message(message_id)
+        assert message is not None  # noqa: S101
+        return message, changed
+
+    async def list_pins(self, channel_id: int) -> list[dict[str, Any]]:
+        """The channel's pinned messages, newest pin first."""
+        rows = await self._all(
+            f"SELECT {_MESSAGE_COLUMNS} {_MESSAGE_FROM} JOIN pins p ON p.message_id = m.id "  # noqa: S608
+            "WHERE p.channel_id = ? ORDER BY p.id DESC",
+            (channel_id,),
+        )
+        return await self._hydrate(rows)
+
+    async def all_attachment_ids(self) -> set[str]:
+        return {r["id"] for r in await self._all("SELECT id FROM attachments")}
 
     # -- attachments ----------------------------------------------------------
 

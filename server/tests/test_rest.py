@@ -311,8 +311,25 @@ def test_message_shape(trio):
     send_messages(trio, user, 1)
     body = trio.client.get("/api/channels/1/messages", headers=user["auth"]).json()
     (message,) = body["messages"]
-    assert set(message) == {"id", "channel_id", "author", "content", "created_at", "attachments"}
+    assert set(message) == {
+        "id",
+        "channel_id",
+        "author",
+        "content",
+        "created_at",
+        "attachments",
+        "edited_at",
+        "reply_to",
+        "reactions",
+        "pinned_at",
+        "pinned_by",
+        "rev",
+    }
     assert message["attachments"] == []
+    # CONTRACT-V4 B: everything a later change adds starts empty.
+    assert message["edited_at"] is None and message["reply_to"] is None
+    assert message["reactions"] == [] and message["rev"] == 0
+    assert message["pinned_at"] is None and message["pinned_by"] is None
     assert message["author"] == {"id": user["id"], "name": "Ali"}
     assert message["channel_id"] == 1
     assert message["content"] == "m1"
