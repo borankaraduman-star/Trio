@@ -63,6 +63,11 @@ restart), and afterwards camera/screen toggles work.
   `__TRIO_BUILD__` (short commit or build time). `GET /api/health` gains
   `{"ok": true, "version": "<server version>"}`; `ready` gains
   `server_version`.
+  *Server, as built:* the version is the `[project] version` of
+  `server/pyproject.toml` (read from the installed package's metadata; from
+  the file itself when run uninstalled from a source tree), e.g. `"0.2.0"`.
+  When neither can be read it is the string `"unknown"`. It is a plain string:
+  compare it for equality, do not parse it. `/api/health` needs no token.
 - Settings footer shows "Trio <version> (<build>)".
 - The reload-on-new-build check (already shipped) stays the mechanism that
   moves a stale tab; after such a reload — and on the first open after an

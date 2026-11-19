@@ -52,7 +52,7 @@ def test_ready_is_the_first_frame(trio, three):
     ali, berk, cem = three
     with trio.ws(ali) as a:
         ready = a.ready
-        assert set(ready) == {"type", "user", "users", "channels", "voice"}
+        assert set(ready) == {"type", "server_version", "user", "users", "channels", "voice"}
         assert ready["user"] == {"id": ali["id"], "name": "Ali"}
         assert ready["users"] == [
             {"id": ali["id"], "name": "Ali", "online": True},

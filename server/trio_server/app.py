@@ -49,6 +49,7 @@ from trio_server.uploads import (
     storage_full,
 )
 from trio_server.validation import CHANNEL_KINDS, clean_name, name_key
+from trio_server.version import VERSION
 from trio_server.ws import encodable, websocket_endpoint
 
 logger = logging.getLogger("trio")
@@ -243,8 +244,8 @@ def create_app(
     # -- REST -----------------------------------------------------------------
 
     @app.get("/api/health")
-    async def health() -> dict[str, bool]:
-        return {"ok": True}
+    async def health() -> dict[str, Any]:
+        return {"ok": True, "version": VERSION}
 
     @app.post("/api/join", status_code=201)
     async def join(request: Request) -> Any:

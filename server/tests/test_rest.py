@@ -9,6 +9,7 @@ import pytest
 
 from trio_server import Settings
 from trio_server.config import ConfigError
+from trio_server.version import VERSION
 
 from .conftest import INVITE
 
@@ -50,7 +51,7 @@ def test_settings_defaults_and_parsing():
 def test_health(trio):
     response = trio.client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"ok": True}
+    assert response.json() == {"ok": True, "version": VERSION}
 
 
 def test_join_ok(trio):
@@ -422,7 +423,7 @@ def test_static_files_and_spa_fallback(static_trio):
 
 def test_static_serving_does_not_shadow_the_api_or_the_websocket(static_trio):
     client = static_trio.client
-    assert client.get("/api/health").json() == {"ok": True}
+    assert client.get("/api/health").json()["ok"] is True
     for path in ("/api/nope", "/api", "/api/", "/ws", "/ws/x"):
         response = client.get(path)
         assert response.status_code == 404, path

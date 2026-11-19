@@ -20,6 +20,8 @@ from typing import Any
 
 from starlette.websockets import WebSocket
 
+from trio_server.version import VERSION
+
 # Frames waiting for one slow client. Past it the connection is dropped rather
 # than letting one stalled tab hold memory or delay everybody else.
 SEND_QUEUE_SIZE = 512
@@ -133,6 +135,7 @@ class Hub:
     def ready_frame(self, user_id: int) -> dict[str, Any]:
         return {
             "type": "ready",
+            "server_version": VERSION,
             "user": self.users[user_id],
             "users": [
                 {"id": u["id"], "name": u["name"], "online": bool(self.conns.get(u["id"]))}
