@@ -1979,10 +1979,32 @@ export class VoiceEngine {
     }
   }
 
+  /**
+   * V8: a transceiver that neither side sends on any more is stopped, so its
+   * m-line is rejected and then recycled. stopSenders leaves a transceiver
+   * that the OTHER side also sent on (sendrecv) receiving; when the other side
+   * stops too, nothing sends on it and nobody stopped it: every time two people
+   * turned the same kind of media off together, the description kept one more
+   * m-line (measured in e2e 72: +1.2 KB per such music cycle). Stopping is a
+   * negotiation, through `onnegotiationneeded` and so through the turn-taking.
+   */
+  private stopIdleTransceivers(peer: Peer): void {
+    for (const transceiver of peer.pc.getTransceivers()) {
+      if (transceiver.currentDirection !== 'inactive' || transceiver.sender.track !== null) continue
+      if (transceiver.direction === 'stopped' || transceiver.direction === 'sendonly' || transceiver.direction === 'sendrecv') continue
+      try {
+        transceiver.stop()
+      } catch {
+        // Closed meanwhile.
+      }
+    }
+  }
+
   private onStable(peer: Peer): void {
     // V6: a sender's encodings exist once negotiated; apply what could not be applied before.
     if (peer.screenSenders.length > 0 && peer.shareParamsKey === '') this.applyShareParams(peer)
     if (!peer.musicParamsSet) this.applyMusicParams(peer)
+    this.stopIdleTransceivers(peer)
     if (peer.polite) {
       if (peer.offerWhenStable && !peer.makingOffer) {
         peer.offerWhenStable = false
