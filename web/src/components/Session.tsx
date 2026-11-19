@@ -556,9 +556,7 @@ export function Session({
         channelId,
         recording.file,
         { duration_ms: recording.durationMs, waveform: recording.waveform },
-        (localId) => {
-          const attachment = attachments.takeOne(localId)
-          if (!attachment) return
+        (attachment) => {
           const nonce = newNonce()
           dispatch({
             type: 'message.optimistic',

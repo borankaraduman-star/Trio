@@ -42,10 +42,8 @@ export interface AttachmentsApi {
   /** "Orijinali gönder": pictures go up as picked (per device). */
   sendOriginal: boolean
   setSendOriginal: (value: boolean) => void
-  /** A recorded voice message: uploaded at once, then `onUploaded` sends it by itself. */
-  addVoice: (channelId: number, file: File, voice: VoiceMeta, onUploaded: (localId: string) => void) => void
-  /** Takes one uploaded item (a voice message) out of the pending list. */
-  takeOne: (localId: string) => Attachment | null
+  /** A recorded voice message: uploaded at once (a chip meanwhile), then `onUploaded` sends it by itself. */
+  addVoice: (channelId: number, file: File, voice: VoiceMeta, onUploaded: (attachment: Attachment) => void) => void
 }
 
 /**
@@ -70,13 +68,16 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
         onStart: (id) => dispatch({ type: 'start', localId: id }),
         onProgress: (id, progress) => dispatch({ type: 'progress', localId: id, progress }),
         onDone: (id, attachment) => {
-          dispatch({ type: 'done', localId: id, attachment })
           const sent = voiceDone.current.get(id)
           if (sent) {
+            // A voice message leaves the pending list at once and is sent by itself.
             voiceDone.current.delete(id)
-            // After the reducer has the attachment: the callback takes it.
-            queueMicrotask(() => sent(id))
+            fileMap.current.delete(id)
+            dispatch({ type: 'remove', localId: id })
+            sent(attachment)
+            return
           }
+          dispatch({ type: 'done', localId: id, attachment })
         },
         onWaiting: (id) => dispatch({ type: 'waiting', localId: id }),
         onError: (id, code, status) => {
@@ -89,7 +90,7 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
         },
       }),
   )
-  const voiceDone = useRef(new Map<string, (localId: string) => void>())
+  const voiceDone = useRef(new Map<string, (attachment: Attachment) => void>())
   const [sendOriginal, setSendOriginalState] = useState(loadSendOriginal)
   const sendOriginalRef = useRef(sendOriginal)
   /** Per item: which preparation is the current one (a toggle starts another). */
@@ -170,7 +171,7 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
   )
 
   const addVoice = useCallback(
-    (channelId: number, file: File, voice: VoiceMeta, onUploaded: (localId: string) => void) => {
+    (channelId: number, file: File, voice: VoiceMeta, onUploaded: (attachment: Attachment) => void) => {
       const item: PendingAttachment = {
         localId: localId(),
         channelId,
@@ -190,17 +191,6 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
     },
     [queue],
   )
-
-  const takeOne = useCallback((id: string) => {
-    for (const list of Object.values(stateRef.current)) {
-      const item = list.find((entry) => entry.localId === id)
-      if (!item || item.status !== 'done' || !item.attachment) continue
-      fileMap.current.delete(id)
-      dispatch({ type: 'taken', channelId: item.channelId, localIds: [id] })
-      return item.attachment
-    }
-    return null
-  }, [])
 
   const setSendOriginal = useCallback(
     (value: boolean) => {
@@ -273,6 +263,5 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
     sendOriginal,
     setSendOriginal,
     addVoice,
-    takeOne,
   }
 }

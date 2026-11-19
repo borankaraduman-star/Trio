@@ -27,7 +27,7 @@ for (const width of [1280, 390] as const) {
     const [ayse, mehmet] = await threePeople(browser, trio)
     const { channel } = await api<{ channel: { id: number } }>(ayse.token, '/api/channels', { method: 'POST', body: { name: 'plan', kind: 'text' } })
     await send(mehmet.page, 'Cumartesi Göreme mi Uçhisar mı?')
-    const me = phone ? trio.add(await personViaApi(browser, 'Zeynep', PHONE)) : ayse
+    const me = phone ? trio.add(await personViaApi(browser, 'Ece', PHONE)) : ayse
     const page = me.page
     const composer = page.getByTestId('composer')
 

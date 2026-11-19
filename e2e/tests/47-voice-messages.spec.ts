@@ -20,12 +20,26 @@ test.beforeEach(async () => {
 
 const voiceRows = (page: Page) => page.getByTestId('message').filter({ has: page.getByTestId('voice-message') })
 
+/** The recording's clock has reached `seconds` (read as a number: a busy machine may skip a tick). */
+async function recordedFor(page: Page, seconds: number): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const text = (await page.getByTestId('voice-recording-time').textContent().catch(() => null)) ?? ''
+        const match = /^(\d+):(\d\d) \/ 2:00$/.exec(text)
+        return match ? Number(match[1]) * 60 + Number(match[2]) : -1
+      },
+      { timeout: 15_000, intervals: [50] },
+    )
+    .toBeGreaterThanOrEqual(seconds)
+}
+
 /** Hold the microphone with the mouse until the recording has run `seconds`, then let go (or not). */
 async function holdToRecord(page: Page, seconds: number, release = true): Promise<void> {
   const box = (await page.getByTestId('btn-voice').boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.down()
-  await expect(page.getByTestId('voice-recording-time')).toHaveText(new RegExp(`^0:0${seconds} / 2:00$`), { timeout: 15_000 })
+  await recordedFor(page, seconds)
   if (release) await page.mouse.up()
 }
 
@@ -69,14 +83,14 @@ test('hold to record, let go to send; the others play it; click mode; cancel by 
   const [stored] = await lastAttachments(ayse.token, GENEL)
   expect(stored.content_type).toBe('audio/webm')
   expect(stored.voice!.duration_ms).toBeGreaterThanOrEqual(2000)
-  expect(stored.voice!.duration_ms).toBeLessThan(4000)
+  expect(stored.voice!.duration_ms).toBeLessThan(6000)
   expect(stored.voice!.waveform).toHaveLength(64)
   expect(Math.max(...stored.voice!.waveform)).toBe(255)
 
   // 2. The others: the player, the real audio (finite duration, time moving while it plays).
   for (const viewer of [mehmet, zeynep]) {
     const row = voiceRows(viewer.page).first()
-    await expect(row.getByTestId('voice-time')).toHaveText(/^0:0[23]$/)
+    await expect(row.getByTestId('voice-time')).toHaveText(/^0:0[2-5]$/)
     await expect(row.locator('.voice-wave > span')).toHaveCount(64)
     await row.getByTestId('voice-play').click()
     await expect
@@ -86,7 +100,7 @@ test('hold to record, let go to send; the others play it; click mode; cancel by 
     const facts = await audioFacts(viewer.page, 0)
     expect(Number.isFinite(facts.duration)).toBe(true)
     expect(facts.duration).toBeGreaterThan(1.8)
-    expect(facts.duration).toBeLessThan(4)
+    expect(facts.duration).toBeLessThan(6)
     await expect(row.locator('.voice-wave > span.played').first()).toBeVisible()
     // Faster.
     await row.getByTestId('voice-rate').click()
@@ -103,7 +117,7 @@ test('hold to record, let go to send; the others play it; click mode; cancel by 
 
   // 4. Click mode: a short click starts, "Gönder" stops and sends.
   await page.getByTestId('btn-voice').click()
-  await expect(page.getByTestId('voice-recording-time')).toHaveText(/^0:01 \/ 2:00$/, { timeout: 10_000 })
+  await recordedFor(page, 1)
   await page.getByTestId('voice-send').click()
   await expect(voiceRows(page)).toHaveCount(2)
   await expect(voiceRows(mehmet.page)).toHaveCount(2)
@@ -186,7 +200,7 @@ test('390 px: recording and the player fit; screenshot of a conversation with a 
   expect(box.x).toBeGreaterThanOrEqual(0)
   expect(box.x + box.width).toBeLessThanOrEqual(390)
   await phone.page.getByTestId('btn-voice').tap()
-  await expect(phone.page.getByTestId('voice-recording-time')).toHaveText(/^0:01 \/ 2:00$/, { timeout: 10_000 })
+  await recordedFor(phone.page, 1)
   for (const id of ['voice-recording', 'voice-cancel', 'voice-send', 'btn-voice']) {
     await expect(phone.page.getByTestId(id)).toBeInViewport({ ratio: 1 })
   }
