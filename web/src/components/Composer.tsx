@@ -66,8 +66,15 @@ export function Composer({
   const hasDraft = text.trim() !== ''
   const draftReport = useRef(onDraftChange)
   draftReport.current = onDraftChange
-  useEffect(() => draftReport.current?.(hasDraft), [hasDraft])
-  useEffect(() => () => draftReport.current?.(false), [])
+  useEffect(() => {
+    draftReport.current?.(hasDraft)
+  }, [hasDraft])
+  useEffect(
+    () => () => {
+      draftReport.current?.(false)
+    },
+    [],
+  )
 
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {

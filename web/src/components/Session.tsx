@@ -639,7 +639,9 @@ export function Session({
               channelName={activeChannel.name}
               onSend={sendMessage}
               onTyping={sendTyping}
-              onDraftChange={(value) => (draft.current = value)}
+              onDraftChange={(value) => {
+                draft.current = value
+              }}
               attachments={{
                 items: pendingHere,
                 files: attachments.files,
