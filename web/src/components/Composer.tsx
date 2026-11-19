@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { pastedFileName } from '../lib/attachments'
 import { checkLength, MAX_MESSAGE_LENGTH, tooLongMessage } from '../lib/messageLength'
 import './composer-length.css'
@@ -40,6 +40,10 @@ export function Composer({
   onTyping,
   attachments,
   onDraftChange,
+  replyBar,
+  onEscape,
+  onEditLast,
+  focusSignal,
 }: {
   channelName: string
   onSend: (content: string) => void
@@ -47,6 +51,14 @@ export function Composer({
   attachments?: ComposerAttachments
   /** Whether the box holds unsent text (false again when it is sent, emptied or unmounted). */
   onDraftChange?: (hasDraft: boolean) => void
+  /** v4: the "replying to" strip shown above the box. */
+  replyBar?: ReactNode
+  /** v4: Esc in the box (lets a reply go); true when it did something. */
+  onEscape?: () => boolean
+  /** v4: up-arrow in an EMPTY box: edit my last message; true when there is one. */
+  onEditLast?: () => boolean
+  /** v4: a change of this number moves the focus into the box. */
+  focusSignal?: number
 }) {
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -75,6 +87,10 @@ export function Composer({
     },
     [],
   )
+
+  useEffect(() => {
+    if (focusSignal) ref.current?.focus({ preventScroll: true })
+  }, [focusSignal])
 
   // Grow with the text, up to the CSS max-height.
   useEffect(() => {
@@ -105,6 +121,18 @@ export function Composer({
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       send()
+    } else if (event.key === 'Escape' && onEscape?.()) {
+      event.preventDefault()
+    } else if (
+      event.key === 'ArrowUp' &&
+      text === '' &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      onEditLast?.()
+    ) {
+      event.preventDefault()
     }
   }
 
@@ -126,6 +154,7 @@ export function Composer({
           </span>
         </div>
       )}
+      {replyBar}
       {attachments && (
         <PendingAttachments items={attachments.items} files={attachments.files} onRemove={attachments.onRemove} />
       )}

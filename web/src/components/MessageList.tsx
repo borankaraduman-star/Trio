@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { buildRows, dayLabel, timeLabel } from '../lib/grouping'
 import { linkify } from '../lib/linkify'
 import { captureAnchor, restoreAnchor, type Anchor } from '../lib/scrollAnchor'
@@ -8,11 +8,17 @@ import { MessageAttachments } from './Attachments'
 import { Avatar } from './Avatar'
 import { resolveAuthor } from '../lib/identity'
 import type { Member, User } from '../types'
+import { MessageFamilyLayer, useRowFamily, type ListFamily, type RowFamily } from './message/MessageFamilyLayer'
+import { MessageActions } from './message/MessageActions'
+import { ReactionChips } from './message/ReactionChips'
+import { ReplyQuote } from './message/ReplyQuote'
+import { MessageEditor } from './message/MessageEditor'
+import { EditedMark, PinMark } from './message/MessageMarks'
 
 const NEAR_EDGE_PX = 120
 
 /** Message text: plain text nodes and anchors. Never HTML. */
-const Content = memo(function Content({ text }: { text: string }) {
+const Content = memo(function Content({ text, after }: { text: string; after?: ReactNode }) {
   const parts = useMemo(() => linkify(text), [text])
   return (
     <div className="message-content">
@@ -25,6 +31,7 @@ const Content = memo(function Content({ text }: { text: string }) {
           <span key={index}>{part.value}</span>
         ),
       )}
+      {after}
     </div>
   )
 })
@@ -35,6 +42,8 @@ const MessageRow = memo(function MessageRow({
   showHeader,
   former,
   onRetry,
+  family,
+  editing = false,
 }: {
   message: UiMessage
   /** v4: the author as shown now (current name and avatar), else the message's snapshot. */
@@ -43,15 +52,23 @@ const MessageRow = memo(function MessageRow({
   /** v3: the author is no longer a member (removed by the admin). */
   former: boolean
   onRetry: (message: UiMessage) => void
+  /** v4: the message family's callbacks (one stable object for every row). */
+  family?: RowFamily
+  /** v4: this row is being edited in place. */
+  editing?: boolean
 }) {
   const time = timeLabel(message.created_at)
+  family?.probe(message.key)
+  const sent = message.status === 'sent'
   return (
     <li
-      className={`message${showHeader ? ' with-header' : ''} ${message.status}`}
+      className={`message${showHeader ? ' with-header' : ''} ${message.status}${message.pinned_at ? ' pinned' : ''}`}
       data-testid="message"
       data-key={message.key}
       data-status={message.status}
       data-author-id={message.author.id}
+      data-message-id={sent ? message.id : undefined}
+      tabIndex={sent && family ? 0 : undefined}
     >
       <div className="message-gutter">
         {showHeader ? (
@@ -72,8 +89,36 @@ const MessageRow = memo(function MessageRow({
             <time dateTime={message.created_at}>{time}</time>
           </div>
         )}
-        {message.content !== '' && <Content text={message.content} />}
+        {message.reply_to && family && <ReplyQuote reply={message.reply_to} onJump={family.onJump} />}
+        {editing && family ? (
+          <MessageEditor
+            initial={message.pendingEdit ?? message.content}
+            hasAttachments={(message.attachments?.length ?? 0) > 0}
+            onSave={(content) => family.onSaveEdit(message, content)}
+            onCancel={family.onCancelEdit}
+          />
+        ) : (message.pendingEdit ?? message.content) !== '' ? (
+          <Content
+            text={message.pendingEdit ?? message.content}
+            after={(message.edited_at || message.pendingEdit !== undefined) && <EditedMark at={message.edited_at ?? null} />}
+          />
+        ) : (
+          (message.edited_at || message.pendingEdit !== undefined) && (
+            <div className="message-content">
+              <EditedMark at={message.edited_at ?? null} />
+            </div>
+          )
+        )}
         <MessageAttachments attachments={message.attachments} />
+        {family && message.reactions && message.reactions.length > 0 && (
+          <ReactionChips
+            reactions={message.reactions}
+            meId={family.meId}
+            nameOf={family.nameOf}
+            onToggle={(key) => family.onToggleReaction(message, key)}
+            onAdd={(anchor) => family.onAction(message, 'react', anchor)}
+          />
+        )}
         {message.status === 'failed' && (
           <div className="message-failed">
             Gönderilemedi.{' '}
@@ -83,6 +128,10 @@ const MessageRow = memo(function MessageRow({
           </div>
         )}
       </div>
+      {family && sent && message.pinned_at && <PinMark by={message.pinned_by != null ? family.nameOf(message.pinned_by) : null} />}
+      {family && sent && !editing && (
+        <MessageActions own={message.author.id === family.meId} onAction={(kind, anchor) => family.onAction(message, kind, anchor)} />
+      )}
     </li>
   )
 })
@@ -97,6 +146,7 @@ export function MessageList({
   onAtBottomChange,
   isMember,
   users,
+  family,
 }: {
   channel: ChannelMessages
   /** v4: current members, so a row shows its author's current name and avatar. */
@@ -110,6 +160,8 @@ export function MessageList({
   /** The list is `behind` (a gap after a long drop): load the newest and go there. */
   onJumpToLatest?: () => void
   onAtBottomChange?: (atBottom: boolean) => void
+  /** v4: edit, delete, reactions, replies, pins (components/message). */
+  family?: ListFamily
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
@@ -119,6 +171,8 @@ export function MessageList({
   const reportedAtBottom = useRef(true)
   const rows = useMemo(() => buildRows(channel.items), [channel.items])
   const { items, hasMore, loadingOlder, loaded } = channel
+  const rowFamily = useRowFamily(family, myId)
+  const jumpHandled = useRef(0)
 
   const maybeLoadOlder = () => {
     const element = scroller.current
@@ -141,6 +195,17 @@ export function MessageList({
       restoreAnchor(element, anchor.current)
     }
     previous.current = { lastKey: last?.key }
+    // v4: a quoted or pinned message to bring into view, once its row is there.
+    const jump = family?.jump
+    if (jump && jump.seq !== jumpHandled.current) {
+      const row = element.querySelector<HTMLElement>(`[data-message-id="${jump.messageId}"]`)
+      if (row) {
+        jumpHandled.current = jump.seq
+        stickToBottom.current = false
+        rowFamily.reveal(element, row)
+        family.onJumpDone()
+      }
+    }
     anchor.current = captureAnchor(element)
     // A page that does not fill the view cannot be scrolled to ask for more.
     maybeLoadOlder()
@@ -177,7 +242,7 @@ export function MessageList({
           {items.length === 0 ? 'Henüz mesaj yok. İlk mesajı sen yaz!' : 'Kanalın başlangıcı.'}
         </div>
       )}
-      <ol className="message-list">
+      <ol className="message-list" {...rowFamily.gestures}>
         {rows.map((row) =>
           row.type === 'day' ? (
             <li key={row.key} className="day-separator" role="separator">
@@ -191,6 +256,8 @@ export function MessageList({
               showHeader={row.showHeader}
               former={isMember ? !isMember(row.message.author.id) : false}
               onRetry={onRetry}
+              family={rowFamily.row}
+              editing={family?.editingId === row.message.id && row.message.status === 'sent'}
             />
           ),
         )}
@@ -208,6 +275,7 @@ export function MessageList({
           Yeni mesajlar var — en yeniye git
         </button>
       )}
+      {family && <MessageFamilyLayer family={family} items={items} myId={myId} rowFamily={rowFamily} />}
     </div>
   )
 }

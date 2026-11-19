@@ -41,6 +41,28 @@ export interface Message {
   created_at: string
   /** Always sent by a v2 server (possibly empty); optional for v1 data. */
   attachments?: Attachment[]
+  // --- v4 (CONTRACT-V4 B): all optional, a v3 server sends none of them ---
+  /** ISO time of the last edit that changed the content, else null. */
+  edited_at?: string | null
+  reply_to?: ReplyRef | null
+  /** Ordered by each key's earliest remaining reaction. */
+  reactions?: Reaction[]
+  pinned_at?: string | null
+  /** The pinner's user id. */
+  pinned_by?: number | null
+  /** +1 on every change; keep the copy with the highest. */
+  rev?: number
+}
+
+/** v4: what a reply quotes, resolved by the server when the reply is serialised. */
+export type ReplyRef =
+  | { id: number; author: { id: number; name: string }; excerpt: string; deleted?: undefined }
+  | { id: number; deleted: true }
+
+export interface Reaction {
+  key: string
+  count: number
+  user_ids: number[]
 }
 
 export interface VoiceParticipant {
@@ -91,6 +113,10 @@ export type ServerEvent =
   | { type: 'server.updated'; server: ServerProfile }
   | { type: 'channel.new'; channel: Channel }
   | { type: 'message.new'; message: Message; nonce?: string }
+  /** v4: any later change to a message (edit, reactions, pin). */
+  | { type: 'message.updated'; message: Message }
+  /** v4: `nonce` only when a retried send names a message deleted meanwhile. */
+  | { type: 'message.deleted'; channel_id: number; message_id: number; nonce?: string }
   | { type: 'typing'; channel_id: number; user_id: number }
   | { type: 'voice.peers'; channel_id: number; peers: number[] }
   | ({ type: 'voice.joined'; channel_id: number } & VoiceParticipant)
@@ -107,6 +133,8 @@ export type ClientEvent =
       content: string
       nonce: string
       attachment_ids?: string[]
+      /** v4: the message this one answers (same channel). */
+      reply_to?: number | null
     }
   | { type: 'typing'; channel_id: number }
   | {

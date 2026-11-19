@@ -1,6 +1,8 @@
 import type { Channel, Member, Message, ServerEvent, ServerProfile, User, VoiceParticipant } from './types'
 import { claimEchoes } from './lib/reconcile'
 import { DEFAULT_SERVER, normalizeUser, serverProfile } from './lib/identity'
+import { supersedes, updatePins, sortPins } from './lib/messageFamily'
+import { refreshQuotes } from './lib/replyQuote'
 
 export type MessageStatus = 'sent' | 'pending' | 'failed'
 
@@ -11,6 +13,15 @@ export interface UiMessage extends Message {
   nonce?: string
   /** Client time (ms) of the latest retry of an unconfirmed row; see lib/reconcile.ts. */
   sentAt?: number
+  /** v4: the content of an edit this tab sent and the server has not answered yet (shown instead). */
+  pendingEdit?: string
+}
+
+/** v4: a channel's pinned messages (CONTRACT-V4 B), loaded when the panel opens. */
+export interface ChannelPins {
+  items: Message[]
+  loaded: boolean
+  error: boolean
 }
 
 export interface ChannelMessages {
@@ -52,6 +63,10 @@ export interface AppState {
   server: ServerProfile
   /** v4: `ready.server_version`, or null from a server that predates it. */
   serverVersion: string | null
+  /** v4: ids of messages known deleted (ids are never reused): a late page cannot bring one back. */
+  deleted: Record<number, true>
+  /** v4: channel id → its pinned messages, once asked for. */
+  pins: Record<number, ChannelPins>
 }
 
 export type Action =
@@ -75,6 +90,18 @@ export type Action =
   | { type: 'message.retry'; channelId: number; nonce: string; at?: number }
   | { type: 'latest.loaded'; channelId: number; latestId: number }
   | { type: 'typing.prune'; now: number }
+  // --- v4: the message family ---
+  /** An edit sent and not answered yet: shown at once, dropped (rolled back) by `message.edit-settled`. */
+  | { type: 'message.edit-local'; channelId: number; messageId: number; content: string }
+  | { type: 'message.edit-settled'; channelId: number; messageId: number }
+  /**
+   * After a reconnect: a page re-read from what is held. Within its range the
+   * page is the truth for messages already held (edits, reactions, deletions);
+   * nothing that is not held is added, so it can never open a gap.
+   */
+  | { type: 'messages.refresh'; channelId: number; messages: Message[]; before: number; hasMore: boolean }
+  | { type: 'pins.loaded'; channelId: number; messages: Message[] }
+  | { type: 'pins.failed'; channelId: number }
 
 export const TYPING_TTL_MS = 5000
 
@@ -106,6 +133,8 @@ export function createInitialState(init: {
     unread: {},
     server: DEFAULT_SERVER,
     serverVersion: null,
+    deleted: {},
+    pins: {},
   }
 }
 
@@ -136,9 +165,83 @@ export function mergeMessages(existing: readonly UiMessage[], incoming: readonly
   }
   for (const message of incoming) {
     const old = confirmed.get(message.id)
-    confirmed.set(message.id, old ? { ...message, key: old.key } : message)
+    // v4: the copy with the highest `rev` wins, whichever way it arrived.
+    if (old && !supersedes(message, old)) continue
+    confirmed.set(message.id, old ? adopt(old, message) : message)
   }
   return [...[...confirmed.values()].sort((a, b) => a.id - b.id), ...tail]
+}
+
+/** `incoming` taking `old`'s place: the old key, and an edit of ours still in flight. */
+function adopt(old: UiMessage, incoming: UiMessage): UiMessage {
+  const next: UiMessage = { ...incoming, key: old.key }
+  if (old.pendingEdit !== undefined) next.pendingEdit = old.pendingEdit
+  return next
+}
+
+/** A page's copies, except where a held copy is newer (a broadcast that overtook the page). */
+function preferHeld(page: UiMessage[], items: readonly UiMessage[]): UiMessage[] {
+  const held = new Map<number, UiMessage>()
+  for (const item of items) if (item.status === 'sent') held.set(item.id, item)
+  return page.map((message) => {
+    const old = held.get(message.id)
+    return old && !supersedes(message, old) ? old : message
+  })
+}
+
+/** v4: a page minus what is known deleted, and the deletions its quotes reveal. */
+function screenPage(state: AppState, page: readonly Message[]): { page: Message[]; deleted: Record<number, true> } {
+  let deleted = state.deleted
+  for (const message of page) {
+    const reply = message.reply_to
+    if (reply?.deleted && !deleted[reply.id]) deleted = { ...deleted, [reply.id]: true }
+  }
+  return { page: page.filter((message) => !deleted[message.id]), deleted }
+}
+
+/** v4: deletions a page's quotes revealed: recorded, and the held copies removed. */
+function forgetRevealed(state: AppState, deleted: Record<number, true>, channelId: number): AppState {
+  if (deleted === state.deleted) return state
+  let next = state
+  for (const id of Object.keys(deleted)) {
+    if (!state.deleted[Number(id)]) next = removeMessage(next, channelId, Number(id))
+  }
+  return next
+}
+
+/** v4: quotes in a channel brought up to date with what it holds (lib/replyQuote.ts). */
+function withQuotes(state: AppState, channelId: number): AppState {
+  const channel = state.messages[channelId]
+  if (!channel) return state
+  const items = refreshQuotes(channel.items, state.deleted)
+  return items === channel.items
+    ? state
+    : { ...state, messages: { ...state.messages, [channelId]: { ...channel, items: [...items] } } }
+}
+
+/** v4: a deleted message leaves the channel's cache, its pins and every quote of it. */
+function removeMessage(state: AppState, channelId: number, messageId: number, nonce?: string): AppState {
+  let next: AppState = state.deleted[messageId] ? state : { ...state, deleted: { ...state.deleted, [messageId]: true } }
+  const channel = next.messages[channelId]
+  if (
+    channel?.items.some(
+      (item) => (item.status === 'sent' && item.id === messageId) || (nonce !== undefined && item.nonce === nonce && item.status !== 'sent'),
+    )
+  ) {
+    next = withChannel(next, channelId, (current) => ({
+      ...current,
+      items: current.items.filter(
+        (item) =>
+          !(item.status === 'sent' && item.id === messageId) &&
+          !(nonce !== undefined && item.status !== 'sent' && item.nonce === nonce),
+      ),
+    }))
+  }
+  const pins = next.pins[channelId]
+  if (pins?.items.some((pin) => pin.id === messageId)) {
+    next = { ...next, pins: { ...next.pins, [channelId]: { ...pins, items: pins.items.filter((pin) => pin.id !== messageId) } } }
+  }
+  return withQuotes(next, channelId)
 }
 
 function withChannel(
@@ -237,6 +340,8 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         activeChannelId,
         messages,
         typing: {},
+        // v4: re-read when the panel is open; what was missed is unknown.
+        pins: {},
       }
     }
 
@@ -302,6 +407,8 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
       const message = event.message
       const channelId = message.channel_id
       const nonce = event.nonce
+      // v4: deleted meanwhile (a late frame): never shown again.
+      if (state.deleted[message.id]) return removeMessage(state, channelId, message.id, nonce)
       let next = withChannel(state, channelId, (channel) => {
         const pendingIndex =
           nonce === undefined
@@ -312,8 +419,12 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           const rest = channel.items.filter((_, index) => index !== pendingIndex)
           return { ...channel, items: mergeMessages(rest, [{ ...toUi(message, nonce), nonce }]) }
         }
-        if (channel.items.some((item) => item.status === 'sent' && item.id === message.id)) {
-          return channel
+        const held = channel.items.find((item) => item.status === 'sent' && item.id === message.id)
+        if (held) {
+          // v4: a retried nonce answers with the message as it is now (its edits, reactions).
+          return held.rev !== undefined && message.rev !== undefined && message.rev > held.rev
+            ? { ...channel, items: mergeMessages(channel.items, [toUi(message)]) }
+            : channel
         }
         // Not below a gap; the jump to the newest loads it.
         if (channel.behind) return channel
@@ -328,7 +439,7 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
       if (message.id > (next.latest[channelId] ?? 0)) {
         next = { ...next, latest: { ...next.latest, [channelId]: message.id } }
       }
-      next = removeTyping(next, channelId, message.author.id)
+      next = removeTyping(withQuotes(next, channelId), channelId, message.author.id)
 
       const own = message.author.id === state.me.id
       const seen = own || (viewing && state.activeChannelId === channelId)
@@ -344,6 +455,28 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
       }
       return next
     }
+
+    case 'message.updated': {
+      const message = event.message
+      const channelId = message.channel_id
+      if (state.deleted[message.id]) return state
+      let next = state
+      const channel = state.messages[channelId]
+      const index = channel ? channel.items.findIndex((item) => item.status === 'sent' && item.id === message.id) : -1
+      if (channel && index >= 0 && supersedes(message, channel.items[index])) {
+        const items = [...channel.items]
+        items[index] = adopt(channel.items[index], toUi(message))
+        next = withQuotes({ ...next, messages: { ...next.messages, [channelId]: { ...channel, items } } }, channelId)
+      }
+      const pins = next.pins[channelId]
+      if (pins?.loaded && (message.pinned_at || pins.items.some((pin) => pin.id === message.id))) {
+        next = { ...next, pins: { ...next.pins, [channelId]: { ...pins, items: updatePins(pins.items, message) } } }
+      }
+      return next
+    }
+
+    case 'message.deleted':
+      return removeMessage(state, event.channel_id, event.message_id, event.nonce)
 
     case 'typing': {
       if (event.user_id === state.me.id) return state
@@ -461,8 +594,9 @@ export function reducer(state: AppState, action: Action): AppState {
       return withChannel(state, action.channelId, (channel) => ({ ...channel, loadingOlder: true }))
 
     case 'messages.loaded': {
-      const page = action.messages
-      let next = withChannel(state, action.channelId, (channel) => {
+      const screened = screenPage(state, action.messages)
+      const page = screened.page
+      let next = withChannel(forgetRevealed(state, screened.deleted, action.channelId), action.channelId, (channel) => {
         if (action.mode === 'prepend') {
           const paired = claimEchoes(channel.items, page.map((message) => toUi(message)), state.me.id)
           return {
@@ -504,7 +638,7 @@ export function reducer(state: AppState, action: Action): AppState {
         const keys = new Map(channel.items.map((item) => [item.id, item.key]))
         const paired = claimEchoes(
           kept,
-          page.map((message) => toUi(message, keys.get(message.id))),
+          preferHeld(page.map((message) => toUi(message, keys.get(message.id))), channel.items),
           state.me.id,
         )
         return {
@@ -515,6 +649,7 @@ export function reducer(state: AppState, action: Action): AppState {
           error: false,
         }
       })
+      next = withQuotes(next, action.channelId)
       const newest = page.length > 0 ? page[page.length - 1].id : 0
       if (newest > (next.latest[action.channelId] ?? 0)) {
         next = { ...next, latest: { ...next.latest, [action.channelId]: newest } }
@@ -581,6 +716,65 @@ export function reducer(state: AppState, action: Action): AppState {
         typing[Number(channelKey)] = alive
       }
       return changed ? { ...state, typing } : state
+    }
+
+    case 'message.edit-local':
+    case 'message.edit-settled': {
+      const channel = state.messages[action.channelId]
+      const index = channel ? channel.items.findIndex((item) => item.status === 'sent' && item.id === action.messageId) : -1
+      if (!channel || index < 0) return state
+      const items = [...channel.items]
+      const item = { ...items[index] }
+      if (action.type === 'message.edit-local') item.pendingEdit = action.content
+      else if (item.pendingEdit === undefined) return state
+      else delete item.pendingEdit
+      items[index] = item
+      return { ...state, messages: { ...state.messages, [action.channelId]: { ...channel, items } } }
+    }
+
+    case 'messages.refresh': {
+      if (!state.messages[action.channelId]) return state
+      const screened = screenPage(state, action.messages)
+      const revealed = forgetRevealed(state, screened.deleted, action.channelId)
+      const channel = revealed.messages[action.channelId]
+      const page = screened.page
+      // The page's range: from its oldest (or the channel's start) up to just before `before`.
+      const from = action.hasMore && page.length > 0 ? page[0].id : -Infinity
+      const inPage = new Map(page.map((message) => [message.id, message]))
+      let changed = false
+      const items: UiMessage[] = []
+      for (const item of channel.items) {
+        if (item.status !== 'sent' || item.id < from || item.id >= action.before) {
+          items.push(item)
+          continue
+        }
+        const fresh = inPage.get(item.id)
+        if (!fresh) {
+          changed = true
+          continue
+        }
+        if (supersedes(fresh, item) && fresh.rev !== item.rev) {
+          changed = true
+          items.push(adopt(item, toUi(fresh)))
+        } else items.push(item)
+      }
+      let next = revealed
+      if (changed) next = { ...next, messages: { ...next.messages, [action.channelId]: { ...channel, items } } }
+      return withQuotes(next, action.channelId)
+    }
+
+    case 'pins.loaded': {
+      const known = action.messages.filter((message) => !state.deleted[message.id])
+      // A pin change that arrived while the list was on its way is newer than it.
+      const held = state.pins[action.channelId]
+      let items = sortPins(known)
+      if (held) for (const pin of held.items) items = updatePins(items, pin)
+      return { ...state, pins: { ...state.pins, [action.channelId]: { items, loaded: true, error: false } } }
+    }
+
+    case 'pins.failed': {
+      const held = state.pins[action.channelId]
+      return { ...state, pins: { ...state.pins, [action.channelId]: { items: held?.items ?? [], loaded: held?.loaded ?? false, error: true } } }
     }
 
     default:
