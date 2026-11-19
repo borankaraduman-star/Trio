@@ -476,6 +476,17 @@
     display: none;
   }
 
+  /* With the microphone there is one more button in the row: the placeholder stays on one line. */
+  .composer .voice-record-button {
+    width: 38px;
+  }
+
+  .composer textarea::placeholder {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .gallery-nav {
     width: 36px;
     height: 36px;
