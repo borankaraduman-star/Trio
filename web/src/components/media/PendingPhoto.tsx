@@ -10,7 +10,9 @@ export function PendingSize({ item }: { item: PendingAttachment }) {
       data-testid="pending-shrunk"
       title="Fotoğraf küçültülerek gönderilir. Yeniden kodlanan dosyada konum ve kamera bilgisi (EXIF) yok."
     >
-      {formatSize(item.originalSize)} → {formatSize(item.size)} · konum bilgisi silindi
+      {formatSize(item.originalSize)} → {formatSize(item.size)}
+      <br />
+      konum bilgisi silindi
     </span>
   )
 }

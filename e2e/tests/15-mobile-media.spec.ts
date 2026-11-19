@@ -36,6 +36,8 @@ test('phone width: attachments and the settings dialog are usable at 390 px', as
     'base64',
   )
 
+  const [pngWidth, pngHeight] = [1200, 800]
+
   // Attaching on the phone: the paperclip opens the file picker; the chips fit.
   const chooser = phone.page.waitForEvent('filechooser')
   await phone.page.getByTestId('btn-attach').tap()
@@ -62,8 +64,9 @@ test('phone width: attachments and the settings dialog are usable at 390 px', as
   await expectWithinWidth(phone.page, 'attachment-image')
   await expectWithinWidth(phone.page, 'attachment-file')
   const box = (await phone.page.getByTestId('attachment-image').boundingBox())!
-  expect(Math.round(box.height)).toBe(300)
+  // V6: the box has the picture's own shape (its size comes from the server), narrower than 400.
   expect(box.width).toBeLessThan(400)
+  expect(Math.abs(box.height - (box.width * pngHeight) / pngWidth)).toBeLessThanOrEqual(1)
   await expectNoSideScroll(phone.page)
 
   // The lightbox fits the screen and closes with its button.

@@ -16,6 +16,8 @@
 /* --- the pending photo chip ------------------------------------------------------------- */
 
 .pending-shrunk {
+  display: inline-block;
+  white-space: normal;
   color: var(--trio-online);
 }
 

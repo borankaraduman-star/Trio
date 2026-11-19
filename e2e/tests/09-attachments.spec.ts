@@ -91,16 +91,18 @@ test('attachments: image and file for the others, limits, paste, drop, lightbox,
   await expect(ayse.page.getByTestId('pending-attachment')).toHaveCount(0)
   await expect(message(ayse.page, 'Fotoğraf ve notlar ekte')).toHaveAttribute('data-status', 'sent')
 
-  // What Zeynep sees before the picture arrives: its 400×300 box is already there.
+  // What Zeynep sees before the picture arrives: its box is already there, and
+  // since V6 (the server reports 640×400) it is the picture's own shape fitted
+  // into 400×300 — 400×250 — rather than a 400×300 letterbox.
   const zImage = message(zeynep.page, 'Fotoğraf ve notlar ekte').getByTestId('attachment-image')
   await expect(zImage).toBeVisible()
   expect(await zImage.locator('img').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(0)
   const reserved = await zImage.boundingBox()
-  expect(reserved && [Math.round(reserved.width), Math.round(reserved.height)]).toEqual([400, 300])
+  expect(reserved && [Math.round(reserved.width), Math.round(reserved.height)]).toEqual([400, 250])
   release()
   await expectImageDecoded(zeynep.page, zImage)
   const loaded = await zImage.boundingBox()
-  expect(loaded && [Math.round(loaded.width), Math.round(loaded.height)]).toEqual([400, 300])
+  expect(loaded && [Math.round(loaded.width), Math.round(loaded.height)]).toEqual([400, 250])
 
   // Both others get the image and the file row (name, size, download).
   for (const viewer of [mehmet, zeynep]) {
