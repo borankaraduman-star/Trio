@@ -269,7 +269,8 @@ test('the settings footer shows the client and server versions; Yenilikler after
   await expectConnected(ayse.page)
   const card = ayse.page.getByTestId('whats-new')
   await expect(card).toBeVisible()
-  await expect(card.getByTestId('whats-new-entry')).toHaveCount(2)
+  // Newer than 0.2.0: 0.4.0 (the voice work), 0.3.0 and 0.2.1.
+  await expect(card.getByTestId('whats-new-entry')).toHaveCount(3)
   await expect(card.getByTestId('whats-new-entry').first()).toHaveAttribute('data-version', WEB_VERSION)
   await expect(card).toContainText('Profil fotoğrafı')
   // It blocks nothing: typing and sending go on with it open.

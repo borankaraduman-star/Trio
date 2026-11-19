@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.4.0',
+    lines: [
+      'Sunucu yeniden başlarken ya da bağlantın kısa bir süre kopunca sesli görüşme kesilmiyor; üstte “ses sürüyor” yazar.',
+      'Ses odasında “Çağır” ile arkadaşlarını odaya çağırabilirsin; çağrı zil sesi ve bildirimle gelir (Ayarlar › Sesler’de “Rahatsız etme”).',
+      'Sessize alma, kulaklık, odaya giren ve çıkan için kısa uyarı sesleri; Ayarlar › Sesler’den kısılır ya da kapatılır.',
+      'Ayarlar › Bağlantı testi; katılımcı satırlarında bağlantı göstergesi ve “Mikrofon bağlantısı kesildi” uyarısı.',
+      'Kamerayı ve ekran paylaşımını tekrar tekrar açıp kapatmak artık görüşmeyi bozmuyor; ekranın sesi yalnız “Ekran sesini de paylaş” seçiliyse gider.',
+    ],
+  },
+  {
     version: '0.3.0',
     lines: [
       'Profil fotoğrafı: Ayarlar › Hesap’tan bir görsel seç, kırp ve yükle; herkes hemen görür.',
