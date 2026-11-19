@@ -6,7 +6,7 @@ Mehmet, Zeynep) and real WebRTC media between them.
 
 ## Requirements
 
-- `server/.venv` with the server installed (`uvicorn` is taken from there).
+- `server/.venv` with the server installed (its `python` runs the server and the admin tool).
 - `web/node_modules` installed (`npm ci` in `web/`).
 - Chromium for Playwright 1.63 (`PLAYWRIGHT_BROWSERS_PATH` pointing at it;
   this project does not download browsers).
@@ -23,7 +23,8 @@ npm run typecheck        # tsc over the tests themselves
 What happens:
 
 1. The global setup runs `npm run build` in `web/` and starts
-   `uvicorn trio_server.main:app` on a free port, with a temporary
+   `python -m trio_server` (the server's own entry point, with production's
+   uvicorn options) on a free port, with a temporary
    `TRIO_DB_PATH`/`TRIO_UPLOAD_DIR`, `TRIO_INVITE_CODE=trio-e2e-davet`,
    `TRIO_STATIC_DIR=web/dist` and an empty `TRIO_STUN_URLS` (all peers are
    on this machine; host candidates are enough). Its port and pid are kept in
@@ -32,6 +33,16 @@ What happens:
    on the same port; the resilience tests kill (`SIGKILL`) and restart it.
    Tests therefore run serially in one worker.
 3. The global teardown stops the server.
+
+A test can start its server with extra settings (`freshServer({TRIO_USER_QUOTA_MB: '1'})`);
+`admin('revoke-tokens', 'Mehmet')` runs `python -m trio_server.admin` against
+the current run's database, as an operator would against the live file.
+
+**No CSP violations, anywhere.** The app shell carries a Content-Security-Policy
+(CONTRACT-V3 §8). Every page of every test reports `securitypolicyviolation`
+events and CSP console errors, and the automatic `cspGuard` fixture
+(`lib/trio.ts`) fails the test on any of them — the noise-suppression
+worklet and wasm, blob: and object URLs and the websocket all run under it.
 
 Useful variables:
 
@@ -95,11 +106,19 @@ Chromium 153 facts the specs depend on, measured here:
 | `13-settings` | live microphone/camera switch, output device, PTT key binding, persistence across a reload |
 | `14-resilience-media` | server killed with cameras and a screen share on: everything comes back as it was left; a camera turned off meanwhile stays off |
 | `15-mobile-media` | attachments, lightbox and the settings dialog at 390 px |
+| `16-store-review` | a lost echo shows once; an unsent message in another channel (with its attachment) survives a reconnect; a reader up in history keeps their place and is offered the newest after a long drop; a visible but unfocused window counts unread and notifies; a long paste is counted like the server and refused, never cut |
+| `17-devices` | a device code from Ayarlar › Hesap signs a fourth browser in as the same user (history, both devices get messages, no new member); used, expired (moved into the past in the database: the server's clock cannot be moved) and malformed codes; five live codes; signing out (confirmation, 204, the token's REST and other sockets end with 4401, the other device stays, the name stays hers, the code made first brings her back); a 401 on sign-out still clears the device |
+| `18-remote-signout` | `revoke-tokens` and `remove-user` with everybody connected: REST refused at once, open pages on the join screen with the notice within the 30 s re-check, the removed user gone from members and voice, their messages kept under their name, `new-link-code` brings the revoked user back |
+| `19-uploads-v3` | files of one message upload one at a time (at most one request in flight; a queued file cancelled), another device's upload in progress (429 → wait → retry), quota exceeded and a full disk (the message waits), avif inline, heic and quicktime as file rows |
+| `20-limits` | the per-address and the global join limits worded with `Retry-After` and counted down, 4429 with ten sockets open, the desktop app's join screen |
+| `21-invite-link` | `/#davet=<code>`: only a name to type, the fragment gone at once, the link in Ayarlar › Hesap, a wrong code from a link, the name remembered |
 
 ## Screenshots
 
 `tests/08-screenshots.spec.ts` writes the release screenshots to
-`e2e/screenshots/` (`01-join.png` … `08-settings.png`, device scale factor 2).
+`e2e/screenshots/` (`01-join.png` … `10-join-with-code.png`, device scale factor 2;
+`09-add-device.png` is a device code in Ayarlar › Hesap, `10-join-with-code.png`
+the join screen's "Zaten hesabım var").
 The chat history is typed through the UI and then re-dated in the SQLite
 file (yesterday evening / the last minutes, Europe/Istanbul) so that a day
 separator appears.

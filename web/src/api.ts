@@ -1,3 +1,5 @@
+import { localExpiry } from './lib/linkCode'
+import { parseRetryAfter } from './lib/retryAfter'
 import type { Channel, ChannelKind, Message, User } from './types'
 
 /** A non-2xx answer from the API, or a request that never got one (status 0). */
@@ -6,16 +8,30 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Seconds from `Retry-After` (a 429), else null. */
+    readonly retryAfter: number | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
   }
 }
 
-async function request<T>(
+interface RequestOptions {
+  method?: string
+  body?: unknown
+  token?: string
+  /** The answer may have no body (204). */
+  empty?: boolean
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return (await requestWithHeaders<T>(path, options)).payload
+}
+
+async function requestWithHeaders<T>(
   path: string,
-  options: { method?: string; body?: unknown; token?: string } = {},
-): Promise<T> {
+  options: RequestOptions = {},
+): Promise<{ payload: T; headers: Headers }> {
   const headers: Record<string, string> = {}
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
   if (options.token) headers['Authorization'] = `Bearer ${options.token}`
@@ -44,10 +60,12 @@ async function request<T>(
       response.status,
       typeof error?.code === 'string' ? error.code : 'UNKNOWN',
       typeof error?.message === 'string' ? error.message : `HTTP ${response.status}`,
+      parseRetryAfter(response.headers.get('Retry-After'), Date.now()),
     )
   }
+  if (options.empty) return { payload: undefined as T, headers: response.headers }
   if (payload === null) throw new ApiError(response.status, 'BAD_RESPONSE', 'bad response')
-  return payload as T
+  return { payload: payload as T, headers: response.headers }
 }
 
 export interface JoinResult {
@@ -60,9 +78,35 @@ export interface MessagePage {
   has_more: boolean
 }
 
+export interface LinkCode {
+  /** As the server sent it, ungrouped. */
+  code: string
+  /** When it stops working, on THIS device's clock (ms). */
+  expiresAtMs: number
+}
+
 export const api = {
   join(inviteCode: string, name: string): Promise<JoinResult> {
     return request('/api/join', { method: 'POST', body: { invite_code: inviteCode, name } })
+  },
+  /** Another device of an existing account (CONTRACT-V3 §2): 200, a new token for the same user. */
+  joinWithLinkCode(linkCode: string): Promise<JoinResult> {
+    return request('/api/join', { method: 'POST', body: { link_code: linkCode } })
+  },
+  /** Signs THIS token out; its sockets close with 4401. */
+  logout(token: string): Promise<void> {
+    return request('/api/session', { method: 'DELETE', token, empty: true })
+  },
+  async createLinkCode(token: string): Promise<LinkCode> {
+    const { payload, headers } = await requestWithHeaders<{ code?: unknown; expires_at?: unknown }>(
+      '/api/link-codes',
+      { method: 'POST', token },
+    )
+    const receivedAt = Date.now()
+    if (typeof payload.code !== 'string' || typeof payload.expires_at !== 'string') {
+      throw new ApiError(201, 'BAD_RESPONSE', 'bad response')
+    }
+    return { code: payload.code, expiresAtMs: localExpiry(payload.expires_at, headers.get('Date'), receivedAt) }
   },
   me(token: string): Promise<{ user: User }> {
     return request('/api/me', { token })
@@ -95,6 +139,8 @@ const JOIN_ERRORS: Record<string, string> = {
   NAME_TAKEN: 'Bu isim alınmış, başka bir isim dene.',
   SERVER_FULL: 'Sunucu dolu, yeni üye alınamıyor.',
   INVALID_NAME: 'İsim 1–32 karakter olmalı.',
+  INVALID_LINK_CODE:
+    'Bu kod geçersiz: süresi dolmuş, daha önce kullanılmış ya da yanlış yazılmış olabilir. Diğer cihazdan yeni bir kod al.',
   RATE_LIMITED: 'Çok fazla deneme yapıldı. Biraz sonra tekrar dene.',
   NETWORK: 'Sunucuya ulaşılamadı.',
 }
@@ -148,3 +194,31 @@ export function clearAuth(): void {
     // Nothing to clear.
   }
 }
+
+// v3: the invite code this device joined with (to share as a link) and the last name used.
+const INVITE_KEY = 'trio.invite'
+const LAST_NAME_KEY = 'trio.lastName'
+
+function readKey(key: string): string | null {
+  try {
+    const value = localStorage.getItem(key)
+    return value && value.trim() !== '' ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeKey(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Kept nowhere: a convenience only.
+  }
+}
+
+export const loadInviteCode = (): string | null => readKey(INVITE_KEY)
+export const saveInviteCode = (code: string): void => writeKey(INVITE_KEY, code)
+export const clearInviteCode = (): void => writeKey(INVITE_KEY, null)
+export const loadLastName = (): string | null => readKey(LAST_NAME_KEY)
+export const saveLastName = (name: string): void => writeKey(LAST_NAME_KEY, name)

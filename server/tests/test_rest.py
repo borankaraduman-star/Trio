@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import mimetypes
 import sqlite3
 
 import pytest
@@ -418,6 +419,24 @@ def test_static_files_and_spa_fallback(static_trio):
     assert "immutable" in response.headers["cache-control"]
     assert client.get("/assets/missing.js").status_code == 404
     assert client.get("/favicon.ico").status_code == 404
+
+
+def test_static_webp_is_served_as_image_webp(make_trio, tmp_path, monkeypatch):
+    # The production image (python:3.12-slim) knows no type for .webp: start
+    # from a table without it, as that image does.
+    db = mimetypes.MimeTypes(filenames=())
+    db.types_map[True].pop(".webp", None)
+    monkeypatch.setattr(mimetypes, "_db", db)
+    assert mimetypes.guess_type("join.webp")[0] is None
+    dist = tmp_path / "dist"
+    (dist / "art").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>Trio</title>")
+    (dist / "art" / "join.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBPVP8 ")
+    client = make_trio(static_dir=str(dist)).client
+    response = client.get("/art/join.webp")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/webp"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def test_static_serving_does_not_shadow_the_api_or_the_websocket(static_trio):

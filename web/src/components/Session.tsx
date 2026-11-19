@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react'
-import { api, ApiError, type Auth } from '../api'
+import { api, ApiError, loadInviteCode, type Auth, type LinkCode } from '../api'
 import { newerBuildIsLive } from '../lib/buildCheck'
+import { reloadBlocker } from '../lib/reloadGuard'
+import { inviteLinkUrl } from '../lib/inviteLink'
+import { sendErrorMessage } from '../lib/attachments'
 import { typingLabel } from '../lib/grouping'
 import { TrioSocket } from '../socket'
 import {
@@ -13,6 +16,7 @@ import {
   saveLastRead,
   totalUnread,
   typingNames,
+  voiceChannelOf,
   type UiMessage,
 } from '../store'
 import type { ChannelKind, ServerEvent } from '../types'
@@ -36,6 +40,7 @@ import { SendTimers } from '../lib/sendTimers'
 import { isViewing, onViewingChange } from '../lib/viewing'
 import { fetchCovering, newestConfirmedId } from '../lib/catchUp'
 import { Sidebar } from './Sidebar'
+import { LogoutDialog } from './LogoutDialog'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -54,7 +59,21 @@ function notificationsAskable(): boolean {
   return typeof Notification !== 'undefined' && Notification.permission === 'default'
 }
 
-export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
+/** Codes of a refused `message.send` (a bare `error` frame naming no nonce). */
+const SEND_REFUSALS = new Set(['INVALID_ATTACHMENT', 'INVALID_MESSAGE', 'BAD_REQUEST', 'STORAGE_FULL'])
+
+export function Session({
+  auth,
+  onSignedOut,
+  onSessionEnded,
+}: {
+  auth: Auth
+  /** After this device signed itself out (the server was told). */
+  onSignedOut: () => void
+  /** The server no longer accepts the token (401 / close 4401). */
+  onSessionEnded: () => void
+}) {
+  const onLogout = onSessionEnded
   const { token } = auth
   const [state, dispatch] = useReducer(
     reducer,
@@ -80,7 +99,20 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   // --- v2: settings, push-to-talk, devices, attachments ------------------------
   const settings = useSyncExternalStore(settingsStore.subscribe, settingsStore.getSnapshot)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  /** Settings opened from the sign-out dialog: make a device code straight away. */
+  const [settingsCode, setSettingsCode] = useState(false)
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false)
+    setSettingsCode(false)
+  }, [])
+  const [logoutOpen, setLogoutOpen] = useState(false)
+  // The invite code this device joined with, kept to share as a link.
+  const [invite] = useState(loadInviteCode)
+  const [signingOut, setSigningOut] = useState(false)
+  /** The server kept refusing the socket with 4429. */
+  const [tooMany, setTooMany] = useState(false)
+  /** Why the last message could not be stored (STORAGE_FULL…), or null. */
+  const [sendNotice, setSendNotice] = useState<string | null>(null)
   const setPttOpen = useCallback((open: boolean) => engine.setPttOpen(open), [engine])
   usePtt(settings.inputMode, settings.pttKey, setPttOpen)
   const applied = useRef({
@@ -114,6 +146,24 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
   const lastTypingSent = useRef<Record<number, number>>({})
   /** The open channel's list is scrolled to its newest message (reported by MessageList). */
   const atBottom = useRef(true)
+
+  // --- what a reload onto a new build would lose (lib/reloadGuard.ts) ----------
+  /** The composer holds unsent text (reported by Composer). */
+  const draft = useRef(false)
+  const dialogs = useRef(false)
+  dialogs.current = settingsOpen || logoutOpen || signingOut
+  const anyPendingFiles = attachments.anyPending
+  // A ref, so the connection effect reads it without depending on it (a new
+  // dependency there would reconnect the socket).
+  const reloadState = useRef(() => ({
+    inCall: engine.getSnapshot().status !== 'idle',
+    dialogOpen: dialogs.current,
+    pendingFiles: anyPendingFiles(),
+    draft: draft.current,
+    unsentMessages: Object.values(stateRef.current.messages).some((channel) =>
+      channel.items.some((item) => item.status !== 'sent'),
+    ),
+  }))
 
   // --- loading messages ------------------------------------------------------
 
@@ -200,15 +250,19 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       engine.handleEvent(event)
       if (event.type === 'message.new' && event.nonce !== undefined) sendTimers.clear(event.nonce)
 
-      if (
-        event.type === 'error' &&
-        (event.code === 'INVALID_ATTACHMENT' || event.code === 'INVALID_MESSAGE' || event.code === 'BAD_REQUEST')
-      ) {
+      if (event.type === 'user.removed') {
+        // The voice room forgets them too; their messages stay as they are.
+        const channelId = voiceChannelOf(before, event.user_id)
+        if (channelId !== null) engine.handleEvent({ type: 'voice.left', channel_id: channelId, user_id: event.user_id })
+      }
+
+      if (event.type === 'error' && SEND_REFUSALS.has(event.code)) {
         // v2: a refused send answers with a bare error frame; fail the message just sent.
         const last = lastSent.current
         if (last && Date.now() - last.at < SEND_TIMEOUT_MS) {
           lastSent.current = null
           dispatch({ type: 'message.failed', channelId: last.channelId, nonce: last.nonce })
+          setSendNotice(sendErrorMessage(event.code))
         }
       }
 
@@ -221,12 +275,14 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         // After a reconnect the open channel may have missed messages.
         if (before.ready && active !== null) void loadLatest(active)
         // A reconnect is usually a deploy: if a newer client is live, load it,
-        // unless that would drop a call (then the next reconnect tries again).
+        // unless that would cost something (a call, a device code on screen,
+        // files, a draft, an unsent message); the next reconnect asks again.
         if (before.ready) {
           void newerBuildIsLive().then((newer) => {
-            if (newer && engine.getSnapshot().status === 'idle') window.location.reload()
+            if (newer && reloadBlocker(reloadState.current()) === null) window.location.reload()
           })
         }
+        setTooMany(false)
         probeUnread(textIds.filter((id) => id !== active))
         engine.handleReady()
       } else if (event.type === 'message.new') {
@@ -258,6 +314,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         engine.handleDisconnected()
       },
       onUnauthorized: onLogout,
+      onTooMany: (streak) => setTooMany(streak > 0),
     }
     socket.connect()
 
@@ -352,6 +409,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
       const current = stateRef.current
       const channelId = current.activeChannelId
       if (channelId === null) return
+      if (attachments.failed(channelId)) return
       if (channelMessages(current, channelId).behind) void loadLatest(channelId, { jump: true })
       const sentAttachments = attachments.take(channelId)
       if (content === '' && sentAttachments.length === 0) return
@@ -371,6 +429,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         },
       })
       delete lastTypingSent.current[channelId]
+      setSendNotice(null)
       transmit(channelId, content, nonce, sentAttachments)
     },
     [transmit, attachments, loadLatest],
@@ -442,6 +501,34 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
     [engine],
   )
 
+  /** "Add a device" (CONTRACT-V3 §2); a 401 here means this session is over. */
+  const createLinkCode = useCallback(async (): Promise<LinkCode> => {
+    try {
+      return await api.createLinkCode(token)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) onLogout()
+      throw error
+    }
+  }, [token, onLogout])
+
+  /**
+   * Sign THIS device out: our own socket is closed first (so its 4401 is not
+   * mistaken for a session ended elsewhere), then the server forgets the
+   * token, then local state goes. A 401 or no answer at all still clears it.
+   */
+  const signOut = useCallback(async () => {
+    setSigningOut(true)
+    socket.handlers = {}
+    socket.close()
+    engine.leave()
+    try {
+      await api.logout(token)
+    } catch {
+      // Already signed out (401), or unreachable: the device forgets the token either way.
+    }
+    onSignedOut()
+  }, [socket, engine, token, onSignedOut])
+
   // --- render --------------------------------------------------------------------
 
   const activeChannel = state.channels.find((channel) => channel.id === activeChannelId)
@@ -476,7 +563,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         onHangup={() => engine.leave()}
         onDismissVoiceError={() => engine.clearError()}
         onAskNotifications={askNotifications}
-        onLogout={onLogout}
+        onLogout={() => setLogoutOpen(true)}
       />
       {drawerOpen && (
         <button
@@ -513,8 +600,12 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
         </header>
 
         {state.connection !== 'open' && (
-          <div className="banner" role="status">
-            {state.ready ? 'Bağlantı koptu, yeniden bağlanılıyor…' : 'Sunucuya bağlanılıyor…'}
+          <div className={tooMany ? 'banner warn' : 'banner'} role="status" data-testid="connection-banner">
+            {tooMany
+              ? 'Çok fazla sekme ya da cihaz açık (bir hesapta en fazla 10 bağlantı). Kullanmadığın sekmeleri kapat; bağlantı kendiliğinden yeniden denenecek.'
+              : state.ready
+                ? 'Bağlantı koptu, yeniden bağlanılıyor…'
+                : 'Sunucuya bağlanılıyor…'}
           </div>
         )}
 
@@ -538,6 +629,7 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
               onJumpToLatest={() => void loadLatest(activeChannel.id, { jump: true })}
               onAtBottomChange={(value) => (atBottom.current = value)}
               onRetry={retryMessage}
+              isMember={state.ready ? (userId) => userId in state.users : undefined}
             />
             <div className="typing-line" data-testid="typing" aria-live="polite">
               {typingLabel(typing)}
@@ -547,15 +639,22 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
               channelName={activeChannel.name}
               onSend={sendMessage}
               onTyping={sendTyping}
+              onDraftChange={(value) => {
+                draft.current = value
+              }}
               attachments={{
                 items: pendingHere,
                 files: attachments.files,
                 ready: pendingHere.some((item) => item.status === 'done'),
                 uploading: attachments.uploading(activeChannelId),
-                notice: attachments.notice,
+                failed: attachments.failed(activeChannelId),
+                notice: sendNotice ?? attachments.notice,
                 onAdd: addFiles,
                 onRemove: attachments.remove,
-                onDismissNotice: attachments.dismissNotice,
+                onDismissNotice: () => {
+                  setSendNotice(null)
+                  attachments.dismissNotice()
+                },
               }}
             />
           </>
@@ -577,6 +676,30 @@ export function Session({ auth, onLogout }: { auth: Auth; onLogout: () => void }
           noiseState={voice.noiseState}
           transmitting={voice.transmitting}
           isDesktop={desktopBridge() !== null}
+          account={{
+            name: state.me.name,
+            createLinkCode,
+            createAtOnce: settingsCode,
+            inviteLink: invite === null ? null : inviteLinkUrl(window.location.origin, invite),
+          }}
+          onSignOut={() => {
+            closeSettings()
+            setLogoutOpen(true)
+          }}
+        />
+      )}
+
+      {logoutOpen && (
+        <LogoutDialog
+          name={state.me.name}
+          busy={signingOut}
+          onCancel={() => setLogoutOpen(false)}
+          onConfirm={() => void signOut()}
+          onCreateCodeFirst={() => {
+            setLogoutOpen(false)
+            setSettingsCode(true)
+            setSettingsOpen(true)
+          }}
         />
       )}
 

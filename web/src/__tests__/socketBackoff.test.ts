@@ -69,6 +69,15 @@ describe('TrioSocket backoff', () => {
     expect(delays).toEqual([1000, 2000, 4000, 8000, 15000, 15000])
   })
 
+  it('keeps backing off when the server accepts, sends one frame and closes', () => {
+    const delays = delaysWhile((ws) => {
+      ws.accept()
+      ws.frame({ type: 'error', code: 'INTERNAL', message: 'x' })
+      ws.drop(1011)
+    }, 5)
+    expect(delays).toEqual([1000, 2000, 4000, 8000, 15000])
+  })
+
   it('keeps backing off when ready arrives but the connection dies right after', () => {
     const delays = delaysWhile((ws) => {
       ws.accept()

@@ -585,3 +585,93 @@ textarea:focus,
     transition: none;
   }
 }
+
+/* --- v3 screens: join modes, device codes, sign-out, notices --------------------------------
+   styles-v3.css was written before this palette; these bring its pieces into it. */
+
+.join-modes {
+  border-radius: 12px;
+  background: var(--trio-base);
+  border: 1px solid var(--trio-border);
+}
+
+.join-modes button {
+  border-radius: 8px;
+}
+
+.join-modes button.active {
+  background: var(--trio-raised);
+  box-shadow: inset 0 0 0 1px var(--trio-border);
+}
+
+/* The ring sits inside the segment: offset outwards it ran over the control's edge. */
+.join-modes button:focus-visible {
+  outline-offset: -2px;
+}
+
+.join-notice {
+  background: rgb(238 153 127 / 12%);
+  border-color: rgb(238 153 127 / 45%);
+  border-radius: var(--radius);
+}
+
+.join-hint.desktop {
+  background: rgb(105 185 170 / 12%);
+  border: 1px solid rgb(105 185 170 / 35%);
+  border-radius: var(--radius);
+}
+
+.join-link-note {
+  border: 1px solid var(--trio-border);
+  border-radius: var(--radius);
+}
+
+.link-code-card {
+  background: var(--trio-base);
+  border-color: var(--trio-border);
+  border-radius: 14px;
+}
+
+.link-code-row .ghost,
+.invite-link-row .ghost {
+  border-color: var(--trio-border);
+  border-radius: var(--radius);
+}
+
+/* Destructive buttons: the palette's danger with dark text, as the hang-up button
+   (white on #e4777f was 2.6:1). */
+.danger {
+  background: var(--trio-danger);
+  color: var(--trio-base);
+  border-radius: var(--radius);
+}
+
+.danger:hover:not(:disabled) {
+  background: #ec8d93;
+}
+
+.danger:disabled {
+  background: var(--trio-raised);
+  color: var(--trio-muted);
+}
+
+.ghost.danger-text {
+  color: var(--trio-danger);
+}
+
+.logout-warning {
+  border-radius: var(--radius);
+  background: rgb(229 181 103 / 10%);
+}
+
+/* Warnings that are not about the connection (too many tabs): coral, dark text. */
+.banner.warn {
+  background: var(--trio-coral);
+  color: var(--trio-base);
+}
+
+.author-former {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--trio-raised);
+}

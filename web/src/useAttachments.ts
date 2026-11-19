@@ -28,6 +28,8 @@ export interface AttachmentsApi {
   uploading: (channelId: number | null) => boolean
   /** A chip of this channel failed; the message waits until it is removed. */
   failed: (channelId: number | null) => boolean
+  /** Any channel holds a chosen file (uploading, waiting, done or failed); read at call time. */
+  anyPending: () => boolean
   /** A Turkish sentence about files that were not added, or null. */
   notice: string | null
   dismissNotice: () => void
@@ -142,6 +144,8 @@ export function useAttachments(token: string, onUnauthorized: () => void): Attac
     [state],
   )
 
+  const anyPending = useCallback(() => Object.values(stateRef.current).some((list) => list.length > 0), [])
+
   const dismissNotice = useCallback(() => setNotice(null), [])
-  return { pending, add, remove, take, uploading, failed, notice, dismissNotice, files: fileMap.current }
+  return { pending, add, remove, take, uploading, failed, anyPending, notice, dismissNotice, files: fileMap.current }
 }

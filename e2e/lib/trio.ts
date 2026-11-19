@@ -66,6 +66,25 @@ const PEER_CONNECTION_PROBE = `
 })()
 `
 
+/**
+ * Every Content-Security-Policy violation any page of the current test hit
+ * (CONTRACT-V3 §8). The app shell carries a CSP; the worklet, the wasm, blob:
+ * and object URLs and the websocket must all still work under it, so ANY
+ * violation fails the test (the `cspGuard` fixture below).
+ */
+const cspViolations: string[] = []
+
+const CSP_PROBE = `
+document.addEventListener('securitypolicyviolation', (event) => {
+  console.error('CSP-VIOLATION ' + event.effectiveDirective + ' blocked ' + (event.blockedURI || '(inline)') +
+    ' at ' + (event.sourceFile || location.href) + ':' + event.lineNumber)
+})
+`
+
+function isCspMessage(text: string): boolean {
+  return text.startsWith('CSP-VIOLATION') || /Content Security Policy/i.test(text)
+}
+
 export async function newContext(browser: Browser, options: ContextOptions = {}): Promise<BrowserContext> {
   const context = await browser.newContext({
     baseURL: baseUrl(),
@@ -78,6 +97,12 @@ export async function newContext(browser: Browser, options: ContextOptions = {})
     permissions: ['microphone', 'camera'],
   })
   await context.addInitScript(PEER_CONNECTION_PROBE)
+  await context.addInitScript(CSP_PROBE)
+  context.on('console', (message) => {
+    if (message.type() === 'error' && isCspMessage(message.text())) {
+      cspViolations.push(`${message.page()?.url() ?? '?'}: ${message.text()}`)
+    }
+  })
   if (process.env.TRIO_E2E_CONSOLE) {
     context.on('console', (message) => {
       if (message.type() === 'warning' || message.type() === 'error') {
@@ -181,12 +206,22 @@ export async function threePeople(browser: Browser, trio: { add: (p: Person) => 
 
 export const NAMES = ['Ayşe', 'Mehmet', 'Zeynep'] as const
 
-export const test = base.extend<{ trio: { people: Person[]; add: (p: Person) => Person } }>({
+export const test = base.extend<{ trio: { people: Person[]; add: (p: Person) => Person }; cspGuard: void }>({
   trio: async ({}, use) => {
     const people: Person[] = []
     await use({ people, add: (p) => (people.push(p), p) })
     for (const person of people) await person.context.close().catch(() => undefined)
   },
+  cspGuard: [
+    async ({}, use) => {
+      cspViolations.length = 0
+      await use()
+      const seen = [...cspViolations]
+      cspViolations.length = 0
+      expect(seen, 'no Content-Security-Policy violation on any page').toEqual([])
+    },
+    { auto: true },
+  ],
 })
 
 // --- voice ---------------------------------------------------------------------
@@ -351,4 +386,56 @@ export async function bulkSend(person: Person, channelId: number, count: number,
     },
     [channelId, count, prefix] as const,
   )
+}
+
+// --- sessions and devices (CONTRACT-V3 §2) -----------------------------------------
+
+/** `POST /api/link-codes` for a signed-in token: the code as the server sent it. */
+export async function apiLinkCode(token: string): Promise<string> {
+  const response = await fetch(`${baseUrl()}/api/link-codes`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (response.status !== 201) throw new Error(`link code: ${response.status} ${await response.text()}`)
+  return ((await response.json()) as { code: string }).code
+}
+
+/** The HTTP status `GET /api/me` answers for a token (200 while it works, 401 once it does not). */
+export async function meStatus(token: string): Promise<number> {
+  const response = await fetch(`${baseUrl()}/api/me`, { headers: { Authorization: `Bearer ${token}` } })
+  return response.status
+}
+
+/** On a join screen: "Zaten hesabım var", type `typed`, submit. Resolves with the join response. */
+export async function joinWithCodeThroughUi(page: Page, typed: string) {
+  await page.getByTestId('join-mode-link').click()
+  await page.getByTestId('join-link-code').fill(typed)
+  const answer = page.waitForResponse((r) => r.url().endsWith('/api/join') && r.request().method() === 'POST')
+  await page.getByTestId('join-submit').click()
+  return answer
+}
+
+/** A new browser context signed in through the join screen's device-code mode as an existing user. */
+export async function linkedDevice(
+  browser: Browser,
+  owner: Person,
+  code: string,
+  options: ContextOptions = {},
+): Promise<Person> {
+  const context = await newContext(browser, options)
+  const page = await context.newPage()
+  await page.goto('/')
+  const response = await joinWithCodeThroughUi(page, code)
+  expect(response.status()).toBe(200)
+  const body = (await response.json()) as { token: string; user: User }
+  expect(body.user).toEqual(owner.user)
+  await expectConnected(page)
+  return { name: owner.name, context, page, user: body.user, token: body.token }
+}
+
+/** Type a message through the composer and wait for the server to confirm it. */
+export async function sendThroughUi(person: Person, text: string): Promise<void> {
+  await person.page.getByTestId('composer').fill(text)
+  await person.page.getByTestId('composer').press('Enter')
+  await expect(person.page.getByTestId('message').filter({ hasText: text }).last()).toHaveAttribute('data-status', 'sent')
 }
