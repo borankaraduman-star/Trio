@@ -110,3 +110,12 @@ export function hotkeyConflict(keys: { ptt: string | null; mute: string | null; 
 export function desktopKey(value: unknown): string | null {
   return typeof value === 'string' && isBindableKey(value) ? value : null
 }
+
+/** A shortcut is being bound in the settings: the shortcuts themselves do nothing meanwhile. */
+let binding = 0
+export function setBinding(on: boolean): void {
+  binding = Math.max(0, binding + (on ? 1 : -1))
+}
+export function isBinding(): boolean {
+  return binding > 0
+}

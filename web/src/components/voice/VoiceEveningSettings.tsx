@@ -3,7 +3,7 @@ import { linearToDb } from '../../audio/gateCore'
 import { micConstraints } from '../../audio/pipeline'
 import { useActiveEngine } from '../../lib/activeVoice'
 import { desktopHotkeysSupported } from '../../lib/desktopVoice'
-import { comboFromEvent, comboLabel, hotkeyConflict, type HotkeyAction } from '../../lib/hotkeys'
+import { comboFromEvent, comboLabel, hotkeyConflict, setBinding, type HotkeyAction } from '../../lib/hotkeys'
 import { GATE_MAX_DB, GATE_MIN_DB, voicePrefsStore } from '../../lib/voicePrefs'
 import { isBindableKey, keyLabel, settingsStore } from '../../settings'
 
@@ -181,6 +181,7 @@ function ShortcutBinder({
   bind.current = onBind
   useEffect(() => {
     if (!listening) return
+    setBinding(true)
     const onKey = (event: KeyboardEvent) => {
       event.preventDefault()
       event.stopPropagation()
@@ -197,6 +198,7 @@ function ShortcutBinder({
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('blur', onBlur)
     return () => {
+      setBinding(false)
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('blur', onBlur)
     }

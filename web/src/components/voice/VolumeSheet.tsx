@@ -155,7 +155,9 @@ export function VolumeSheet({
   return (
     <div
       className={`volume-backdrop${target.at ? ' anchored' : ''}`}
-      onMouseDown={(event) => {
+      // A click, not a mousedown: the touch that opened the sheet ends with a
+      // compatibility mousedown under the finger, and only its click is swallowed (pressEnd).
+      onClick={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
     >

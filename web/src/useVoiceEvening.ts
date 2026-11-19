@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { dbToLinear } from './audio/gateCore'
 import { AFK_TIMEOUT_MS, AfkMachine } from './lib/afk'
 import { desktopVoiceBridge } from './lib/desktopVoice'
-import { hotkeyConflict, matchesCombo, type HotkeyAction } from './lib/hotkeys'
+import { hotkeyConflict, isBinding, matchesCombo, type HotkeyAction } from './lib/hotkeys'
 import { voicePrefsStore } from './lib/voicePrefs'
 import { setActiveEngine } from './lib/activeVoice'
 import type { VoiceEngine } from './voice'
@@ -130,6 +130,7 @@ export function useVoiceEvening({
   const bridge = desktopVoiceBridge()
   const desktop = typeof bridge?.setHotkeys === 'function' && typeof bridge.onHotkey === 'function'
   const fire = (action: HotkeyAction) => {
+    if (isBinding()) return
     afkRef.current?.activity(Date.now(), engine.getSnapshot().muted)
     toggleRef.current(action)
   }
@@ -140,7 +141,7 @@ export function useVoiceEvening({
   useEffect(() => {
     if (desktop) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.repeat) return
+      if (event.repeat || isBinding()) return
       const action: HotkeyAction | null =
         pageMute !== null && matchesCombo(pageMute, event)
           ? 'mute'
