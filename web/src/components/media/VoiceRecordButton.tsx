@@ -67,14 +67,24 @@ export function VoiceRecordButton({
 
   const begin = useCallback(async () => {
     if (recorder.current) return
-    const next = new VoiceRecorder(
+    // Ticks of a recorder that is no longer the current one are ignored: the
+    // last tick of a stopped recording can land after `finish` reset the clock,
+    // and the next recording then showed the old time (0:02) until its own
+    // first tick — long enough on a slow device to press "Gönder" on a
+    // recording a few hundred ms long, which is dropped as too short.
+    const next: VoiceRecorder = new VoiceRecorder(
       (ms, peak) => {
+        if (recorder.current !== next) return
         setElapsed(ms)
         setLevel(peak)
       },
-      () => void finish(true),
+      () => {
+        if (recorder.current === next) void finish(true)
+      },
     )
     recorder.current = next
+    setElapsed(0)
+    setLevel(0)
     go('starting')
     try {
       await next.start()
