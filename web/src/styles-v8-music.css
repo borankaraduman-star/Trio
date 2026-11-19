@@ -129,3 +129,9 @@
 .v8-music-mute.on {
   color: var(--trio-danger, #e4777f);
 }
+
+.v8-music-toggle input {
+  flex: none;
+  width: auto;
+  margin: 0;
+}

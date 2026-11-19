@@ -58,7 +58,7 @@ export interface SidebarProps {
   voiceControls?: ReactNode
   /** V6: a participant row's right-click / long-press (the volume sheet). */
   participantMenu?: (userId: number) => HTMLAttributes<HTMLElement>
-  /** V8: the music button (beside the share button) and the panel while I share. */
+  /** V8: the music button (in the user panel while in voice) and the panel while I share. */
   musicButton?: ReactNode
   musicPanel?: ReactNode
 }
@@ -331,7 +331,6 @@ export function Sidebar(props: SidebarProps) {
               {props.voiceControls}
             </>
           )}
-          {props.musicButton}
           <button
             type="button"
             className="icon-button danger"
@@ -352,6 +351,7 @@ export function Sidebar(props: SidebarProps) {
           <strong>{me.name}</strong>
           <span>{props.connection === 'open' ? 'Çevrimiçi' : 'Bağlanıyor…'}</span>
         </div>
+        {inVoice && props.musicButton}
         <button
           type="button"
           className={voice.muted || voice.micLost ? 'icon-button off' : 'icon-button'}

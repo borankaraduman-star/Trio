@@ -98,8 +98,8 @@ export function MusicButton({
 /**
  * The title while I share (CONTRACT-V8-MUSIC §5). Desktop app with a
  * now-playing source: what Windows says is playing, read only while the share
- * AND the toggle are on. Otherwise the text I type (prefilled with the
- * captured tab's title where the browser gives one). Toggle off: no title.
+ * AND the toggle are on. Otherwise the text I type (no browser
+ * tells the capturer the tab's title). Toggle off: no title.
  */
 export function useMusicTitle(engine: VoiceEngine, voice: VoiceSnapshot) {
   const prefs = useSyncExternalStore(musicPrefsStore.subscribe, musicPrefsStore.getSnapshot)
@@ -111,7 +111,7 @@ export function useMusicTitle(engine: VoiceEngine, voice: VoiceSnapshot) {
   const sharing = voice.music
   const initial = useRef<string | null>(null)
 
-  // A new share starts from what the capture gave (a tab title), or empty.
+  // A new share starts from the title the engine holds (none), or empty.
   useEffect(() => {
     if (!sharing) {
       initial.current = null

@@ -104,7 +104,7 @@ export const DESKTOP_MUSIC_OPTIONS = {
 } as DisplayMediaStreamOptions
 
 export type CaptureResult =
-  | { ok: true; stream: MediaStream; title: string | null; source: 'desktop' | 'browser' }
+  | { ok: true; stream: MediaStream; title: null; source: 'desktop' | 'browser' }
   /** `message` null: the user closed the picker — say nothing. */
   | { ok: false; message: string | null }
 
@@ -125,13 +125,6 @@ export function defaultCaptureEnv(): CaptureEnv {
 
 function stopAll(stream: MediaStream): void {
   for (const track of stream.getTracks()) track.stop()
-}
-
-/** A tab's title where the picture track's label is one (never an internal id). */
-export function titleFromLabel(label: string): string | null {
-  const text = label.trim()
-  if (text === '' || /^(web-contents-media-stream:|screen:|window:|tab:)/i.test(text)) return null
-  return text.slice(0, 120)
 }
 
 /**
@@ -171,7 +164,6 @@ export async function captureMusic(env: CaptureEnv = defaultCaptureEnv()): Promi
 
   const video = stream.getVideoTracks()[0]
   const surface = (video?.getSettings() as { displaySurface?: string } | undefined)?.displaySurface
-  const label = video?.label ?? ''
   // The picture is never sent: stopped before anything else.
   for (const track of stream.getVideoTracks()) track.stop()
   const audio = stream.getAudioTracks()[0]
@@ -201,7 +193,9 @@ export async function captureMusic(env: CaptureEnv = defaultCaptureEnv()): Promi
   return {
     ok: true,
     stream: new MediaStream([audio]),
-    title: desktop ? null : titleFromLabel(label),
+    // No browser exposes the captured tab's title to the capturer: Chrome's track
+    // label is an id (`web-contents-media-stream://…`, measured). The sharer types it.
+    title: null,
     source: desktop ? 'desktop' : 'browser',
   }
 }

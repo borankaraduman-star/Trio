@@ -7,7 +7,6 @@ import {
   NO_SEPARATION_MESSAGE,
   OLD_APP_MESSAGE,
   OWN_AUDIO_MESSAGE,
-  titleFromLabel,
   type CaptureEnv,
   type DesktopMusicBridge,
 } from '../music/capture'
@@ -146,13 +145,6 @@ describe('captureMusic in a browser', () => {
   it('closing the picker says nothing', async () => {
     const error = Object.assign(new Error('x'), { name: 'NotAllowedError' })
     expect(await captureMusic(env(error).e)).toEqual({ ok: false, message: null })
-  })
-
-  it('a window label can be a title; internal ids are not', () => {
-    expect(titleFromLabel('web-contents-media-stream://1F17')).toBeNull()
-    expect(titleFromLabel('screen:0:0')).toBeNull()
-    expect(titleFromLabel('window:12:0')).toBeNull()
-    expect(titleFromLabel('  Lo-fi beats - YouTube ')).toBe('Lo-fi beats - YouTube')
   })
 })
 
