@@ -98,6 +98,14 @@ textarea:focus,
   background: var(--accent-hover);
 }
 
+/* Disabled: a quiet raised surface rather than a half-transparent coral, which
+   read as a muddy brown with dark text on it. */
+.primary:disabled {
+  opacity: 1;
+  background: var(--trio-raised);
+  color: var(--trio-muted);
+}
+
 .ghost {
   border-radius: 8px;
 }
@@ -247,6 +255,20 @@ textarea:focus,
 
 .channel.active svg {
   color: var(--trio-coral);
+}
+
+/* The voice room you are in is "active" too, but it is not the channel you are
+   looking at: no second pill, just strong text and a teal speaker. */
+.channel.active:not([aria-current]) {
+  background: none;
+}
+
+.channel.active:not([aria-current]):hover {
+  background: var(--trio-raised);
+}
+
+.channel.active:not([aria-current]) svg {
+  color: var(--trio-online);
 }
 
 .voice-users {
