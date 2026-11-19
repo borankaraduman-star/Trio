@@ -1,4 +1,5 @@
 import { ContextKeeper } from './audio/contextKeeper'
+import { analyserSizeFor, loudestBlockRms } from './audio/speaking'
 import { MicPipeline, type NoiseState } from './audio/pipeline'
 import { displayMediaOptions } from './audio/screenAudio'
 import type { PeerStat } from './lib/connReport'
@@ -160,7 +161,7 @@ interface Peer {
 interface Monitor {
   source: MediaStreamAudioSourceNode
   analyser: AnalyserNode
-  data: Uint8Array<ArrayBuffer>
+  data: Float32Array<ArrayBuffer>
   lastLoudAt: number
 }
 
@@ -2003,13 +2004,14 @@ export class VoiceEngine {
     try {
       const source = context.createMediaStreamSource(stream)
       const analyser = context.createAnalyser()
-      analyser.fftSize = 512
+      // The window spans the whole poll interval: nothing heard falls between two reads (audio/speaking.ts).
+      analyser.fftSize = analyserSizeFor(context.sampleRate, SPEAKING_POLL_MS)
       // Not connected to the destination: this only listens.
       source.connect(analyser)
       this.monitors.set(userId, {
         source,
         analyser,
-        data: new Uint8Array(new ArrayBuffer(analyser.fftSize)),
+        data: new Float32Array(new ArrayBuffer(analyser.fftSize * 4)),
         lastLoudAt: 0,
       })
     } catch (error) {
@@ -2033,13 +2035,8 @@ export class VoiceEngine {
     const now = Date.now()
     const next = new Set<number>()
     for (const [userId, monitor] of this.monitors) {
-      monitor.analyser.getByteTimeDomainData(monitor.data)
-      let sum = 0
-      for (const sample of monitor.data) {
-        const centered = (sample - 128) / 128
-        sum += centered * centered
-      }
-      if (Math.sqrt(sum / monitor.data.length) > SPEAKING_THRESHOLD) monitor.lastLoudAt = now
+      monitor.analyser.getFloatTimeDomainData(monitor.data)
+      if (loudestBlockRms(monitor.data) > SPEAKING_THRESHOLD) monitor.lastLoudAt = now
       // Muted, or the microphone lost (nothing is sent): no speaking ring for me.
       const silenced = userId === this.deps.myId && (this.muted || this.pipeline?.micLost === true)
       if (!silenced && now - monitor.lastLoudAt < SPEAKING_HOLD_MS) next.add(userId)

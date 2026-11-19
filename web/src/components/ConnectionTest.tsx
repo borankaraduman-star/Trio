@@ -184,7 +184,7 @@ export function ConnectionTest({
         <span className="conn-meter" aria-hidden="true">
           <span style={{ width: `${Math.round(Math.min(1, (level ?? 0) * 1.5) * 100)}%` }} />
         </span>
-        <span className="conn-value" data-testid="conn-mic-level" data-level={level ?? ''}>
+        <span className="conn-value" data-testid="conn-mic-level" data-level={level ?? ''} data-peak={peak ?? ''}>
           {listening ? micLevelText(level) : ''}
         </span>
         {listening ? (

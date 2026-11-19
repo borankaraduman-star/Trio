@@ -44,9 +44,11 @@ test('A3: no TURN configured — the test says so, and the voice panel carries t
     await expect(peerRow).toContainText('doğrudan')
     await expect(peerRow.locator('td').nth(2)).toHaveText(/^\d+ ms$/)
   }
-  // The microphone meter moves with the fake microphone's beep.
+  // The microphone meter moves with the fake microphone's beep. The beep is 20 ms every
+  // 500 ms and the meter shows the current frame, so polling `data-level` samples it at
+  // the poll's rhythm and can miss every beep; the loudest the meter showed is `data-peak`.
   await section.getByTestId('conn-mic-start').click()
-  await expect.poll(async () => Number(await section.getByTestId('conn-mic-level').getAttribute('data-level'))).toBeGreaterThan(0.01)
+  await expect.poll(async () => Number(await section.getByTestId('conn-mic-level').getAttribute('data-peak'))).toBeGreaterThan(0.01)
   await section.getByTestId('conn-loopback').check()
   await expect(section.getByTestId('conn-loopback')).toBeChecked()
 
