@@ -51,6 +51,13 @@ import { PinsButton } from './message/PinsButton'
 import { ReplyBar } from './message/ReplyBar'
 import { FamilyNotice } from './message/FamilyNotice'
 import { activityStore, GameForwarder, gameShare, gameStatusBridge } from '../gameActivity'
+// CONTRACT-V6-VOICE: share profiles, watching, volumes, gate, AFK, shortcuts, the people strip.
+import { voicePrefsStore } from '../lib/voicePrefs'
+import { dbToLinear } from '../audio/gateCore'
+import { useVoiceEvening } from '../useVoiceEvening'
+import { ShareMenu } from './voice/ShareMenu'
+import { stageExtras } from './voice/StageExtras'
+import { useParticipantMenu, VolumeSheet, type VolumeTarget } from './voice/VolumeSheet'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -112,6 +119,11 @@ export function Session({
         send: (event) => socket.send(event),
         fetchIce: () => api.ice(token),
         prefs: () => settingsStore.getSnapshot(),
+        sharePrefs: () => voicePrefsStore.getSnapshot(),
+        gate: () => {
+          const v6 = voicePrefsStore.getSnapshot()
+          return v6.gateAuto ? null : dbToLinear(v6.gateThresholdDb)
+        },
       }),
   )
   const voice = useSyncExternalStore(engine.subscribe, engine.getSnapshot)
@@ -608,6 +620,12 @@ export function Session({
     [engine, alerts],
   )
 
+  // V6: shortcuts, AFK, the gate and the tray follow the engine.
+  useVoiceEvening({ engine, toggle: selfToggle, pttKey: settings.inputMode === 'ptt' ? settings.pttKey : null })
+  const [volumeTarget, setVolumeTarget] = useState<VolumeTarget | null>(null)
+  const participantMenu = useParticipantMenu(setVolumeTarget)
+  const closeVolume = useCallback(() => setVolumeTarget(null), [])
+
   /** "Add a device" (CONTRACT-V3 §2); a 401 here means this session is over. */
   const createLinkCode = useCallback(async (): Promise<LinkCode> => {
     try {
@@ -690,6 +708,8 @@ export function Session({
         onAskNotifications={askNotifications}
         onLogout={() => setLogoutOpen(true)}
         server={state.server}
+        voiceControls={<ShareMenu engine={engine} voice={voice} nameOf={nameOf} variant="button" />}
+        participantMenu={participantMenu}
       />
       {drawerOpen && (
         <button
@@ -769,6 +789,14 @@ export function Session({
           localCamera={voice.localCamera}
           deafened={voice.deafened}
           nameOf={nameOf}
+          {...stageExtras({
+            engine,
+            voice,
+            participants: voice.channelId === null ? [] : (state.voice[voice.channelId] ?? []),
+            users: state.users,
+            me: state.me.id,
+            nameOf,
+          })}
         />
 
         {activeChannel ? (
@@ -892,6 +920,17 @@ export function Session({
       )}
 
       <WhatsNewCard ready={state.ready} busy={busyForNews} paused={calls.incoming !== null} />
+
+      {volumeTarget && (
+        <VolumeSheet
+          target={volumeTarget}
+          user={state.users[volumeTarget.userId]}
+          hasStreamAudio={voice.remoteVideo.some(
+            (media) => media.userId === volumeTarget.userId && media.stream.getAudioTracks().length > 0,
+          )}
+          onClose={closeVolume}
+        />
+      )}
 
       <div hidden>
         {voice.remoteAudio.map((media) => (

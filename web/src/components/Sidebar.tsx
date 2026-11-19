@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type HTMLAttributes, type ReactNode } from 'react'
 import type { Channel, ChannelKind, Member, ServerProfile, User, VoiceParticipant } from '../types'
 import type { ConnectionStatus } from '../store'
 import type { VoiceSnapshot } from '../voice'
@@ -51,6 +51,10 @@ export interface SidebarProps {
   onLogout: () => void
   /** v4: the server's name and icon for the header (default "Trio"). */
   server?: ServerProfile
+  /** V6: beside the share button (the share profile menu). */
+  voiceControls?: ReactNode
+  /** V6: a participant row's right-click / long-press (the volume sheet). */
+  participantMenu?: (userId: number) => HTMLAttributes<HTMLElement>
 }
 
 function AddChannelForm({
@@ -213,6 +217,8 @@ export function Sidebar(props: SidebarProps) {
                           data-camera={participant.camera ?? false}
                           data-speaking={speaking.has(participant.user_id)}
                           data-peer-health={mine ? voice.peerHealth[participant.user_id] : undefined}
+                          data-afk={participant.afk === true}
+                          {...(mine && participant.user_id !== me.id ? props.participantMenu?.(participant.user_id) : undefined)}
                         >
                           <Avatar
                             id={participant.user_id}
@@ -236,6 +242,11 @@ export function Sidebar(props: SidebarProps) {
                             {participant.screensharing && (
                               <span className="badge-live" title="Ekran paylaşıyor">
                                 <ScreenIcon size={13} />
+                              </span>
+                            )}
+                            {participant.afk && (
+                              <span className="afk-mark" title="Klavye başında değil (AFK)" data-testid={`afk-${participant.user_id}`}>
+                                AFK
                               </span>
                             )}
                             {participant.muted && (
@@ -309,6 +320,7 @@ export function Sidebar(props: SidebarProps) {
           >
             <ScreenIcon />
           </button>
+          {props.voiceControls}
           <button
             type="button"
             className="icon-button danger"

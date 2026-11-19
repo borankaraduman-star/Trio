@@ -1,0 +1,471 @@
+/*
+ * CONTRACT-V6-VOICE: the share menu, "İzlemeyi bırak", the volume sheet, the
+ * input-sensitivity bar, AFK marks and the people strip under the stage.
+ * Imported before theme.css; only new class names, colours from
+ * design/palette.md through theme.css's custom properties.
+ */
+
+/* --- AFK -------------------------------------------------------------------------- */
+
+.afk-mark {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--trio-raised, #232730);
+  border: 1px solid var(--trio-border, #2b303a);
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 16px;
+}
+
+.voice-user[data-afk='true'] .voice-user-name {
+  opacity: 0.6;
+}
+
+.voice-user[tabindex] {
+  cursor: context-menu;
+}
+
+.voice-user[tabindex]:focus-visible {
+  outline: 2px solid var(--trio-coral, #ee997f);
+  outline-offset: -2px;
+}
+
+/* --- the share menu ------------------------------------------------------------------ */
+
+.share-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.share-menu.button .share-menu-caret {
+  width: 26px;
+  margin-left: -6px;
+}
+
+.share-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 10px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+  background: rgb(17 19 24 / 82%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.share-chip:hover {
+  border-color: var(--trio-coral, #ee997f);
+}
+
+.share-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 300px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 14px;
+  background: var(--trio-raised, #232730);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  color: var(--trio-text, #f2f1ed);
+  text-align: left;
+  cursor: default;
+}
+
+.share-menu.chip .share-popover {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.share-popover h4 {
+  margin: 4px 0 6px;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.share-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.share-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 7px 4px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 10px;
+  background: var(--trio-surface, #1a1d24);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.share-option small {
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 11px;
+}
+
+.share-option.on {
+  border-color: var(--trio-coral, #ee997f);
+  background: rgb(238 153 127 / 14%);
+}
+
+.share-hint,
+.share-estimate,
+.share-watchers {
+  margin: 8px 0 0;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.share-estimate {
+  color: var(--trio-text, #f2f1ed);
+}
+
+.share-warning {
+  margin: 8px 0 0;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgb(228 119 127 / 14%);
+  color: #f2b8bc;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* --- tile controls -------------------------------------------------------------------- */
+
+.tile-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.share-watch-count {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgb(17 19 24 / 82%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 12px;
+}
+
+.tile-unwatch {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+  background: rgb(17 19 24 / 82%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.call-tile:hover .tile-unwatch,
+.call-tile:focus-within .tile-unwatch,
+.tile-unwatch:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .tile-unwatch {
+    opacity: 1;
+  }
+}
+
+.call-tile.small .tile-unwatch span,
+.call-tile.small .share-chip span {
+  display: none;
+}
+
+/* --- the people strip ------------------------------------------------------------------ */
+
+.call-stage-people {
+  flex: none;
+  padding: 2px 12px 12px;
+  background: var(--trio-base, #111318);
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+}
+
+.stage-people {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.stage-person {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 76px;
+  margin: 0;
+  padding: 8px 4px 6px;
+  border-radius: 12px;
+  background: var(--trio-surface, #1a1d24);
+}
+
+.stage-person figcaption {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--trio-text, #f2f1ed);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-person.afk .avatar {
+  opacity: 0.55;
+}
+
+.stage-person-marks {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  color: var(--trio-danger, #e4777f);
+}
+
+.stage-person-marks .afk-mark {
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.stage-hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px dashed var(--trio-border, #2b303a);
+  border-radius: 999px;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 13px;
+}
+
+.stage-hidden button.small {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* --- the volume sheet ------------------------------------------------------------------- */
+
+.volume-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 35%);
+}
+
+.volume-backdrop.anchored {
+  background: transparent;
+}
+
+.volume-sheet {
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 12px 14px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 14px;
+  background: var(--trio-raised, #232730);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 50%);
+  color: var(--trio-text, #f2f1ed);
+}
+
+.volume-sheet.at {
+  position: fixed;
+}
+
+.volume-sheet header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.volume-sheet header strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.volume-field {
+  margin: 10px 0;
+}
+
+.volume-field label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.volume-field output {
+  color: var(--trio-muted, #a0a6b2);
+  font-variant-numeric: tabular-nums;
+}
+
+.volume-field input[type='range'] {
+  width: 100%;
+  accent-color: var(--trio-online, #69b9aa);
+}
+
+.volume-field input[type='range'].boost {
+  accent-color: var(--trio-coral, #ee997f);
+}
+
+.volume-hint {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 6px 0;
+  color: #f3c1b1;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.volume-hint.quiet {
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.volume-sheet footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (max-width: 680px) {
+  .volume-backdrop,
+  .volume-backdrop.anchored {
+    align-items: flex-end;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .volume-sheet,
+  .volume-sheet.at {
+    position: static;
+    width: 100%;
+    max-width: none;
+    padding: 16px 18px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+  }
+
+  .volume-field input[type='range'] {
+    height: 32px;
+  }
+
+  .share-popover {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    top: auto;
+    width: auto;
+  }
+
+  .share-menu.chip .share-popover {
+    top: auto;
+    bottom: 8px;
+  }
+}
+
+/* --- Ayarlar › Giriş hassasiyeti ------------------------------------------------------- */
+
+.gate-meter {
+  position: relative;
+  height: 28px;
+  margin: 10px 0 4px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 8px;
+  background: var(--trio-base, #111318);
+  overflow: hidden;
+}
+
+.gate-meter-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--trio-muted, #a0a6b2);
+  opacity: 0.45;
+  transition: width 0.08s linear;
+}
+
+.gate-meter-fill[data-above='true'] {
+  background: var(--trio-online, #69b9aa);
+  opacity: 0.85;
+}
+
+.gate-meter.auto .gate-meter-fill {
+  background: var(--trio-online, #69b9aa);
+  opacity: 0.6;
+}
+
+.gate-meter-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--trio-coral, #ee997f);
+  pointer-events: none;
+}
+
+.gate-meter input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: ew-resize;
+}
+
+.gate-meter input[type='range']:disabled {
+  cursor: default;
+}
+
+.gate-meter input[type='range']:focus-visible {
+  opacity: 0.35;
+}
+
+.gate-readout {
+  font-variant-numeric: tabular-nums;
+}
+
+.shortcut-row .key-binder {
+  flex-wrap: wrap;
+}

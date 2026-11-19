@@ -8,6 +8,7 @@ import './styles-v4-voice.css'
 import './styles-v4-identity.css'
 import './styles-v4-messages.css'
 import './styles-game-status.css'
+import './styles-v6-voice.css'
 import './theme.css'
 
 const root = document.getElementById('root')
