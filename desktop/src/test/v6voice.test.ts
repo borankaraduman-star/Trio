@@ -131,3 +131,32 @@ test("the tray mark is drawn bottom-right and leaves the rest of the icon alone"
   assert.notDeepEqual(deaf, muted);
   assert.deepEqual(at(base, 11, 11), [0, 0, 0, 0x80], "the input is not modified");
 });
+
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { VERSION_ARG_PREFIX, versionArgument, versionFromArgv, versionLabel } from "../shared/appVersion";
+
+test("the app version travels to the preload through argv and back", () => {
+  const argv = ["electron", "--type=renderer", ...versionArgument("0.4.0")];
+  assert.deepEqual(versionArgument("0.4.0"), ["--trio-app-version=0.4.0"]);
+  assert.equal(versionFromArgv(argv), "0.4.0");
+  assert.equal(versionFromArgv(["x", ...versionArgument("1.2.3-beta.1")]), "1.2.3-beta.1");
+  assert.equal(versionFromArgv(["x"]), null);
+  assert.equal(versionFromArgv(["--trio-app-version=<script>"]), null);
+  assert.deepEqual(versionArgument("not a version"), []);
+  assert.equal(versionLabel("0.4.0"), "Trio 0.4.0");
+});
+
+test("the preload reads the same argument and exposes appVersion on the bridge", () => {
+  // The sandboxed preload cannot import shared/appVersion; hold its copy to the same prefix.
+  const source = fs.readFileSync(path.join(__dirname, "..", "preload", "app-preload.js"), "utf8");
+  assert.ok(source.includes(JSON.stringify(VERSION_ARG_PREFIX)), "same prefix");
+  assert.ok(/appVersion: APP_VERSION/.test(source), "exposed as trioDesktop.appVersion");
+  // And it runs: evaluate the parse against a fake process.argv.
+  const fn = source.match(/function appVersionFromArgv\(\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(fn, "parse function present");
+  const run = (argv: string[]) => new Function("process", `const VERSION_ARG_PREFIX = ${JSON.stringify(VERSION_ARG_PREFIX)}; ${fn}; return appVersionFromArgv()`)({ argv }) as string | null;
+  assert.equal(run(["a", "--trio-app-version=0.5.1"]), "0.5.1");
+  assert.equal(run(["a", "--trio-app-version=0.5"]), null);
+  assert.equal(run(["a"]), null);
+});

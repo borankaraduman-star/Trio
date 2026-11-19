@@ -18,6 +18,22 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 const LOCAL_PROTOCOL = "trio-app:";
 
+/**
+ * CONTRACT-V6-VOICE: the app's version, put on argv by the main process
+ * (`additionalArguments`). Same prefix and check as shared/appVersion.ts
+ * (a sandboxed preload imports nothing but electron; a test compares them).
+ */
+const VERSION_ARG_PREFIX = "--trio-app-version=";
+function appVersionFromArgv(): string | null {
+  for (const arg of process.argv) {
+    if (typeof arg !== "string" || !arg.startsWith(VERSION_ARG_PREFIX)) continue;
+    const value = arg.slice(VERSION_ARG_PREFIX.length);
+    return /^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(?:[-+][0-9A-Za-z.-]{1,24})?$/.test(value) ? value : null;
+  }
+  return null;
+}
+const APP_VERSION = appVersionFromArgv();
+
 if (window.location.protocol === LOCAL_PROTOCOL) {
   contextBridge.exposeInMainWorld("trioConnect", {
     state: (): Promise<unknown> => ipcRenderer.invoke("trio:connect-state"),
@@ -28,6 +44,8 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
   let gameListeners = 0;
   contextBridge.exposeInMainWorld("trioDesktop", {
     isDesktop: true,
+    // CONTRACT-V6-VOICE "Desktop version": absent (undefined) only if argv lacked it.
+    ...(APP_VERSION ? { appVersion: APP_VERSION } : {}),
     setPttKey(code: string | null): void {
       ipcRenderer.send("trio:set-ptt-key", typeof code === "string" ? code : null);
     },

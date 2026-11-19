@@ -21,6 +21,8 @@
     if (!state) return;
     if (state.current && !input.value) input.value = state.current;
     if (state.notice) show(state.notice, "error");
+    // CONTRACT-V6-VOICE: the app's own version.
+    if (typeof state.version === "string") document.getElementById("version").textContent = "Trio " + state.version;
     input.select();
   });
 

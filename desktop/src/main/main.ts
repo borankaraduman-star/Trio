@@ -36,6 +36,7 @@ import { ConfigStore } from "./config";
 import { checkHealth } from "./health";
 import { PttController } from "./ptt";
 import { badgeBitmap } from "./badge";
+import { versionArgument, versionLabel } from "../shared/appVersion";
 import { drawTrayMark, trayTooltip, trayVoiceState, type TrayVoiceState } from "./trayState";
 import { GameConfigStore, GameService, diagnosticsText } from "./gameService";
 import { listProcesses } from "./processList";
@@ -275,6 +276,8 @@ function createMainWindow(): void {
     icon: process.platform === "linux" ? path.join(STATIC_DIR, "icon.png") : undefined,
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "app-preload.js"),
+      // CONTRACT-V6-VOICE: the sandboxed preload reads the app's version from argv.
+      additionalArguments: versionArgument(app.getVersion()),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -401,6 +404,8 @@ function createTray(): void {
   tray.setToolTip("Trio");
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: versionLabel(app.getVersion()), enabled: false },
+      { type: "separator" },
       { label: "Trio'yu göster", click: () => showMainWindow() },
       { label: "Oyun durumu…", click: () => showGameWindow() },
       { type: "separator" },
@@ -449,6 +454,8 @@ function quit(): void {
 function buildAppMenu(): void {
   const isMac = process.platform === "darwin";
   const trioMenu: MenuItemConstructorOptions[] = [
+    { label: versionLabel(app.getVersion()), enabled: false },
+    { type: "separator" },
     { label: "Sunucuyu değiştir…", click: () => showConnectPage() },
     { label: "Oyun durumu…", click: () => showGameWindow() },
     { type: "separator" },
@@ -570,7 +577,7 @@ function installIpc(): void {
     if (!fromConnectPage(event)) return null;
     const notice = connectNotice;
     connectNotice = null;
-    return { current: config.getServerOrigin(), notice };
+    return { current: config.getServerOrigin(), notice, version: app.getVersion() };
   });
 
   ipcMain.handle("trio:connect-submit", async (event, input: unknown) => {
