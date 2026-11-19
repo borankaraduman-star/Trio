@@ -129,7 +129,7 @@ export function DownloadPage() {
 
         {downloads && files.length > 0 && (
           <section className="indir-section" aria-labelledby="indir-files-title">
-            <h2 id="indir-files-title">{visitor === 'phone' || !primary ? 'Masaüstü dosyaları' : 'Diğer sistemler'}</h2>
+            <h2 id="indir-files-title">{visitor === 'phone' ? 'Masaüstü dosyaları' : 'Tüm dosyalar'}</h2>
             {downloads.version && (
               <p className="indir-muted">
                 Sürüm {downloads.version}
@@ -150,8 +150,8 @@ export function DownloadPage() {
       </main>
 
       <footer className="indir-footer">
-        Trio, birkaç arkadaşın kendi sunucusunda çalışan küçük bir sohbet uygulaması. Mağazada değil; dosyalar bu
-        sunucunun GitHub'daki sürüm sayfasından gelir.
+        Trio, birkaç arkadaşın kendi sunucusunda çalışan küçük bir sohbet uygulaması. Mağazada değil; dosyalar Trio'nun
+        GitHub'daki sürüm sayfasından gelir.
       </footer>
     </div>
   )
