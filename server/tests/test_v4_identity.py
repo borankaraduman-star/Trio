@@ -139,7 +139,8 @@ def test_upload_replace_and_delete_an_avatar(trio):
         assert trio.client.get(url).status_code == 404
         assert len(avatars(trio)) == 1
         # ready, /api/me and message authors carry it.
-        assert trio.client.get("/api/me", headers=ali["auth"]).json()["user"] == second
+        me = trio.client.get("/api/me", headers=ali["auth"]).json()["user"]
+        assert me == {**second, "is_owner": True}  # Ali is the owner (CONTRACT-V6-OPS)
         a.send_json({"type": "message.send", "channel_id": TEXT, "content": "selam"})
         assert expect(a, "message.new")["message"]["author"] == second
         expect(b, "message.new")

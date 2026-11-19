@@ -620,3 +620,78 @@ def test_real_chromium_recordings_of_each_kind():
     assert sniff_content_type(video[:4096], "v.webm") == "video/webm"
     mp4 = (FIXTURES / "voice-chromium.mp4").read_bytes()  # audio/mp4;codecs=opus
     assert sniff_content_type(mp4[:4096], "kayit.mp4") == "audio/mp4"
+
+
+# -- with CONTRACT-V6-OPS §4: a file its uploader deleted -------------------------------
+
+
+def test_a_deleted_file_leaves_the_lists_and_takes_its_preview_with_it(trio):
+    ayse, mehmet = trio.user("Ayşe"), trio.user("Mehmet")
+    channel = text_channel(trio)
+    photo = upload(trio, ayse, png(1200, 800), "a.png", preview=png(48, 32)).json()["attachment"]
+    kept = upload(trio, ayse, png(30, 20), "b.png").json()["attachment"]
+    note = upload(trio, ayse, b"not", "n.txt").json()["attachment"]
+    with trio.ws(ayse) as sock:
+        send(sock, channel, "üçü", ids=[photo["id"], kept["id"], note["id"]])
+    db = trio.client.app.state.db
+    before = trio.client.portal.call(db.stored_bytes, ayse["id"])
+    for att in (photo, note):
+        response = trio.client.delete(f"/api/attachments/{att['id']}", headers=ayse["auth"])
+        assert response.status_code == 200, response.text
+    media = trio.client.get(f"/api/channels/{channel}/attachments", headers=mehmet["auth"]).json()
+    assert [i["attachment"]["id"] for i in media["items"]] == [kept["id"]]
+    files = trio.client.get(
+        f"/api/channels/{channel}/attachments?kind=file", headers=mehmet["auth"]
+    ).json()
+    assert files["items"] == []
+    assert trio.client.get(photo["preview_url"]).status_code == 404
+    assert list((uploads_of(trio) / "previews").iterdir()) == []
+    after = trio.client.portal.call(db.stored_bytes, ayse["id"])
+    assert after == before - photo["size"] - len(png(48, 32)) - note["size"]
+    storage = trio.client.get("/api/me/storage", headers=ayse["auth"]).json()
+    assert storage["used_bytes"] == after
+    # The message keeps the tombstones, with no v6 fields to show.
+    message = trio.client.get(f"/api/channels/{channel}/messages", headers=mehmet["auth"]).json()
+    assert message["messages"][-1]["attachments"][0] == {
+        "id": photo["id"],
+        "filename": "a.png",
+        "deleted": True,
+    }
+
+
+def test_a_preview_left_by_a_crash_after_a_delete_is_swept_at_start(tmp_path):
+    settings = Settings(
+        invite_code=INVITE, db_path=str(tmp_path / "t.db"), upload_dir=str(tmp_path / "u")
+    )
+    with TestClient(create_app(settings)) as client:
+        token = client.post(
+            "/api/join",
+            json={"invite_code": INVITE, "name": "Ali"},
+            headers={"X-Forwarded-For": "198.51.100.9"},
+        ).json()["token"]
+        auth = {"Authorization": f"Bearer {token}"}
+        att = client.post(
+            "/api/uploads",
+            files={"file": ("a.png", png(1200, 800)), "preview": ("p.png", png(48, 32))},
+            headers=auth,
+        ).json()["attachment"]
+        with client.websocket_connect(f"/ws?token={token}") as sock:
+            sock.receive_json()
+            sock.send_json(
+                {
+                    "type": "message.send",
+                    "channel_id": 1,
+                    "content": "",
+                    "attachment_ids": [att["id"]],
+                }
+            )
+            sock.receive_json()
+    con = sqlite3.connect(tmp_path / "t.db")
+    con.execute("UPDATE attachments SET deleted_at = '2026-11-19T00:00:00.000Z'")
+    con.commit()
+    con.close()
+    preview = tmp_path / "u" / "previews" / att["id"]
+    assert preview.is_file()
+    with TestClient(create_app(settings)):
+        pass
+    assert not preview.exists()

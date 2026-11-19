@@ -178,6 +178,14 @@ test('the media panel after 84 posts: months, infinite scroll, the lightbox thro
   await expect(files).toHaveCount(seeded.fileNames.length)
   await expect(files.first()).toContainText(seeded.fileNames[seeded.fileNames.length - 1])
   await expect(files.first().getByRole('link', { name: `İndir: ${seeded.fileNames[seeded.fileNames.length - 1]}` })).toHaveAttribute('href', /^\/api\/files\//)
+
+  // A picture its uploader deletes (CONTRACT-V6-OPS §4) leaves the panel; its message keeps a tombstone.
+  const gone = seeded.imageIds[0]
+  expect((await rest(ayse.token, `/api/attachments/${gone}`, 'DELETE')).status).toBe(200)
+  await ayse.page.getByTestId('gallery-close').click()
+  await openGallery(ayse.page)
+  await scrollUntil(ayse.page, 'gallery-item', 83)
+  await expect(ayse.page.locator(`[data-testid="gallery-item"] img[src*="${gone}"]`)).toHaveCount(0)
 })
 
 test('390 px: the panel fills the screen, a swipe walks the lightbox, screenshots', async ({ browser, trio }) => {

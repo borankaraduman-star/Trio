@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { attachmentKind, formatSize } from '../lib/attachments'
+import { attachmentKind, formatSize, isDeletedAttachment } from '../lib/attachments'
+import { DeletedAttachment } from './owner/DeletedAttachment'
 import type { PendingAttachment } from '../lib/pending'
 import type { Attachment } from '../types'
 import { CloseIcon, DownloadIcon, FileIcon } from './icons2'
@@ -122,6 +123,7 @@ function FileAttachment({ attachment }: { attachment: Attachment }) {
 }
 
 function AttachmentView({ attachment }: { attachment: Attachment }) {
+  if (isDeletedAttachment(attachment)) return <DeletedAttachment filename={attachment.filename} />
   // V6: a voice message is a compact player, whatever its audio type.
   if (attachment.voice) return <VoiceMessage attachment={attachment} voice={attachment.voice} />
   switch (attachmentKind(attachment.content_type)) {

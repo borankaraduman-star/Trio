@@ -37,6 +37,9 @@ class Settings:
     # the client address is the N-th entry from the right. 0 = ignore the
     # header and use the socket peer.
     trusted_proxy_hops: int = 1
+    # CONTRACT-V6-OPS §1: the owner's user name (matched like a join); None =
+    # the active user with the lowest id.
+    owner: str | None = None
 
     def __post_init__(self) -> None:
         if not self.invite_code:
@@ -76,7 +79,8 @@ class Settings:
             f"stun_urls={self.stun_urls!r}, upload_dir={self.upload_dir!r}, "
             f"max_upload_mb={self.max_upload_mb}, user_quota_mb={self.user_quota_mb}, "
             f"disk_reserve_mb={self.disk_reserve_mb}, "
-            f"trusted_proxy_hops={self.trusted_proxy_hops}, cloudflare_turn={self.cloudflare_turn})"
+            f"trusted_proxy_hops={self.trusted_proxy_hops}, "
+            f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r})"
         )
 
     @classmethod
@@ -117,4 +121,5 @@ class Settings:
             user_quota_mb=integer("TRIO_USER_QUOTA_MB", 1024),
             disk_reserve_mb=integer("TRIO_DISK_RESERVE_MB", 200),
             trusted_proxy_hops=integer("TRIO_TRUSTED_PROXY_HOPS", 1),
+            owner=optional("TRIO_OWNER"),
         )

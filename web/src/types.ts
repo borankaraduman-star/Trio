@@ -31,6 +31,11 @@ export interface Attachment {
   size: number
   /** Relative: `/api/files/<id>/<name>`. */
   url: string
+  /**
+   * V6-OPS §4: the uploader deleted the file. Then only `id` and `filename`
+   * are real; check `isDeletedAttachment` before using the other fields.
+   */
+  deleted?: boolean
   // --- V6 (CONTRACT-V6-MEDIA): optional, an older server sends none ---
   /** A small picture of an image for lists (`/api/previews/<id>`), or null. */
   preview_url?: string | null

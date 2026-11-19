@@ -20,7 +20,8 @@ The wire protocol and every behaviour rule are in `CONTRACT.md` (v1),
 `CONTRACT-V2.md` (attachments, camera, settings, push-to-talk, noise
 suppression, desktop bridge), `CONTRACT-V3.md` (quotas, sessions, device
 linking, limits), `CONTRACT-V4.md` (calls that survive a restart, ring,
-connection test, messages family, identity) and `CONTRACT-V5.md` (game status). Read the relevant one before changing either side; change
+connection test, messages family, identity), `CONTRACT-V5.md` (game status) and
+`CONTRACT-V6-OPS.md` (the owner, backups, deleting files, the client error log). Read the relevant one before changing either side; change
 the contract in the same commit as the code.
 
 ## Production is live and auto-deploys from `main`

@@ -119,6 +119,9 @@ CREATE TABLE IF NOT EXISTS links_backfill (
 #   reply then shows it as deleted), and a counter of later changes.
 # No index may be created on these columns in SCHEMA: SCHEMA runs before them.
 #   users.avatar (v4): "<hash>.<ext>", the file <uploads>/avatars/<id>-<hash>.<ext>.
+#   attachments.deleted_at (v6 ops): the uploader deleted the file; the row stays
+#   as the message's tombstone ({id, filename, deleted: true}) and no longer
+#   counts towards the quota.
 UPGRADE_COLUMNS = {
     "users": {
         "removed_at": "ALTER TABLE users ADD COLUMN removed_at TEXT",
@@ -129,10 +132,8 @@ UPGRADE_COLUMNS = {
         "reply_to_id": "ALTER TABLE messages ADD COLUMN reply_to_id INTEGER",
         "rev": "ALTER TABLE messages ADD COLUMN rev INTEGER NOT NULL DEFAULT 0",
     },
-    # v6 (CONTRACT-V6-MEDIA): the original's shown size, its preview (a file
-    # under <uploads>/previews/<id>, counted in the quota), and the voice
-    # message marker (JSON: duration_ms, waveform).
     "attachments": {
+        "deleted_at": "ALTER TABLE attachments ADD COLUMN deleted_at TEXT",
         "width": "ALTER TABLE attachments ADD COLUMN width INTEGER",
         "height": "ALTER TABLE attachments ADD COLUMN height INTEGER",
         "preview_type": "ALTER TABLE attachments ADD COLUMN preview_type TEXT",
@@ -197,6 +198,9 @@ def preview_url(attachment_id: str) -> str:
 
 
 def _attachment(row: sqlite3.Row) -> dict[str, Any]:
+    if row["deleted_at"] is not None:
+        # CONTRACT-V6-OPS §4: what is left of a file its uploader deleted.
+        return {"id": row["id"], "filename": row["filename"], "deleted": True}
     keys = row.keys()
     # v6 fields (CONTRACT-V6-MEDIA); every key is always present, null when unknown.
     voice = row["voice"] if "voice" in keys else None
@@ -616,7 +620,7 @@ class Database:
         sql = (
             "SELECT m.id, m.content, u.id AS author_id, u.name AS author_name, "  # noqa: S608
             "(SELECT a.filename FROM attachments a WHERE a.message_id = m.id "
-            "ORDER BY a.position LIMIT 1) AS first_file "
+            "AND a.deleted_at IS NULL ORDER BY a.position LIMIT 1) AS first_file "
             f"{_MESSAGE_FROM} WHERE m.id IN ({_marks(wanted)})"
         )
         found = {}
@@ -677,7 +681,8 @@ class Database:
             raise NotAuthorError
         if not content:
             has_files = await self._all(
-                "SELECT 1 FROM attachments WHERE message_id = ? LIMIT 1", (message_id,)
+                "SELECT 1 FROM attachments WHERE message_id = ? AND deleted_at IS NULL LIMIT 1",
+                (message_id,),
             )
             if not has_files:
                 raise EmptyMessageError
@@ -912,13 +917,15 @@ class Database:
         """Everything ``uploader_id`` has stored, on a message or not."""
         (row,) = await self._all(
             "SELECT coalesce(sum(size + coalesce(preview_size, 0)), 0) AS n "
-            "FROM attachments WHERE uploader_id = ?",
+            "FROM attachments WHERE uploader_id = ? AND deleted_at IS NULL",
             (uploader_id,),
         )
         return int(row["n"])
 
     async def get_attachment(self, attachment_id: str) -> dict[str, Any] | None:
-        rows = await self._all("SELECT * FROM attachments WHERE id = ?", (attachment_id,))
+        rows = await self._all(
+            "SELECT * FROM attachments WHERE id = ? AND deleted_at IS NULL", (attachment_id,)
+        )
         return _attachment(rows[0]) if rows else None
 
     async def orphan_attachment_ids(self, older_than_ts: float) -> list[str]:
@@ -941,7 +948,8 @@ class Database:
     async def preview_of(self, attachment_id: str) -> str | None:
         """The preview's content type, or None when the attachment has none."""
         rows = await self._all(
-            "SELECT preview_type FROM attachments WHERE id = ?", (attachment_id,)
+            "SELECT preview_type FROM attachments WHERE id = ? AND deleted_at IS NULL",
+            (attachment_id,),
         )
         return rows[0]["preview_type"] if rows else None
 
@@ -969,7 +977,8 @@ class Database:
             "u.name AS author_name, u.avatar AS author_avatar "
             "FROM attachments a JOIN messages m ON m.id = a.message_id "
             "JOIN users u ON u.id = m.author_id "
-            f"WHERE m.channel_id = ? AND a.voice IS NULL AND {kind}{where} "
+            "WHERE m.channel_id = ? AND a.voice IS NULL AND a.deleted_at IS NULL "
+            f"AND {kind}{where} "
             "ORDER BY a.message_id DESC, a.position ASC LIMIT ?"
         )
         rows = await self._all(sql, (*params, limit + 1))
@@ -1014,6 +1023,11 @@ class Database:
             for r in rows[:limit]
         ]
         return items, len(rows) > limit
+
+    async def live_attachment_ids(self) -> set[str]:
+        """Attachments whose file still exists (not deleted by the uploader, V6-OPS §4)."""
+        rows = await self._all("SELECT id FROM attachments WHERE deleted_at IS NULL")
+        return {r["id"] for r in rows}
 
     async def backfill_links(self, batch: int = 500) -> int:
         """Index the links of every message written since the last start (all
