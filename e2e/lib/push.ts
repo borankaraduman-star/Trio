@@ -173,25 +173,20 @@ export async function setAway(page: Page, away: boolean): Promise<void> {
   }, away)
 }
 
-/** The page's service worker registration is active (and its id for CDP). */
-export async function workerRegistrationId(context: BrowserContext, page: Page): Promise<string> {
+/** What the push service would hand the worker, delivered through CDP to the page's registration. */
+export async function deliverPush(context: BrowserContext, page: Page, origin: string, payload: unknown): Promise<void> {
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
   const cdp = await context.newCDPSession(page)
-  const ids = new Promise<string>((resolve) => {
+  const registrationId = new Promise<string>((resolve) => {
     cdp.on('ServiceWorker.workerRegistrationUpdated', (event: { registrations: { registrationId: string; isDeleted: boolean }[] }) => {
       const live = event.registrations.find((r) => !r.isDeleted)
       if (live) resolve(live.registrationId)
     })
   })
   await cdp.send('ServiceWorker.enable')
-  return ids
-}
-
-/** What the push service would hand the worker, delivered through CDP. */
-export async function deliverPush(context: BrowserContext, page: Page, origin: string, payload: unknown): Promise<void> {
-  const registrationId = await workerRegistrationId(context, page)
-  const cdp = await context.newCDPSession(page)
-  await cdp.send('ServiceWorker.deliverPushMessage', { origin, registrationId, data: JSON.stringify(payload) })
+  const data = typeof payload === 'string' ? payload : JSON.stringify(payload)
+  await cdp.send('ServiceWorker.deliverPushMessage', { origin, registrationId: await registrationId, data })
+  await cdp.detach()
 }
 
 export interface ShownNotification {
