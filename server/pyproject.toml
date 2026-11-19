@@ -16,6 +16,9 @@ dependencies = [
     # Web Push (CONTRACT-V6-PUSH): P-256 ECDH/ECDSA, HKDF and AES-128-GCM for
     # RFC 8291 payload encryption and RFC 8292 VAPID, implemented in push_crypto.
     "cryptography>=43",
+    # Quiet hours are kept in the user's IANA time zone; the slim image may
+    # ship without /usr/share/zoneinfo, and zoneinfo falls back to this.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
