@@ -42,36 +42,100 @@ export const loadUiohook: HookLoader = () => {
   return mod.uIOhook;
 };
 
+/** CONTRACT-V6-VOICE §5: the global mute/deafen keys, on the same hook. */
+export type HotkeyAction = "mute" | "deafen";
+
 export class PttController {
   private hook: KeyHook | null = null;
   private unavailable = false;
   private running = false;
   private binding: PttBinding | null = null;
   private held = false;
+  /** V6: hotkey bindings, and which are down (a held key fires once). */
+  private hotkeys: Partial<Record<HotkeyAction, PttBinding>> = {};
+  private hotkeyHeld = new Set<HotkeyAction>();
 
   constructor(
     private readonly onState: (down: boolean) => void,
     private readonly loader: HookLoader = loadUiohook,
     private readonly log: Logger = console,
+    /** V6: a hotkey was pressed. */
+    private readonly onHotkey: (action: HotkeyAction) => void = () => undefined,
   ) {}
+
+  /**
+   * V6: set the global mute/deafen keys (`KeyboardEvent.code`, null = none).
+   * A key that is the push-to-talk key is not registered: PTT wins. One hook
+   * instance serves both; it runs while PTT or any hotkey is set.
+   */
+  setHotkeys(keys: { mute?: string | null; deafen?: string | null }): void {
+    const next: Partial<Record<HotkeyAction, PttBinding>> = {};
+    for (const action of ["mute", "deafen"] as const) {
+      const code = keys[action];
+      if (typeof code !== "string") continue;
+      const binding = bindingForCode(code);
+      if (binding === null) {
+        this.log.warn(`[hotkey] unsupported key code ${JSON.stringify(code)}; ${action} has no key`);
+        continue;
+      }
+      next[action] = binding;
+    }
+    if (next.mute && next.deafen && sameBinding(next.mute, next.deafen)) delete next.deafen;
+    this.hotkeys = next;
+    this.hotkeyHeld.clear();
+    this.syncHook();
+  }
+
+  /** The hotkeys in effect (for tests and logs). */
+  get activeHotkeys(): HotkeyAction[] {
+    return (["mute", "deafen"] as const).filter((action) => this.effectiveHotkey(action) !== null);
+  }
 
   /** Set (a `KeyboardEvent.code`) or clear (null) the push-to-talk key. */
   setKey(code: string | null): void {
     this.release();
     if (code === null) {
       this.binding = null;
-      this.stopHook();
+      this.syncHook();
       return;
     }
     const binding = bindingForCode(code);
     if (binding === null) {
       this.log.warn(`[ptt] unsupported key code ${JSON.stringify(code)}; PTT is off`);
       this.binding = null;
-      this.stopHook();
+      this.syncHook();
       return;
     }
     this.binding = binding;
     this.startHook();
+  }
+
+  /** Run the hook exactly while something listens to it. */
+  private syncHook(): void {
+    if (this.binding !== null || this.activeHotkeys.length > 0) this.startHook();
+    else this.stopHook();
+  }
+
+  /** A hotkey's binding, unless it is the PTT key's. */
+  private effectiveHotkey(action: HotkeyAction): PttBinding | null {
+    const binding = this.hotkeys[action];
+    if (!binding) return null;
+    if (this.binding && sameBinding(binding, this.binding)) return null;
+    return binding;
+  }
+
+  private handleHotkey(match: (binding: PttBinding) => boolean, down: boolean): void {
+    if (!this.running) return;
+    for (const action of ["mute", "deafen"] as const) {
+      const binding = this.effectiveHotkey(action);
+      if (!binding || !match(binding)) continue;
+      if (!down) {
+        this.hotkeyHeld.delete(action);
+      } else if (!this.hotkeyHeld.has(action)) {
+        this.hotkeyHeld.add(action);
+        this.onHotkey(action);
+      }
+    }
   }
 
   /** Whether the hook is currently listening (for tests and logs). */
@@ -80,6 +144,7 @@ export class PttController {
   }
 
   dispose(): void {
+    this.hotkeys = {};
     this.setKey(null);
   }
 
@@ -134,12 +199,14 @@ export class PttController {
   }
 
   private handleKey(keycode: number, down: boolean): void {
+    this.handleHotkey((h) => h.kind === "key" && h.keycode === keycode, down);
     const b = this.binding;
     if (b?.kind !== "key" || b.keycode !== keycode) return;
     this.transition(down);
   }
 
   private handleMouse(button: unknown, down: boolean): void {
+    this.handleHotkey((h) => h.kind === "mouse" && h.button === Number(button), down);
     const b = this.binding;
     if (b?.kind !== "mouse" || Number(button) !== b.button) return;
     this.transition(down);
@@ -150,4 +217,8 @@ export class PttController {
     this.held = down;
     this.onState(down);
   }
+}
+
+function sameBinding(a: PttBinding, b: PttBinding): boolean {
+  return a.kind === "key" && b.kind === "key" ? a.keycode === b.keycode : a.kind === "mouse" && b.kind === "mouse" && a.button === b.button;
 }

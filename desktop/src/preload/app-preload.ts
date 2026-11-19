@@ -6,7 +6,8 @@
  *
  *     window.trioDesktop = { isDesktop, setPttKey(code | null), onPtt(cb) → unsubscribe }
  *
- * plus CONTRACT-V5 §5 (game status): `gameStatus: {supported: true}` and
+ * plus CONTRACT-V6-VOICE §5 (`setHotkeys`, `onHotkey`, `setVoiceState`,
+ * `getSystemIdleTime`) and CONTRACT-V5 §5 (game status): `gameStatus: {supported: true}` and
  * `onGameStatus(cb) → unsubscribe`; the first subscriber starts detection in
  * the main process, the last one leaving stops it.
  *
@@ -39,6 +40,33 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       return () => {
         ipcRenderer.removeListener("trio:ptt", listener);
       };
+    },
+    // CONTRACT-V6-VOICE §5: global mute/deafen keys, the tray's mute mark, system idle time.
+    setHotkeys(keys: { mute?: string | null; deafen?: string | null }): void {
+      const pick = (value: unknown): string | null => (typeof value === "string" ? value : null);
+      const record = typeof keys === "object" && keys !== null ? keys : {};
+      ipcRenderer.send("trio:set-hotkeys", { mute: pick(record.mute), deafen: pick(record.deafen) });
+    },
+    onHotkey(cb: (action: "mute" | "deafen") => void): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      const listener = (_event: IpcRendererEvent, action: unknown): void => {
+        if (action === "mute" || action === "deafen") cb(action);
+      };
+      ipcRenderer.on("trio:hotkey", listener);
+      return () => {
+        ipcRenderer.removeListener("trio:hotkey", listener);
+      };
+    },
+    setVoiceState(state: { inVoice?: boolean; muted?: boolean; deafened?: boolean }): void {
+      const record = typeof state === "object" && state !== null ? state : {};
+      ipcRenderer.send("trio:voice-state", {
+        inVoice: record.inVoice === true,
+        muted: record.muted === true,
+        deafened: record.deafened === true,
+      });
+    },
+    getSystemIdleTime(): Promise<number | null> {
+      return ipcRenderer.invoke("trio:system-idle") as Promise<number | null>;
     },
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {
