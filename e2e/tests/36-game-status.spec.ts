@@ -156,6 +156,13 @@ test('game status screenshot (deviceScaleFactor 2)', async ({ browser, trio }) =
     animations: 'disabled',
     caret: 'hide',
   })
+  // Its setting, between Bağlantı testi and Hesap, as the desktop app shows it.
+  await ayse.page.getByTestId('btn-settings').click()
+  const section = ayse.page.locator('section[aria-labelledby="settings-game"]')
+  await section.scrollIntoViewIfNeeded()
+  await expect(section).toContainText('Oyun durumumu paylaş')
+  await expect(section).toContainText('Trio masaüstü › Oyun durumu')
+  await ayse.page.screenshot({ path: path.join(E2E_DIR, 'screenshots', '17c-game-status-setting.png'), animations: 'disabled', caret: 'hide' })
 })
 
 test('390 px: the activity line in a voice row sits with the avatar, the health state, a long name and "bağlanıyor…" without overflowing', async ({ browser, trio }) => {
