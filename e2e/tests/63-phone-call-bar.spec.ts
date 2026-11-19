@@ -132,8 +132,11 @@ test('phone: in a call, the jump to the newest sits above the call bar and the c
   await bulkSend(ayse, GENEL, 40, 'mesaj')
   await expect(page.getByTestId('message').filter({ hasText: 'mesaj 40' })).toBeVisible()
   await page.getByTestId('message-list').evaluate((list) => list.scrollTo({ top: 0 }))
-  await bulkSend(ayse, GENEL, 3, 'sonra')
   const jump = page.getByTestId('jump-to-bottom')
+  // Only once the list has taken the scroll (the button shows, nothing new yet) is a
+  // message "while the reader is up in history"; one sent earlier is read at the bottom.
+  await expect(jump).toHaveAttribute('data-count', '0')
+  await bulkSend(ayse, GENEL, 3, 'sonra')
   await expect(jump).toHaveAttribute('data-count', '3')
   await expect(jump).toBeInViewport({ ratio: 1 })
 
