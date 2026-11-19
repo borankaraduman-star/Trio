@@ -8,6 +8,11 @@ ince bir kabuk: arayüzün kendisi sizin Trio sunucunuzdan gelir; uygulama ona
   tuşa basılı tuttuğun sürece mikrofon açılır.
 - **Ekran paylaşımı için kaynak seçici:** ekranlar ve pencereler, küçük
   önizlemelerle. Windows'ta isteğe bağlı olarak sistem sesi de paylaşılır.
+- **Müzik paylaşımı (Windows 11):** bilgisayarda çalan ses sesli odaya
+  gönderilir, Trio'nun kendi sesi (odadaki konuşmalar) hariç; şarkı adı
+  Windows'un medya oturumundan okunur. Windows 10, macOS ve Linux'ta uygulama
+  bunu yapmaz ve nedenini söyler (Chrome'da sekme paylaşımı önerir). Elle
+  kontrol listesi: `docs/muzik-paylasimi-kontrol.md`.
 - **Tepsi simgesi:** pencereyi kapatınca uygulama tepside çalışmaya devam eder
   (sesli odadan düşmezsin). Tam çıkmak için tepsi menüsünden ya da
   `Trio → Çıkış` ile (Ctrl/Cmd+Q).

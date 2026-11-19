@@ -9,6 +9,7 @@
  * (sender frame's origin), and screen capture (an in-app picker).
  */
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import {
   app,
@@ -42,6 +43,9 @@ import { GameConfigStore, GameService, diagnosticsText } from "./gameService";
 import { listProcesses } from "./processList";
 import { autodetect, flavoursIn, type Flavour } from "./wowFolder";
 import { badgeText, parseUnread } from "../shared/title";
+import { MusicCaptureArm, musicCaptureSupport } from "../shared/musicCapture";
+import { NowPlayingWatcher, defaultSource } from "./nowPlaying";
+import { answerDisplayMedia } from "./displayMedia";
 import {
   isExternalOpenable,
   isSameOrigin,
@@ -93,6 +97,10 @@ const GRANTED_PERMISSIONS = new Set<string>([
 /** Windows can capture system audio; Electron supports loopback only there. */
 const LOOPBACK_SUPPORTED = process.platform === "win32";
 
+/** CONTRACT-V8-MUSIC: system sound without Trio's own output (Windows 11+ only). */
+const MUSIC_SUPPORT = musicCaptureSupport(process.platform, os.release());
+const musicArm = new MusicCaptureArm(() => MUSIC_SUPPORT);
+
 // ------------------------------------------------------------------- state
 
 let mainWindow: BrowserWindow | null = null;
@@ -130,6 +138,13 @@ const ptt = new PttController(
     }
   },
 );
+/** CONTRACT-V8-MUSIC §5: runs only while the page has the watch on. */
+const nowPlaying = new NowPlayingWatcher(defaultSource(), (info) => {
+  const wc = mainWindow?.webContents;
+  if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
+    wc.send("trio:now-playing", info);
+  }
+});
 /** V6: the tray's own image, and the mute/deafen mark drawn on it. */
 let trayBase: Electron.NativeImage | null = null;
 let trayVoice: TrayVoiceState = "none";
@@ -171,6 +186,7 @@ app.on("before-quit", () => {
 app.on("will-quit", () => {
   ptt.dispose();
   gameService?.stop();
+  nowPlaying.dispose();
 });
 
 app.on("window-all-closed", () => {
@@ -315,6 +331,8 @@ function createMainWindow(): void {
       // The page subscribes again when it loads (CONTRACT-V5 §5).
       pageWantsGame = false;
       updateGameRunning();
+      // CONTRACT-V8-MUSIC: a new document is not sharing music yet.
+      nowPlaying.setWatch(false);
     }
   });
 
@@ -330,6 +348,7 @@ function createMainWindow(): void {
 
   wc.on("render-process-gone", (_event, details) => {
     console.warn(`[trio] renderer gone: ${details.reason}`);
+    nowPlaying.setWatch(false);
     if (details.reason !== "clean-exit") wc.reload();
   });
 
@@ -571,6 +590,13 @@ function installIpc(): void {
       trayVoiceState({ inVoice: record.inVoice === true, muted: record.muted === true, deafened: record.deafened === true }),
     );
   });
+  // CONTRACT-V8-MUSIC §5
+  ipcMain.handle("trio:music-support", (event) => (fromServerPage(event) ? MUSIC_SUPPORT : null));
+  ipcMain.on("trio:now-playing-watch", (event, on: unknown) => {
+    if (!fromServerPage(event)) return;
+    nowPlaying.setWatch(on === true);
+  });
+  ipcMain.handle("trio:music-prepare", (event) => musicArm.prepare(fromServerPage(event), pendingPick !== null));
   ipcMain.handle("trio:system-idle", (event) => (fromServerPage(event) ? powerMonitor.getSystemIdleTime() : null));
 
   ipcMain.handle("trio:connect-state", (event) => {
@@ -632,27 +658,28 @@ let pendingPick: PendingPick | null = null;
 function installDisplayMediaHandler(ses: Session): void {
   ses.setDisplayMediaRequestHandler((request, callback) => {
     const frameUrl = request.frame?.url ?? null;
-    const allowed =
+    const fromServer =
       mainWindow !== null &&
       serverOrigin !== null &&
       isSameOrigin(request.securityOrigin, serverOrigin) &&
-      (frameUrl === null || isSameOrigin(frameUrl, serverOrigin)) &&
-      request.videoRequested;
-    if (!allowed || pendingPick) {
-      callback(null);
-      return;
-    }
-    void pickSource(request.audioRequested).then((result) => {
-      if (!result) {
-        callback(null);
-        return;
-      }
-      if (result.audio && LOOPBACK_SUPPORTED) {
-        callback({ video: result.source, audio: "loopback" });
-      } else {
-        callback({ video: result.source });
-      }
+      (frameUrl === null || isSameOrigin(frameUrl, serverOrigin));
+    const decision = musicArm.decide({
+      fromServer,
+      videoRequested: request.videoRequested,
+      audioRequested: request.audioRequested,
+      pickerOpen: pendingPick !== null,
     });
+    void answerDisplayMedia(decision, request.audioRequested, {
+      pickSource,
+      primaryScreen: async () => {
+        const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } });
+        return sources[0] ?? null;
+      },
+      loopbackSupported: LOOPBACK_SUPPORTED,
+    }).then(
+      (answer) => callback(answer),
+      () => callback(null),
+    );
   });
 }
 
