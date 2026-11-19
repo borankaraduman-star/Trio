@@ -137,7 +137,8 @@ export function probeEnvironment(): NotifyEnvironment {
   return {
     notification: hasNotification,
     serviceWorker: !!nav && 'serviceWorker' in nav,
-    pushManager: !!win && 'PushManager' in win,
+    // Electron has the Push API but no push service behind it: subscribe() always fails.
+    pushManager: !!win && 'PushManager' in win && !/Electron\//.test(ua),
     secure: win?.isSecureContext === true,
     ios: platformOf(ua, nav?.maxTouchPoints ?? 0) === 'ios',
     standalone,
