@@ -15,6 +15,28 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.6.0',
+    title: 'Telefonda kullanım',
+    lines: [
+      'Telefonda görüşmedeyken alttaki şeritten sessize al, kulaklık, kamera ve ayrıl tek dokunuşla; kim konuşuyor da orada.',
+      'Telefonda kimin çevrimiçi olduğunu ve hangi ses odasında olduğunu üst çubuktan ya da menüden gör.',
+      'Paylaşılan ekranı ve kameraları telefonda küçültüp sohbete dön; görüntü akmaya devam eder.',
+      'Ayarlar bölümlere ayrıldı: Ses, Görüntü, Bildirimler, Hesap, Depolama, Hakkında. Çıkış yap artık Ayarlar › Hesap’ta.',
+      'Telefonda Enter yeni satır açar, mesajı “Gönder” ile yollarsın.',
+    ],
+  },
+  {
+    version: '0.6.0',
+    title: 'Okuma ve kanallar',
+    lines: [
+      'Okuduğun yer artık tüm cihazlarında aynı: telefonda okuduğun kanal bilgisayarda da okunmuş görünür.',
+      'Okunmamış mesajı olan kanal “Yeni mesajlar” çizgisinde açılır; yukarıdayken sağ alttaki düğme kaç yeni mesaj geldiğini gösterir ve en alta götürür.',
+      'Kanala sağ tıkla ya da basılı tut: yeniden adlandır; sunucunun sahibi kanalı silebilir. Kanal eklemek için tek “+”.',
+      'Cihaz kodunun yanında karekod: telefonunun kamerasıyla okut, kod kendiliğinden yazılır.',
+      'Bağlantı testi görüşme sırasında artık baştan başlamıyor.',
+    ],
+  },
+  {
     version: '0.5.0',
     title: 'Bildirimler ve medya',
     lines: [
