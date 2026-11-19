@@ -1,3 +1,4 @@
+import { ContextKeeper } from './audio/contextKeeper'
 import { MicPipeline, type NoiseState } from './audio/pipeline'
 import { displayMediaOptions } from './audio/screenAudio'
 import { classifyStreams, EMPTY_META, parseMeta, sameMeta } from './lib/streamMeta'
@@ -9,6 +10,15 @@ export interface RemoteMedia {
 }
 
 export type VoiceStatus = 'idle' | 'joining' | 'connected'
+
+/**
+ * The media connection to one other member (review finding 10a):
+ * `connecting` until ICE first connects, `connected`, `reconnecting` while an
+ * ICE restart (or a fresh connection) is under way, `failed` after the
+ * bounded restarts gave up (it keeps retrying slowly; the network between the
+ * two may need a TURN server).
+ */
+export type PeerHealth = 'connecting' | 'connected' | 'reconnecting' | 'failed'
 
 export interface VoiceSnapshot {
   /** The voice channel this tab is in, or joining. */
@@ -37,7 +47,18 @@ export interface VoiceSnapshot {
   noiseState: NoiseState
   /** v2: the microphone is actually being sent (not muted, PTT open). */
   transmitting: boolean
+  /**
+   * The microphone ended (unplugged, permission revoked) and could not be
+   * opened again: nothing is sent. Retried on every device change and by
+   * `retryMic()`.
+   */
+  micLost: boolean
+  /** The connection to each other member, by user id. */
+  peerHealth: Readonly<Record<number, PeerHealth>>
 }
+
+/** Shown for `micLost`. */
+export const MIC_LOST_MESSAGE = 'Mikrofon bağlantısı kesildi'
 
 /** v2: what the engine needs to know about the user's settings, read when needed. */
 export interface VoiceMediaPrefs {
@@ -105,6 +126,10 @@ interface Peer {
    * screen by the "named by neither" fallback. Stream ids are never reused.
    */
   retired: Set<string>
+  /** 10a: the state the UI shows, and the ICE restarts tried since it last connected. */
+  health: PeerHealth
+  iceAttempts: number
+  healthTimer: ReturnType<typeof setTimeout> | null
 }
 
 interface Monitor {
@@ -120,6 +145,21 @@ interface Monitor {
  * plain perfect negotiation.
  */
 const TURN_TIMEOUT_MS = 4000
+
+/** The server's cap on one signal's `data` (CONTRACT-V3 §6); a bigger one is refused. */
+const SIGNAL_DATA_MAX_BYTES = 64 * 1024
+/** A refused description is attributed to the last one sent within this time. */
+const REFUSAL_WINDOW_MS = 10_000
+/** At most this many fresh connections per peer in RESET_WINDOW_MS, so a failure cannot loop. */
+const MAX_RESETS = 3
+const RESET_WINDOW_MS = 120_000
+
+/** 10a: connection health. */
+const CONNECT_TIMEOUT_MS = 10_000
+const DISCONNECTED_GRACE_MS = 3_000
+const ICE_ATTEMPT_TIMEOUT_MS = 8_000
+const MAX_ICE_RESTARTS = 3
+const FAILED_RETRY_MS = 15_000
 
 const SPEAKING_THRESHOLD = 0.02
 const SPEAKING_HOLD_MS = 300
@@ -185,6 +225,26 @@ export function micErrorMessage(error: unknown): string {
       return 'Mikrofona erişilemedi.'
   }
 }
+
+/**
+ * Pair epoch (see "fresh connections"): every signal of a pair after its
+ * first reset carries `g`, and a signal of an older epoch is dropped. 0 (no
+ * `g`) is the epoch of a pair that was never reset: the wire is unchanged.
+ */
+function signalEpoch(data: unknown): number {
+  const g = typeof data === 'object' && data !== null ? (data as { g?: unknown }).g : undefined
+  return typeof g === 'number' && Number.isSafeInteger(g) && g > 0 ? g : 0
+}
+
+/** `{reset: N}` (start epoch N with a fresh connection) or `{reset: 'request'}`. */
+function parseReset(data: unknown): number | 'request' | null {
+  if (typeof data !== 'object' || data === null) return null
+  const reset = (data as { reset?: unknown }).reset
+  if (reset === 'request') return reset
+  return typeof reset === 'number' && Number.isSafeInteger(reset) && reset > 0 ? reset : null
+}
+
+type WireSignal = SignalData | { meta: StreamMeta } | { reset: number | 'request' }
 
 function parseSignal(data: unknown): SignalData | null {
   if (typeof data !== 'object' || data === null) return null
@@ -274,6 +334,13 @@ export class VoiceEngine {
   /** v2: push-to-talk gate (true in activity mode). */
   private pttOpen = true
   private readonly peers = new Map<number, Peer>()
+  /** Fresh connections: the pair epoch per peer, and when each reset happened. */
+  private readonly pairEpochs = new Map<number, number>()
+  private readonly resets = new Map<number, number[]>()
+  /** The last description sent, so that a refusal (`error TOO_LARGE`) can be attributed. */
+  private lastDescription: { peerId: number; at: number } | null = null
+  /** 10b: resumes the speaking-detection context after an interruption. */
+  private speakingKeeper: ContextKeeper | null = null
 
   private audioContext: AudioContext | null = null
   private readonly monitors = new Map<number, Monitor>()
@@ -299,7 +366,9 @@ export class VoiceEngine {
     const peers = [...this.peers.values()].sort((a, b) => a.id - b.id)
     const remoteAudio: RemoteMedia[] = []
     const remoteVideo: RemoteMedia[] = []
+    const peerHealth: Record<number, PeerHealth> = {}
     for (const peer of peers) {
+      peerHealth[peer.id] = peer.health
       if (peer.audio) remoteAudio.push({ userId: peer.id, stream: peer.audio })
       if (peer.video) remoteVideo.push({ userId: peer.id, stream: peer.video })
     }
@@ -321,6 +390,8 @@ export class VoiceEngine {
         .map((peer) => ({ userId: peer.id, stream: peer.camera as MediaStream })),
       noiseState: this.pipeline?.noiseState ?? 'off',
       transmitting: this.pipeline?.transmitting ?? false,
+      micLost: this.pipeline?.micLost ?? false,
+      peerHealth,
     }
   }
 
@@ -407,6 +478,11 @@ export class VoiceEngine {
     if (this.error === null) return
     this.error = null
     this.emit()
+  }
+
+  /** Try to open the microphone again after it was lost (the notice's button). */
+  async retryMic(): Promise<void> {
+    await this.pipeline?.retry()
   }
 
   /** The WebSocket dropped: the server has already removed us from the channel. */
@@ -749,7 +825,7 @@ export class VoiceEngine {
   }
 
   private sendMeta(peer: Peer): void {
-    if (this.joinSent) this.deps.send({ type: 'signal', to: peer.id, data: { meta: this.currentMeta() } })
+    this.signal(peer.id, { meta: this.currentMeta() })
   }
 
   private sendMetaToAll(): void {
@@ -837,6 +913,13 @@ export class VoiceEngine {
 
       case 'signal': {
         if (!this.joinSent || event.from === this.deps.myId) return
+        const reset = parseReset(event.data)
+        if (reset !== null) {
+          this.onReset(event.from, reset)
+          return
+        }
+        // A signal of an earlier connection of this pair: it has nowhere to go.
+        if (signalEpoch(event.data) !== (this.pairEpochs.get(event.from) ?? 0)) return
         const meta = parseMeta(event.data)
         const data = meta ? null : parseSignal(event.data)
         if (!meta && !data) return
@@ -861,6 +944,10 @@ export class VoiceEngine {
           this.joinSent = false
           this.fail('Bu ses kanalına katılınamadı.')
         }
+        // A description the server would not relay (over its size cap): that
+        // negotiation is lost, and without it the pair can never take another
+        // turn. Start the pair again on a fresh connection.
+        if (event.code === 'TOO_LARGE') this.onDescriptionRefused((event as { to?: unknown }).to)
         return
 
       default:
@@ -905,6 +992,9 @@ export class VoiceEngine {
       camera: null,
       meta: EMPTY_META,
       retired: new Set(),
+      health: 'connecting',
+      iceAttempts: 0,
+      healthTimer: null,
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
@@ -922,9 +1012,10 @@ export class VoiceEngine {
     }
 
     pc.onconnectionstatechange = () => {
-      if (alive() && pc.connectionState === 'failed') pc.restartIce()
+      if (!alive()) return
+      this.updateHealth(peer)
       // v2: (re)connected — repeat which stream is which; cheap and idempotent.
-      if (alive() && pc.connectionState === 'connected') this.sendMeta(peer)
+      if (pc.connectionState === 'connected') this.sendMeta(peer)
     }
 
     pc.ontrack = ({ streams }) => {
@@ -954,6 +1045,7 @@ export class VoiceEngine {
     }
     this.addScreenTracks(peer)
     this.addCameraTracks(peer)
+    this.updateHealth(peer)
     return peer
   }
 
@@ -1157,12 +1249,182 @@ export class VoiceEngine {
     }
   }
 
-  private signal(to: number, data: SignalData): void {
-    if (this.joinSent) this.deps.send({ type: 'signal', to, data })
+  private signal(to: number, data: WireSignal): void {
+    if (!this.joinSent) return
+    const epoch = this.pairEpochs.get(to) ?? 0
+    const stamped = epoch > 0 ? { ...data, g: epoch } : data
+    if ('description' in data) {
+      // Known to be refused: do not send it, start the pair again instead.
+      if (new TextEncoder().encode(JSON.stringify(stamped)).length > SIGNAL_DATA_MAX_BYTES) {
+        console.warn('trio: a session description is over the signal cap; starting the connection again')
+        const peer = this.peers.get(to)
+        if (peer) queueMicrotask(() => this.recoverPeer(peer))
+        return
+      }
+      this.lastDescription = { peerId: to, at: Date.now() }
+    }
+    this.deps.send({ type: 'signal', to, data: stamped as SignalData })
+  }
+
+  // --- fresh connections ------------------------------------------------------
+  //
+  // A negotiation that can never complete (the server refused the
+  // description as too large, review finding 1) leaves the connection in
+  // `have-local-offer` for good, and turns are only granted when stable, so
+  // nothing either side does would recover it. The pair then starts again on
+  // NEW peer connections. Only the impolite side (the lower user id) starts a
+  // pair again, so two resets can never cross; the polite side asks for one
+  // with `{reset: 'request'}`. The impolite side sends `{reset: N}` and
+  // creates its new connection; the polite side, on `{reset: N}`, drops its
+  // own and creates a new one too. Both then add their tracks, which is the
+  // ordinary join (turn-taking included). Every later signal of the pair
+  // carries `g: N`, and anything from an older connection still on its way is
+  // dropped by its epoch. Each side allows MAX_RESETS per RESET_WINDOW_MS per
+  // peer; past that the peer is shown as failed instead of looping.
+
+  /**
+   * `to` is the peer the refused signal was for (CONTRACT-V3 §6). Without it
+   * (a server from before that field) the refusal is taken for the last
+   * description sent, if recent.
+   */
+  private onDescriptionRefused(to: unknown): void {
+    let peerId: number | null = null
+    if (typeof to === 'number') {
+      peerId = to
+    } else if (this.lastDescription && Date.now() - this.lastDescription.at <= REFUSAL_WINDOW_MS) {
+      peerId = this.lastDescription.peerId
+    }
+    this.lastDescription = null
+    const peer = peerId === null ? undefined : this.peers.get(peerId)
+    if (peer) this.recoverPeer(peer)
+  }
+
+  private allowReset(peerId: number): boolean {
+    const now = Date.now()
+    const recent = (this.resets.get(peerId) ?? []).filter((at) => now - at < RESET_WINDOW_MS)
+    if (recent.length >= MAX_RESETS) {
+      this.resets.set(peerId, recent)
+      return false
+    }
+    recent.push(now)
+    this.resets.set(peerId, recent)
+    return true
+  }
+
+  /** Start this pair again on fresh connections (or ask the impolite side to). */
+  private recoverPeer(peer: Peer): void {
+    if (this.peers.get(peer.id) !== peer) return
+    if (!this.allowReset(peer.id)) {
+      console.warn('trio: giving up on the connection to', peer.id)
+      this.setHealthTimer(peer, null)
+      peer.health = 'failed'
+      this.emit()
+      return
+    }
+    if (peer.polite) {
+      this.signal(peer.id, { reset: 'request' })
+      return
+    }
+    const epoch = (this.pairEpochs.get(peer.id) ?? 0) + 1
+    this.pairEpochs.set(peer.id, epoch)
+    this.signal(peer.id, { reset: epoch })
+    this.replacePeer(peer.id)
+  }
+
+  private onReset(peerId: number, reset: number | 'request'): void {
+    const polite = this.deps.myId > peerId
+    if (reset === 'request') {
+      const peer = this.peers.get(peerId)
+      if (!polite && peer) this.recoverPeer(peer)
+      return
+    }
+    // Only the impolite side starts a new epoch, and epochs only grow.
+    if (!polite || this.status === 'idle' || reset <= (this.pairEpochs.get(peerId) ?? 0)) return
+    this.pairEpochs.set(peerId, reset)
+    this.replacePeer(peerId)
+  }
+
+  private replacePeer(peerId: number): void {
+    const old = this.peers.get(peerId)
+    if (old) {
+      this.peers.delete(peerId)
+      this.disposePeer(old)
+    }
+    this.ensurePeer(peerId)
+    this.emit()
+  }
+
+  // --- connection health (10a) -----------------------------------------------
+  //
+  // `failed` used to be the only trigger for an ICE restart, and nothing was
+  // shown: without TURN a pair that could not connect just stayed silent. Now
+  // a connection that does not connect within CONNECT_TIMEOUT_MS, stays
+  // `disconnected` for DISCONNECTED_GRACE_MS, or fails, gets an ICE restart;
+  // an ICE restart is a renegotiation, so `restartIce()` fires
+  // `onnegotiationneeded` and goes through the turn-taking like every other
+  // one. After MAX_ICE_RESTARTS attempts of ICE_ATTEMPT_TIMEOUT_MS each the
+  // peer is `failed` (shown), and it is retried every FAILED_RETRY_MS, so a
+  // network that recovers heals the pair by itself.
+
+  private setHealthTimer(peer: Peer, ms: number | null, action?: () => void): void {
+    if (peer.healthTimer !== null) clearTimeout(peer.healthTimer)
+    peer.healthTimer = null
+    if (ms === null || !action) return
+    peer.healthTimer = setTimeout(() => {
+      peer.healthTimer = null
+      if (this.peers.get(peer.id) === peer) action()
+    }, ms)
+  }
+
+  private setHealth(peer: Peer, health: PeerHealth): void {
+    if (peer.health === health) return
+    peer.health = health
+    this.emit()
+  }
+
+  private updateHealth(peer: Peer): void {
+    const state = peer.pc.connectionState
+    if (state === 'connected') {
+      peer.iceAttempts = 0
+      this.setHealthTimer(peer, null)
+      this.setHealth(peer, 'connected')
+    } else if (state === 'failed') {
+      this.recoverIce(peer)
+    } else if (state === 'disconnected') {
+      // Often a blip that heals by itself within a second or two.
+      if (peer.healthTimer === null) this.setHealthTimer(peer, DISCONNECTED_GRACE_MS, () => this.recoverIce(peer))
+    } else if (state === 'new' || state === 'connecting') {
+      // An attempt is in progress; its deadline is running (or starts now).
+      if (peer.healthTimer === null) this.setHealthTimer(peer, CONNECT_TIMEOUT_MS, () => this.recoverIce(peer))
+    }
+  }
+
+  private recoverIce(peer: Peer): void {
+    this.setHealthTimer(peer, null)
+    if (peer.pc.connectionState === 'connected' || peer.pc.connectionState === 'closed') {
+      this.updateHealth(peer)
+      return
+    }
+    if (peer.iceAttempts < MAX_ICE_RESTARTS) {
+      peer.iceAttempts += 1
+      this.setHealth(peer, 'reconnecting')
+      this.setHealthTimer(peer, ICE_ATTEMPT_TIMEOUT_MS, () => this.recoverIce(peer))
+    } else {
+      this.setHealth(peer, 'failed')
+      this.setHealthTimer(peer, FAILED_RETRY_MS, () => this.recoverIce(peer))
+    }
+    try {
+      peer.pc.restartIce()
+    } catch (error) {
+      console.warn('trio: could not restart ICE', error)
+    }
   }
 
   private closePeer(peerId: number): void {
     const peer = this.peers.get(peerId)
+    this.pairEpochs.delete(peerId)
+    this.resets.delete(peerId)
+    if (this.lastDescription?.peerId === peerId) this.lastDescription = null
     if (!peer) return
     this.peers.delete(peerId)
     this.disposePeer(peer)
@@ -1172,12 +1434,16 @@ export class VoiceEngine {
   private closeAllPeers(): void {
     const peers = [...this.peers.values()]
     this.peers.clear()
+    this.pairEpochs.clear()
+    this.resets.clear()
+    this.lastDescription = null
     for (const peer of peers) this.disposePeer(peer)
   }
 
   private disposePeer(peer: Peer): void {
     const { pc } = peer
     this.setTurnTimer(peer, null)
+    this.setHealthTimer(peer, null)
     pc.onnegotiationneeded = null
     pc.onicecandidate = null
     pc.onconnectionstatechange = null
@@ -1217,6 +1483,7 @@ export class VoiceEngine {
       }
     }
     void this.audioContext.resume().catch(() => undefined)
+    this.speakingKeeper ??= ContextKeeper.watch(this.audioContext)
     if (!this.speakingTimer) {
       this.speakingTimer = setInterval(() => this.pollSpeaking(), SPEAKING_POLL_MS)
     }
@@ -1226,6 +1493,8 @@ export class VoiceEngine {
     if (this.speakingTimer) clearInterval(this.speakingTimer)
     this.speakingTimer = null
     for (const userId of [...this.monitors.keys()]) this.unwatch(userId)
+    this.speakingKeeper?.stop()
+    this.speakingKeeper = null
     const context = this.audioContext
     this.audioContext = null
     if (context) void context.close().catch(() => undefined)

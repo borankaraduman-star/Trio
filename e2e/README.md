@@ -95,6 +95,10 @@ Chromium 153 facts the specs depend on, measured here:
 | `13-settings` | live microphone/camera switch, output device, PTT key binding, persistence across a reload |
 | `14-resilience-media` | server killed with cameras and a screen share on: everything comes back as it was left; a camera turned off meanwhile stays off |
 | `15-mobile-media` | attachments, lightbox and the settings dialog at 390 px |
+| `20-renegotiation-growth` | 30 camera and 15 screen-with-audio cycles on one connection: the SDP stays the same size, the last tiles decode, every pair hears; screen audio is off unless chosen |
+| `21-refused-signal` | a description the server refuses (`TOO_LARGE`, forced by padding one frame in the page): the pair starts again on fresh connections, from either side, and gives up after three |
+| `22-mic-lost` | the microphone track ends and cannot be reopened: the notice, nothing sent, recovery on `devicechange` and from the retry button |
+| `23-ice-health` | ICE candidates dropped between two of three peers: reconnecting, then failed with the TURN hint, then healed when unblocked |
 
 ## Screenshots
 

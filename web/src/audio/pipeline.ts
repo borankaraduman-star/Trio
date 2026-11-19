@@ -1,3 +1,5 @@
+import { ContextKeeper } from './contextKeeper'
+
 /**
  * The outgoing microphone, as ONE graph (CONTRACT-V2 §4):
  *
@@ -37,6 +39,18 @@ export interface PipelineDeps {
   createContext: () => AudioContext | null
   /** Resolves with a ready RNNoise node, or rejects. */
   createNoiseNode: (context: AudioContext) => Promise<AudioNode>
+  /**
+   * Calls `listener` on every device change (a microphone plugged in);
+   * returns the unsubscribe. Default: `navigator.mediaDevices` `devicechange`.
+   */
+  watchDevices?: (listener: () => void) => () => void
+}
+
+function defaultWatchDevices(listener: () => void): () => void {
+  const media = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices
+  if (!media?.addEventListener) return () => undefined
+  media.addEventListener('devicechange', listener)
+  return () => media.removeEventListener('devicechange', listener)
 }
 
 export function micConstraints(deviceId: string, browserNoiseSuppression: boolean): MediaStreamConstraints {
@@ -105,6 +119,13 @@ export class MicPipeline {
   private wantNoise: boolean
   private state: NoiseState = 'off'
   private device: string
+  /** The device the user chose (`device` may be the default it fell back to). */
+  private wanted: string
+  /** The microphone ended and could not be opened again: nothing is sent. */
+  private lost = false
+  private unwatchDevices: (() => void) | null = null
+  /** 10b: resumes the graph's context after an interruption (iOS phone call). */
+  private keeper: ContextKeeper | null = null
   private stopped = false
   /** Serialises device and noise changes so two at once cannot interleave. */
   private queue: Promise<void> = Promise.resolve()
@@ -119,6 +140,7 @@ export class MicPipeline {
     this.context = context
     this.wantNoise = options.noiseSuppression
     this.device = options.deviceId
+    this.wanted = options.deviceId
     if (context) {
       this.gain = context.createGain()
       const destination = context.createMediaStreamDestination()
@@ -183,6 +205,11 @@ export class MicPipeline {
     }
 
     const pipeline = new MicPipeline(deps, raw, context, { ...options, deviceId })
+    pipeline.wanted = options.deviceId
+    if (context) {
+      pipeline.keeper = ContextKeeper.watch(context)
+      if (pipeline.keeper) pipeline.keeper.onChange = () => pipeline.onChange?.()
+    }
     pipeline.noiseNode = noiseNode
     pipeline.state = state
     if (context) pipeline.connect()
@@ -227,12 +254,26 @@ export class MicPipeline {
   }
 
   get transmitting(): boolean {
-    return gateOpen(this.muted, this.pttOpen)
+    return gateOpen(this.muted, this.pttOpen) && !this.lost
+  }
+
+  /** The microphone ended and could not be opened again (finding 4). */
+  get micLost(): boolean {
+    return this.lost
+  }
+
+  /** Try to open the microphone again; resolves true when it is back (or was never lost). */
+  retry(): Promise<boolean> {
+    return this.enqueue(() => this.recover()).then(
+      () => !this.lost,
+      () => !this.lost,
+    )
   }
 
   setDevice(deviceId: string): Promise<void> {
     return this.enqueue(async () => {
-      if (deviceId === this.device) return
+      this.wanted = deviceId
+      if (deviceId === this.device && !this.lost) return
       await this.reopen(deviceId)
     })
   }
@@ -277,6 +318,10 @@ export class MicPipeline {
   stop(): void {
     if (this.stopped) return
     this.stopped = true
+    this.unwatchDevices?.()
+    this.unwatchDevices = null
+    this.keeper?.stop()
+    this.keeper = null
     this.disconnect()
     this.dropNoiseNode()
     stopTracks(this.raw)
@@ -310,6 +355,7 @@ export class MicPipeline {
     this.disconnect()
     this.raw = next
     this.device = usedDevice
+    this.setLost(false)
     if (this.context) {
       this.connect()
     } else {
@@ -327,16 +373,53 @@ export class MicPipeline {
     this.onChange?.()
   }
 
-  /** The device went away (unplugged): carry on with the default one. */
+  /**
+   * The device went away (unplugged, permission revoked): open it again (the
+   * chosen one, else the default). When that fails too, the pipeline is
+   * `micLost` and says so (`onChange`) instead of carrying on as if
+   * connected, and it tries again on every device change (finding 4).
+   */
   private watchRaw(): void {
     const raw = this.raw
     for (const track of raw.getAudioTracks()) {
       track.onended = () => {
         if (this.stopped || this.raw !== raw) return
-        console.warn('trio: microphone ended, switching to the default device')
-        void this.enqueue(() => this.reopen(''))
+        console.warn('trio: microphone ended, opening it again')
+        void this.enqueue(() => this.recover())
       }
     }
+  }
+
+  /** Open the microphone again after it ended; on failure mark it lost. Never rejects. */
+  private async recover(): Promise<void> {
+    if (this.stopped) return
+    const live = this.raw.getAudioTracks().some((track) => track.readyState === 'live')
+    if (live && !this.lost) return
+    try {
+      await this.reopen(this.wanted)
+    } catch (error) {
+      console.warn('trio: the microphone could not be opened again', error)
+      if (this.stopped) return
+      // The ended source sends nothing: take it out of the graph.
+      this.disconnect()
+      this.setLost(true)
+    }
+  }
+
+  private setLost(lost: boolean): void {
+    if (this.lost === lost) return
+    this.lost = lost
+    if (lost) {
+      const watch = this.deps.watchDevices ?? defaultWatchDevices
+      this.unwatchDevices ??= watch(() => {
+        if (this.lost && !this.stopped) void this.enqueue(() => this.recover())
+      })
+    } else {
+      this.unwatchDevices?.()
+      this.unwatchDevices = null
+    }
+    this.applyGate()
+    this.onChange?.()
   }
 
   private connect(): void {
@@ -396,7 +479,7 @@ export class MicPipeline {
   }
 
   private applyGate(): void {
-    const open = gateOpen(this.muted, this.pttOpen)
+    const open = gateOpen(this.muted, this.pttOpen) && !this.lost
     if (this.gain && this.context) {
       // A 5 ms ramp: no click when the gate opens or closes.
       this.gain.gain.setTargetAtTime(open ? 1 : 0, this.context.currentTime, 0.005)
