@@ -376,3 +376,27 @@ needs a token like everything but join/health, and the default name is
   `server: {name, icon_url}`.
 - Rate limit: 10 profile changes (rename, avatar put/delete, server name,
   icon put/delete together) per user per sliding minute → `429 RATE_LIMITED`.
+
+### New error codes and limits (server)
+
+| where | code | when |
+|---|---|---|
+| ws `voice.join` | `BAD_REQUEST` | `resume` / `screensharing` not a boolean |
+| ws `voice.ring` | `INVALID_CHANNEL`, `NOT_IN_VOICE`, `RATE_LIMITED` | see A4 |
+| ws `message.send` | `INVALID_REPLY`; `BAD_REQUEST` for a non-integer `reply_to` | see B |
+| REST message family | `403 FORBIDDEN`, `404 NOT_FOUND`, `409 REACTION_LIMIT`, `409 PIN_LIMIT`, `422 INVALID_MESSAGE`, `422 INVALID_REACTION`, `429 RATE_LIMITED` | see B |
+| REST identity | `409 NAME_TAKEN`, `413 FILE_TOO_LARGE`, `422 INVALID_IMAGE`, `422 INVALID_NAME`, `422 INVALID_UPLOAD`, `429 RATE_LIMITED`, `507 STORAGE_FULL` | see C |
+
+| limit | value |
+|---|---|
+| reconnect grace | 10 s |
+| `voice.ring` | 1 per user per 30 s |
+| edits + deletes + pins/unpins | 30 per user per minute |
+| reaction adds + removes | 120 per user per minute |
+| distinct reaction keys per message | 20 |
+| reaction key | 1–64 UTF-8 bytes; ZWJ sequences of at most 10 elements |
+| pins per channel | 50 |
+| reply excerpt | 140 code points |
+| edit body | 64 KiB |
+| avatar / icon file | 2 MiB, 1–512 px a side |
+| profile changes | 10 per user per minute |
