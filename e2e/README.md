@@ -51,6 +51,23 @@ spec file must pass on its own and in any order: each test starts its own
 fresh server, and nothing may depend on what an earlier file left behind.
 Run one shard locally the same way: `npx playwright test --shard=2/4`.
 
+**Slow mode: run it like a CI runner.** A GitHub runner differs from a
+developer machine in two ways that have broken specs which pass here: it is
+slower, and it has no Inter (the client's first font), so text falls back to
+a wider font and moves what sits under a finger at 390 px. Both can be
+switched on locally, for any spec or shard:
+
+```bash
+TRIO_E2E_CI_FONTS=1 TRIO_E2E_CPU_THROTTLE=4 taskset -c 0,1 npx playwright test --shard=3/4
+```
+
+`TRIO_E2E_CI_FONTS=1` points the browser's fontconfig at `fixtures/fonts-ci.conf`
+(the machine's fonts minus Inter); `TRIO_E2E_CPU_THROTTLE=N` slows the main
+thread of every page the suite opens N times (CDP `Emulation.setCPUThrottlingRate`,
+`lib/trio.ts`); `taskset` leaves the server, Playwright and the browsers two
+cores between them. The screenshots a slow-mode run writes are not the release
+ones (restore them with `git checkout -- e2e/screenshots`).
+
 Useful variables:
 
 | variable | effect |
@@ -58,6 +75,8 @@ Useful variables:
 | `TRIO_E2E_SERVER_DIR` | run the `trio_server` package found in this directory instead of `server/` (e.g. a frozen copy while `server/` is being edited) |
 | `TRIO_E2E_SKIP_BUILD=1` | do not rebuild `web/` (use the existing `web/dist`) |
 | `TRIO_E2E_CONSOLE=1` | print the pages' console warnings and errors |
+| `TRIO_E2E_CI_FONTS=1` | the browser without Inter, as on a CI runner (slow mode) |
+| `TRIO_E2E_CPU_THROTTLE=N` | every page's main thread N times slower (slow mode) |
 
 ## Media
 

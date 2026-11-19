@@ -98,6 +98,16 @@ export async function newContext(browser: Browser, options: ContextOptions = {})
   })
   await context.addInitScript(PEER_CONNECTION_PROBE)
   await context.addInitScript(CSP_PROBE)
+  const throttle = Number(process.env.TRIO_E2E_CPU_THROTTLE ?? 0)
+  if (throttle > 1) {
+    // "A slow runner": every page of the suite's contexts runs its main thread this many times slower.
+    context.on('page', (page) => {
+      void context
+        .newCDPSession(page)
+        .then((cdp) => cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }))
+        .catch(() => undefined)
+    })
+  }
   context.on('console', (message) => {
     if (message.type() === 'error' && isCspMessage(message.text())) {
       cspViolations.push(`${message.page()?.url() ?? '?'}: ${message.text()}`)

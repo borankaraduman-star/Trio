@@ -63,6 +63,7 @@ luac5.1 -p addon/TrioDurum/TrioDurum.lua && lua5.1 addon/test/harness.lua
 # end to end (builds web, starts the real server itself)
 cd e2e && npm ci && npm test
 npx playwright test --shard=2/4     # one of CI's four shards (each spec file must pass alone)
+TRIO_E2E_CI_FONTS=1 TRIO_E2E_CPU_THROTTLE=4 taskset -c 0,1 npx playwright test --shard=2/4   # like a CI runner
 ```
 
 Before calling a change done: the checks of every package it touches, plus
@@ -114,7 +115,11 @@ the deploy) → dispatch the release.
   a peak (`data-peak`), not the current frame.
 - **A long-press sheet opens under the finger.** Lifting it ends the touch
   with a click on whatever sheet item is there; `lib/pressEnd.ts` swallows
-  that one click. Anything new that opens on a long-press needs the same.
+  that one click. Anything new that opens on a long-press needs the same, and
+  so does anything a press puts in place under the finger: the voice-message
+  bar's ✕ cancelled every tap on the microphone on CI, whose fonts (no Inter,
+  like a real phone's) put it there. Run the e2e suite with
+  `TRIO_E2E_CI_FONTS=1` to see the layout a runner sees.
 - **Uploaded files are served from the app's own origin**, so every file
   response carries `Content-Security-Policy: sandbox` and html/svg are
   download-only. The client keeps its token in `localStorage`; an XSS on the

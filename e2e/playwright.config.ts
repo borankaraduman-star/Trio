@@ -1,4 +1,13 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from '@playwright/test'
+
+// "Like a CI runner" (README, "Slow mode"): the browser gets no Inter, the font
+// the client asks for first, as on a GitHub runner and on real phones; the
+// fallback is wider and moves what sits under a finger.
+if (process.env.TRIO_E2E_CI_FONTS) {
+  process.env.FONTCONFIG_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fonts-ci.conf')
+}
 
 export const CHROMIUM_ARGS = [
   // Grant camera/microphone/screen without a prompt. In current Chromium this
