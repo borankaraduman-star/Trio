@@ -9,6 +9,7 @@ import {
   allMessages,
   barAction,
   chip,
+  exactRow,
   idOf,
   longPress,
   menuAction,
@@ -28,7 +29,7 @@ test.beforeEach(async () => {
 })
 
 async function rowTop(person: Person, text: string): Promise<number> {
-  return row(person.page, text).evaluate((element) => {
+  return exactRow(person.page, text).evaluate((element) => {
     const list = element.closest('[data-testid="message-list"]')!
     return element.getBoundingClientRect().top - list.getBoundingClientRect().top
   })
@@ -183,8 +184,7 @@ test('reactions: two people aggregate, toggle, names in the tooltip; only that r
   await expect(chip(row(ayse.page, 'pizza'), '👍')).toHaveAttribute('aria-pressed', 'false')
   await expect(chip(row(ayse.page, 'pizza'), '👍')).toHaveAttribute('title', 'Mehmet ve Zeynep: 👍')
 
-  // A heart from the menu's quick row, and Ayşe's heart without VS16 by REST
-  // lands on the same key only because the client sends the qualified form.
+  // A heart from the menu's quick row, and Ayşe's from the picker: one key (both send ❤️ with VS16).
   await barAction(row(zeynep.page, 'pizza'), 'menu')
   await zeynep.page.getByTestId('message-menu').getByRole('button', { name: '❤️ tepkisi' }).click()
   for (const person of [ayse, mehmet, zeynep]) await expect(chip(row(person.page, 'pizza'), '❤️')).toContainText('1')
@@ -224,17 +224,17 @@ test('reactions: the limit is a quiet notice; a reaction far up does not move an
   const target = all.find((message) => message.content === 'geçmiş 120')!
   const keys = ['😀', '😄', '😂', '🤣', '😊', '🙂', '😉', '😍', '🥰', '😘', '😎', '🤔', '🙄', '😏', '😐', '😅', '😬', '😮', '😱', '😢']
   for (const key of keys) await restOk(mehmet.token, `/api/messages/${target.id}/reactions/${encodeURIComponent(key)}`, 'PUT')
-  await expect(row(ayse.page, 'geçmiş 120').getByTestId('reaction-chip')).toHaveCount(20)
-  await barAction(row(ayse.page, 'geçmiş 120'), 'react')
+  await expect(exactRow(ayse.page, 'geçmiş 120').getByTestId('reaction-chip')).toHaveCount(20)
+  await barAction(exactRow(ayse.page, 'geçmiş 120'), 'react')
   await pick(ayse.page, '👍')
   await expect(ayse.page.getByTestId('message-notice')).toContainText('en fazla 20 farklı tepki')
   // An existing key may still gain people.
-  await chip(row(ayse.page, 'geçmiş 120'), '😀').click()
-  await expect(chip(row(zeynep.page, 'geçmiş 120'), '😀')).toContainText('2')
+  await chip(exactRow(ayse.page, 'geçmiş 120'), '😀').click()
+  await expect(chip(exactRow(zeynep.page, 'geçmiş 120'), '😀')).toContainText('2')
 
   // Zeynep reads far up in the history.
-  await scrollUpTo(zeynep.page, row(zeynep.page, 'geçmiş 20').first())
-  const reading = row(zeynep.page, 'geçmiş 30')
+  await scrollUpTo(zeynep.page, exactRow(zeynep.page, 'geçmiş 20'))
+  const reading = exactRow(zeynep.page, 'geçmiş 30')
   await reading.evaluate((element) => {
     const list = element.closest<HTMLElement>('[data-testid="message-list"]')!
     list.scrollTop += element.getBoundingClientRect().top - list.getBoundingClientRect().top - 40
@@ -245,7 +245,7 @@ test('reactions: the limit is a quiet notice; a reaction far up does not move an
     const message = all.find((item) => item.content === text)!
     for (const key of ['🎉', '🔥', '❤️'])
       await restOk(ayse.token, `/api/messages/${message.id}/reactions/${encodeURIComponent(key)}`, 'PUT')
-    await expect(chip(row(zeynep.page, text).first(), '🔥')).toHaveCount(1)
+    await expect(chip(exactRow(zeynep.page, text), '🔥')).toHaveCount(1)
   }
   expect(await rowTop(zeynep, 'geçmiş 30')).toBe(before)
 })
@@ -350,7 +350,7 @@ test('a reconnect in the middle: edits, reactions, pins and deletions made meanw
   const zeynep = trio.add(await personBehindSwitch(browser, 'Zeynep', sw))
   await bulkSend(ayse, GENEL, 90, 'not')
   // Zeynep has loaded all of it (older pages too).
-  await scrollUpTo(zeynep.page, row(zeynep.page, 'not 3').first())
+  await scrollUpTo(zeynep.page, exactRow(zeynep.page, 'not 3'))
   await expect(rows(zeynep.page)).toHaveCount(90)
 
   sw.online = false
@@ -370,15 +370,15 @@ test('a reconnect in the middle: edits, reactions, pins and deletions made meanw
   await expect(zeynep.page.locator('.banner')).toHaveCount(0, { timeout: 20_000 })
   await expect(row(zeynep.page, 'kopukken yazıldı')).toHaveCount(1)
   await expect(row(zeynep.page, 'not 3 düzeltildi').getByTestId('edited-mark')).toHaveCount(1)
-  await expect(rows(zeynep.page).filter({ hasText: /^not 5$/ })).toHaveCount(0)
-  await expect(rows(zeynep.page).filter({ hasText: /^not 89$/ })).toHaveCount(0)
-  await expect(chip(row(zeynep.page, 'not 7').first(), '🔥')).toContainText('1')
-  await expect(row(zeynep.page, 'not 9').first().getByTestId('pin-mark')).toHaveCount(1)
+  await expect(exactRow(zeynep.page, 'not 5')).toHaveCount(0)
+  await expect(exactRow(zeynep.page, 'not 89')).toHaveCount(0)
+  await expect(chip(exactRow(zeynep.page, 'not 7'), '🔥')).toContainText('1')
+  await expect(exactRow(zeynep.page, 'not 9').getByTestId('pin-mark')).toHaveCount(1)
   await expect(rows(zeynep.page)).toHaveCount(89)
 
   // And live again: a change from her reaches the others.
-  await chip(row(zeynep.page, 'not 7').first(), '🔥').click()
-  await expect(chip(row(ayse.page, 'not 7').first(), '🔥')).toContainText('2')
+  await chip(exactRow(zeynep.page, 'not 7'), '🔥').click()
+  await expect(chip(exactRow(ayse.page, 'not 7'), '🔥')).toContainText('2')
 })
 
 test('phone width: long-press opens the sheet; react, reply and the picker fit the screen', async ({ browser, trio }) => {

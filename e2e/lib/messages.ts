@@ -14,6 +14,11 @@ export function row(page: Page, text: string): Locator {
   return rows(page).filter({ hasText: text })
 }
 
+/** The row whose text is exactly `text` ("not 3", not "not 30"). */
+export function exactRow(page: Page, text: string): Locator {
+  return rows(page).filter({ has: page.getByText(text, { exact: true }) })
+}
+
 export async function send(page: Page, text: string): Promise<void> {
   await page.getByTestId('composer').fill(text)
   await page.getByTestId('composer').press('Enter')

@@ -48,10 +48,11 @@ export function useFocusTrap(
     const onDown = (event: PointerEvent) => {
       if (outsideCloses && !element.contains(event.target as Node)) close.current()
     }
-    element.addEventListener('keydown', onKey)
+    // On the document: a button inside that went away (an unpinned item) leaves the focus on <body>.
+    document.addEventListener('keydown', onKey, true)
     document.addEventListener('pointerdown', onDown, true)
     return () => {
-      element.removeEventListener('keydown', onKey)
+      document.removeEventListener('keydown', onKey, true)
       document.removeEventListener('pointerdown', onDown, true)
       if (previous && document.contains(previous)) previous.focus({ preventScroll: true })
     }
