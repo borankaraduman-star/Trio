@@ -294,3 +294,18 @@ describe('input gate', () => {
     expect(linearToDb(0)).toBe(-Infinity)
   })
 })
+
+describe('boost limiter curve', () => {
+  it('is the identity below -6 dBFS and never reaches full scale', async () => {
+    const { limiterCurve, LIMITER_HEADROOM } = await import('../audio/playback')
+    const curve = limiterCurve(4097)
+    const at = (y: number) => curve[Math.round(((y / LIMITER_HEADROOM + 1) / 2) * 4096)]
+    expect(at(0)).toBeCloseTo(0, 6)
+    expect(at(0.3)).toBeCloseTo(0.3, 3)
+    expect(at(-0.45)).toBeCloseTo(-0.45, 3)
+    expect(at(1.2)).toBeLessThan(1)
+    expect(at(1.2)).toBeGreaterThan(0.8)
+    expect(Math.max(...curve)).toBeLessThan(1)
+    for (let i = 1; i < curve.length; i++) expect(curve[i]).toBeGreaterThanOrEqual(curve[i - 1])
+  })
+})

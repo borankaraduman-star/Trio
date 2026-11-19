@@ -12,13 +12,13 @@
  * remote WebRTC stream only flows into Web Audio while some media element
  * plays it:
  *
- *     MediaStreamAudioSourceNode ─► GainNode (the slider) ─► DynamicsCompressor
+ *     MediaStreamAudioSourceNode ─► GainNode (the slider, halved) ─► WaveShaper
  *       (a soft limiter: a boost must not clip) ─► GainNode (0 while deafened) ─► out
  *
- * `out` is the context's destination on the chosen output device
- * (`AudioContext.setSinkId`), or, where the context cannot choose one, a
- * MediaStreamAudioDestinationNode played by a detached <audio> element that
- * can (`HTMLMediaElement.setSinkId`, the existing path).
+ * `out` is the context's destination for the default output device; for any
+ * other, a MediaStreamAudioDestinationNode played by a detached <audio>
+ * element on that device (`HTMLMediaElement.setSinkId`, the existing path —
+ * see applySink for why not `AudioContext.setSinkId`).
  *
  * The speaking detector reads the remote stream itself (voice.ts), so the
  * ring reflects what they send, not my slider. The cue sounds have their own
@@ -33,19 +33,39 @@ interface Route {
   stream: MediaStream
   source: MediaStreamAudioSourceNode
   volume: GainNode
-  limiter: DynamicsCompressorNode
+  limiter: WaveShaperNode
   output: GainNode
   deafened: boolean
 }
 
-/** The soft limiter: transparent below -6 dBFS, a hard knee by 0 dBFS. */
-function makeLimiter(context: AudioContext): DynamicsCompressorNode {
-  const limiter = context.createDynamicsCompressor()
-  limiter.threshold.value = -6
-  limiter.knee.value = 6
-  limiter.ratio.value = 20
-  limiter.attack.value = 0.003
-  limiter.release.value = 0.25
+/**
+ * The soft limiter's curve. Not a DynamicsCompressorNode: Chromium's applies
+ * an automatic makeup gain, so a quiet voice at "150 %" came out at ~200 %
+ * (measured in e2e 52). A WaveShaper is an exact identity below the knee.
+ * Its input range is −1..1, so the slider's gain is applied HALVED before it
+ * (`LIMITER_HEADROOM`) and the curve maps x back to y = 2x: identity up to
+ * |y| = 0.5 (−6 dBFS), then a tanh knee that approaches full scale and never
+ * passes it.
+ */
+export const LIMITER_HEADROOM = 2
+
+export function limiterCurve(size = 4096): Float32Array<ArrayBuffer> {
+  const curve = new Float32Array(new ArrayBuffer(size * 4))
+  const knee = 0.5
+  for (let i = 0; i < size; i++) {
+    const x = (i / (size - 1)) * 2 - 1
+    const y = x * LIMITER_HEADROOM
+    const magnitude = Math.abs(y)
+    const shaped = magnitude <= knee ? magnitude : knee + (1 - knee) * Math.tanh((magnitude - knee) / (1 - knee))
+    curve[i] = Math.sign(y) * shaped
+  }
+  return curve
+}
+
+function makeLimiter(context: AudioContext): WaveShaperNode {
+  const limiter = context.createWaveShaper()
+  limiter.curve = limiterCurve()
+  limiter.oversample = '4x'
   return limiter
 }
 
@@ -97,7 +117,7 @@ export class PlaybackMixer {
         return false
       }
     }
-    route.volume.gain.setTargetAtTime(volume, context.currentTime, 0.01)
+    route.volume.gain.setTargetAtTime(volume / LIMITER_HEADROOM, context.currentTime, 0.01)
     route.deafened = deafened
     route.output.gain.setTargetAtTime(deafened ? 0 : 1, context.currentTime, 0.005)
     void context.resume().catch(() => undefined)
@@ -145,24 +165,12 @@ export class PlaybackMixer {
 
   private async applySink(context: SinkContext): Promise<void> {
     const wanted = this.sinkId
-    if (typeof context.setSinkId === 'function') {
-      try {
-        if (context.sinkId !== wanted) await context.setSinkId(wanted)
-        this.useDestination(context, null)
-        return
-      } catch (error) {
-        console.warn('trio: the boosted audio could not use the chosen output device', error)
-        if (wanted !== '') {
-          try {
-            await context.setSinkId('')
-          } catch {
-            // Default it is.
-          }
-        }
-      }
-    }
-    // No AudioContext.setSinkId: the default output is the destination; any
-    // other goes out through an element that can choose it.
+    // The default output is the context's own destination; any other goes
+    // out through an element that can choose it. NOT AudioContext.setSinkId,
+    // although Chromium has it: a context moved to another output device got
+    // only zeros from MediaStreamAudioSourceNodes of REMOTE WebRTC streams
+    // (an oscillator in the same context played; a fresh context created with
+    // that sinkId got zeros too; measured in e2e 52, Chromium 1243's build).
     if (wanted === '') {
       this.useDestination(context, null)
       return
@@ -198,6 +206,13 @@ export class PlaybackMixer {
     }
   }
 
+  /** Where boosted audio goes now: the context's own device, or the fallback element's. */
+  get output(): { via: 'context' | 'element' | 'none'; sinkId: string } {
+    if (!this.context) return { via: 'none', sinkId: this.sinkId }
+    if (this.outElement) return { via: 'element', sinkId: (this.outElement as { sinkId?: string }).sinkId ?? '' }
+    return { via: 'context', sinkId: this.context.sinkId ?? '' }
+  }
+
   /** e2e: an analyser on each route's output (after volume, limiter and deafen). */
   private exposeTap(key: string, context: AudioContext, output: AudioNode): void {
     const w = globalThis as ProbeWindow
@@ -205,6 +220,7 @@ export class PlaybackMixer {
     const analyser = context.createAnalyser()
     analyser.fftSize = 2048
     output.connect(analyser)
+    ;(w as ProbeWindow & { __trioMixer?: PlaybackMixer }).__trioMixer = this
     w.__trioVolumeTaps ??= {}
     w.__trioVolumeTaps[key] = analyser
   }

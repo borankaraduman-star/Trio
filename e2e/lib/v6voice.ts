@@ -180,3 +180,48 @@ export async function sourcePeak(page: Page, userId: number, ms = 1200): Promise
     [userId, ms] as const,
   )
 }
+
+/**
+ * Over the same `ms`: the peak of the boosted route `voice:<id>` (after the
+ * slider, the limiter and deafen) and of the remote stream itself. Their
+ * ratio is the gain the slider applied. `tap` is null when not boosted.
+ */
+export async function boostLevels(page: Page, userId: number, ms = 1500): Promise<{ tap: number | null; source: number }> {
+  return page.evaluate(
+    async ([id, windowMs]) => {
+      const taps = (window as unknown as { __trioVolumeTaps?: Record<string, AnalyserNode> }).__trioVolumeTaps
+      const tap = taps?.[`voice:${id}`] ?? null
+      const element = document.querySelector<HTMLAudioElement>(`[data-testid="remote-audio-${id}"]`)
+      const context = new AudioContext()
+      await context.resume()
+      const analyser = context.createAnalyser()
+      analyser.fftSize = 2048
+      context.createMediaStreamSource(element!.srcObject as MediaStream).connect(analyser)
+      const a = new Float32Array(analyser.fftSize)
+      const b = new Float32Array(tap?.fftSize ?? 1)
+      let source = 0
+      let boosted = 0
+      const until = performance.now() + windowMs
+      while (performance.now() < until) {
+        analyser.getFloatTimeDomainData(a)
+        for (const v of a) source = Math.max(source, Math.abs(v))
+        if (tap) {
+          tap.getFloatTimeDomainData(b)
+          for (const v of b) boosted = Math.max(boosted, Math.abs(v))
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      }
+      await context.close()
+      return { tap: tap ? boosted : null, source }
+    },
+    [userId, ms] as const,
+  )
+}
+
+/** The remote microphone element's playback facts. */
+export async function audioElement(page: Page, userId: number): Promise<{ volume: number; muted: boolean; route: string | null }> {
+  return page.evaluate((id) => {
+    const element = document.querySelector<HTMLAudioElement>(`[data-testid="remote-audio-${id}"]`)!
+    return { volume: element.volume, muted: element.muted, route: element.dataset.route ?? null }
+  }, userId)
+}
