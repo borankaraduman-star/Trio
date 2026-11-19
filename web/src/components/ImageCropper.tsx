@@ -94,7 +94,11 @@ export function ImageCropper({
   }
 
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // A pointer the engine no longer knows: the drag still works without capture.
+    }
     pointers.current.set(event.pointerId, localPoint(event))
   }
 

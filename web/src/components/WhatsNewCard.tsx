@@ -17,6 +17,8 @@ export function WhatsNewCard({ ready, busy }: { ready: boolean; busy: () => bool
   )
   const [shown, setShown] = useState(false)
   const [done, setDone] = useState(false)
+  /** How many times it found the page busy (a hidden marker, so a test can see it waiting). */
+  const [held, setHeld] = useState(0)
 
   useEffect(() => {
     // Nothing to tell (a first visit, or seen already): remember this version now.
@@ -27,13 +29,16 @@ export function WhatsNewCard({ ready, busy }: { ready: boolean; busy: () => bool
     if (entries.length === 0 || shown || done || !ready) return
     const check = () => {
       if (!busy()) setShown(true)
+      else setHeld((count) => count + 1)
     }
     check()
     const timer = setInterval(check, CHECK_MS)
     return () => clearInterval(timer)
   }, [entries, shown, done, ready, busy])
 
-  if (!shown || done) return null
+  if (!shown || done) {
+    return entries.length > 0 && !done ? <span hidden data-testid="whats-new-waiting" data-held={held} /> : null
+  }
 
   const dismiss = () => {
     saveSeenVersion(CLIENT_VERSION)
