@@ -438,7 +438,7 @@ def _message(content="", attachments=()):
 
 def test_message_payloads():
     payload = message_payload(_message("selam\n  nasılsın"), "genel")
-    assert payload["title"] == "Mehmet · #genel"
+    assert payload["title"] == "Mehmet — #genel"
     assert payload["body"] == "selam nasılsın"
     assert payload["tag"] == "ch-3" and payload["message_id"] == 7
     long = message_payload(_message("ş" * 4000), "genel")["body"]

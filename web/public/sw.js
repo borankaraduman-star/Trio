@@ -18,6 +18,15 @@
 
 const MESSAGE_TAG = /^ch-(\d+)$/
 
+/**
+ * getNotifications() is only asked when notifications are allowed: there is
+ * nothing to list otherwise, and Chromium's headless shell (the e2e suite's
+ * browser) crashes the page when a worker asks without the permission.
+ */
+function allowed() {
+  return typeof Notification !== 'undefined' && Notification.permission === 'granted'
+}
+
 self.addEventListener('install', () => {
   self.skipWaiting()
 })
@@ -39,7 +48,7 @@ function parse(event) {
 /** Sum of the per-channel counts of the message notifications still shown. */
 async function refreshBadge() {
   const nav = self.navigator
-  if (!nav || typeof nav.setAppBadge !== 'function') return
+  if (!nav || typeof nav.setAppBadge !== 'function' || !allowed()) return
   const shown = await self.registration.getNotifications()
   let total = 0
   for (const n of shown) if (MESSAGE_TAG.test(n.tag)) total += (n.data && n.data.count) || 1
@@ -56,7 +65,7 @@ async function show(data) {
   let title = data.title
   let body = typeof data.body === 'string' ? data.body : ''
   let count = 1
-  if (MESSAGE_TAG.test(tag)) {
+  if (MESSAGE_TAG.test(tag) && allowed()) {
     const existing = await self.registration.getNotifications({ tag })
     const previous = existing.length > 0 && existing[0].data ? existing[0].data.count || 1 : 0
     count = previous + 1
@@ -120,7 +129,7 @@ self.addEventListener('notificationclose', (event) => {
 self.addEventListener('message', (event) => {
   const data = event.data
   if (!data || typeof data !== 'object') return
-  if (data.type === 'trio.viewed') {
+  if (data.type === 'trio.viewed' && allowed()) {
     event.waitUntil(
       (async () => {
         const shown = await self.registration.getNotifications()

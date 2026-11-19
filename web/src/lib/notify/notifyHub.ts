@@ -527,7 +527,7 @@ class NotifyHub {
         : (message.attachments ?? []).every((a) => a.content_type.startsWith('image/')) && (message.attachments ?? []).length > 0
           ? '📎 fotoğraf'
           : '📎 dosya'
-    void this.local('message', message.channel_id, `${message.author.name} · #${channelName}`, body, { mention })
+    void this.local('message', message.channel_id, `${message.author.name} — #${channelName}`, body, { mention })
   }
 }
 

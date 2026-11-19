@@ -409,7 +409,7 @@ def message_payload(message: dict[str, Any], channel_name: str) -> dict[str, Any
     return {
         "v": 1,
         "kind": "message",
-        "title": f"{author} · #{channel_name[:40]}",
+        "title": f"{author} — #{channel_name[:40]}",
         "author": author,
         "channel": channel_name[:40],
         "body": body,

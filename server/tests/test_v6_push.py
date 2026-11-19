@@ -291,7 +291,7 @@ def test_a_message_reaches_a_device_that_is_not_viewing_and_decrypts(app, servic
     assert phone.read(request) == {
         "v": 1,
         "kind": "message",
-        "title": "Mehmet · #genel",
+        "title": "Mehmet — #genel",
         "author": "Mehmet",
         "channel": "genel",
         "body": "şimdi bakmıyorsun",
