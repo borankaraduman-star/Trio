@@ -94,6 +94,8 @@ export interface TrioDesktopBridge {
   isDesktop: true
   setPttKey(code: string | null): void
   onPtt(callback: (down: boolean) => void): () => void
+  /** CONTRACT-V6-VOICE "Desktop version": the app's own version; absent in builds before it. */
+  appVersion?: string
 }
 
 export function desktopBridge(): TrioDesktopBridge | null {

@@ -183,6 +183,29 @@ room's people without a camera tile appear under it as small avatar tiles
 marks), and a screen I stopped watching as a chip with "İzle". An audio-only
 room has no stage and no strip.
 
+## 7. Desktop version (owner request, same round)
+
+- `window.trioDesktop.appVersion: string` — Electron's `app.getVersion()`. The
+  sandboxed preload cannot ask for it, so the main process puts
+  `--trio-app-version=<v>` on the renderer's argv (`additionalArguments`) and
+  the preload exposes it (validated as a semver-shaped string; absent in
+  builds before this). The tray menu and the app menu show a disabled
+  "Trio <version>" item; the connect page shows it under the form.
+- Ayarlar's footer, in the desktop app only, adds "Masaüstü uygulaması
+  <appVersion>" (`desktop-version`), or "Masaüstü uygulaması (eski sürüm)" when
+  the bridge has no `appVersion`.
+- Update notice: desktop and server are released with one version, so when
+  `appVersion` is lower (semver, `lib/desktopVersion.ts`) than
+  `ready.server_version` — or this web build's own version when the server
+  does not say — or is missing, a band (`desktop-update`, dismissable per
+  version: `localStorage` `trio.desktopUpdateDismissed`) and a line in the
+  settings footer (`desktop-update-line`) say "Masaüstü uygulamasının yeni
+  sürümü var (<server version>). İndir". "İndir" is a `target="_blank"` link to
+  https://github.com/borankaraduman-star/Trio/releases/latest: the desktop
+  app's window-open handler denies the window and opens https links with
+  `shell.openExternal` (the system browser). Never shown in a plain browser.
+  No auto-updater (the builds are unsigned).
+
 ## Test ids
 
 `btn-share-menu`, `share-chip`, `share-menu`, `share-profile-{game,text,film}`,
@@ -193,7 +216,9 @@ room has no stage and no strip.
 `volume-reset-all`, `gate-auto`, `gate-meter` (`data-level-db`,
 `data-gate-state`, `data-gate-open`), `gate-threshold`, `gate-meter-test`,
 `afk-enabled`, `afk-<id>`, `settings-shortcuts`, `shortcut-{mute,deafen}`,
-`shortcut-*-bind`, `shortcut-*-clear`, `shortcut-conflict`. Remote audio
+`shortcut-*-bind`, `shortcut-*-clear`, `shortcut-conflict`, `desktop-version`,
+`desktop-update`, `desktop-update-line`, `desktop-update-download`,
+`desktop-update-dismiss`. Remote audio
 elements carry `data-volume` and `data-route` (`element` | `webaudio`).
 
 ## Not verified

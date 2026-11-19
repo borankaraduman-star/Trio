@@ -14,7 +14,7 @@
  */
 import type { Page } from '@playwright/test'
 import { longPress } from '../lib/messages'
-import { freshServer } from '../lib/server'
+import { baseUrl, freshServer } from '../lib/server'
 import { expect, expectScreensDecoding, joinVoice, personViaApi, test, threePeople } from '../lib/trio'
 import { CUE_PROBE, cuesPlayed } from '../lib/voiceProbe'
 
@@ -206,4 +206,61 @@ test('the volume sheet at 390 px opens on a long-press and fits', async ({ brows
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(844 + 1)
   await noOverflow(ayse.page)
   await ayse.page.screenshot({ path: `${SHOTS}/v6-voice-volume-sheet-390.png` })
+})
+
+/** A desktop bridge stand-in with (or without) `appVersion`. */
+function desktopWithVersion(version: string | null): string {
+  return `window.trioDesktop = { isDesktop: true, setPttKey() {}, onPtt() { return () => {} }${
+    version === null ? '' : `, appVersion: ${JSON.stringify(version)}`
+  } }`
+}
+
+test('desktop version: an older app gets the update notice (dismissable per version), the same version none, an old build says so; never in a browser', async ({ browser, trio }) => {
+  const health = (await (await fetch(`${baseUrl()}/api/health`)).json()) as { version: string }
+  const serverVersion = health.version
+  expect(serverVersion).toMatch(/^\d+\.\d+\.\d+/)
+
+  const older = trio.add(
+    await personViaApi(browser, 'Ayşe', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion('0.0.1'))) }),
+  )
+  const band = older.page.getByTestId('desktop-update')
+  await expect(band).toContainText(`Masaüstü uygulamasının yeni sürümü var (${serverVersion}).`)
+  await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute(
+    'href',
+    'https://github.com/borankaraduman-star/Trio/releases/latest',
+  )
+  await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute('target', '_blank')
+  await older.page.getByTestId('btn-settings').click()
+  await expect(older.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması 0.0.1')
+  await expect(older.page.getByTestId('desktop-update-line')).toContainText(`(${serverVersion})`)
+  await older.page.getByTestId('settings-close').click()
+  await older.page.getByTestId('desktop-update-dismiss').click()
+  await expect(band).toHaveCount(0)
+  await older.page.reload()
+  await expect(older.page.getByTestId('composer')).toBeVisible()
+  await expect(band).toHaveCount(0)
+  // The settings line stays (only the band is dismissed).
+  await older.page.getByTestId('btn-settings').click()
+  await expect(older.page.getByTestId('desktop-update-line')).toBeVisible()
+
+  const same = trio.add(
+    await personViaApi(browser, 'Mehmet', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion(serverVersion))) }),
+  )
+  await same.page.getByTestId('btn-settings').click()
+  await expect(same.page.getByTestId('desktop-version')).toHaveText(`Masaüstü uygulaması ${serverVersion}`)
+  await expect(same.page.getByTestId('desktop-update-line')).toHaveCount(0)
+  await expect(same.page.getByTestId('desktop-update')).toHaveCount(0)
+
+  const oldBuild = trio.add(
+    await personViaApi(browser, 'Zeynep', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion(null))) }),
+  )
+  await expect(oldBuild.page.getByTestId('desktop-update')).toBeVisible()
+  await oldBuild.page.getByTestId('btn-settings').click()
+  await expect(oldBuild.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması (eski sürüm)')
+
+  const plain = trio.add(await personViaApi(browser, 'Ece'))
+  await plain.page.getByTestId('btn-settings').click()
+  await expect(plain.page.getByTestId('settings-versions')).toBeVisible()
+  await expect(plain.page.getByTestId('desktop-version')).toHaveCount(0)
+  await expect(plain.page.getByTestId('desktop-update')).toHaveCount(0)
 })

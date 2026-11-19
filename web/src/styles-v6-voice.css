@@ -459,3 +459,32 @@
 .shortcut-row .key-binder {
   flex-wrap: wrap;
 }
+
+/* --- the desktop app's update notice ----------------------------------------------------- */
+
+.desktop-update-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+  background: rgb(238 153 127 / 12%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 13px;
+}
+
+.desktop-update-band a,
+.desktop-update-line a {
+  color: var(--trio-coral, #ee997f);
+  font-weight: 600;
+}
+
+.settings-versions.desktop-version {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}

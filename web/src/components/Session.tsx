@@ -58,6 +58,7 @@ import { useVoiceEvening } from '../useVoiceEvening'
 import { ShareMenu } from './voice/ShareMenu'
 import { stageExtras } from './voice/StageExtras'
 import { useParticipantMenu, VolumeSheet, type VolumeTarget } from './voice/VolumeSheet'
+import { DesktopUpdateBand } from './voice/DesktopVersion'
 
 const PAGE_SIZE = 50
 const TYPING_SEND_INTERVAL_MS = 3000
@@ -770,6 +771,8 @@ export function Session({
                   : 'Sunucuya bağlanılıyor…'}
           </div>
         )}
+
+        <DesktopUpdateBand serverVersion={state.serverVersion} ready={state.ready} />
 
         {calls.incoming && (
           <RingBand
