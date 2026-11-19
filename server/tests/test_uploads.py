@@ -37,7 +37,8 @@ def upload_dir(trio) -> Path:
 
 
 def stored_files(trio) -> list[str]:
-    return sorted(os.listdir(upload_dir(trio)))
+    # Files only: the avatars/ and icons/ subdirectories (CONTRACT-V4 C) are not uploads.
+    return sorted(p.name for p in upload_dir(trio).iterdir() if p.is_file())
 
 
 # -- upload -------------------------------------------------------------------
@@ -465,7 +466,7 @@ def test_leftover_partial_files_are_removed_on_start(make_trio, tmp_path):
     uploads.mkdir()
     (uploads / ("Z" * 43 + ".part")).write_bytes(b"half")
     make_trio(upload_dir=str(uploads))
-    assert os.listdir(uploads) == []
+    assert sorted(os.listdir(uploads)) == ["avatars", "icons"]
 
 
 # -- a database created by v1 ------------------------------------------------------

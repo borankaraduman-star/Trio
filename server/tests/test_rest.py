@@ -59,7 +59,7 @@ def test_join_ok(trio):
     assert response.status_code == 201
     body = response.json()
     assert set(body) == {"token", "user"}
-    assert body["user"] == {"id": 1, "name": "Ayşe"}
+    assert body["user"] == {"id": 1, "name": "Ayşe", "avatar_url": None}
     assert len(body["token"]) >= 43
 
 
@@ -173,7 +173,7 @@ def test_me(trio):
     user = trio.user("Ali")
     response = trio.client.get("/api/me", headers=user["auth"])
     assert response.status_code == 200
-    assert response.json() == {"user": {"id": user["id"], "name": "Ali"}}
+    assert response.json() == {"user": {"id": user["id"], "name": "Ali", "avatar_url": None}}
 
 
 @pytest.mark.parametrize(
@@ -330,7 +330,7 @@ def test_message_shape(trio):
     assert message["edited_at"] is None and message["reply_to"] is None
     assert message["reactions"] == [] and message["rev"] == 0
     assert message["pinned_at"] is None and message["pinned_by"] is None
-    assert message["author"] == {"id": user["id"], "name": "Ali"}
+    assert message["author"] == {"id": user["id"], "name": "Ali", "avatar_url": None}
     assert message["channel_id"] == 1
     assert message["content"] == "m1"
     assert message["created_at"].endswith("Z") and "T" in message["created_at"]

@@ -96,7 +96,7 @@ def test_a_link_code_signs_a_second_device_in_as_the_same_user(trio):
     typed = body["code"][:5].lower() + "-" + body["code"][5:]
     joined = link(trio, typed)
     assert joined.status_code == 200
-    assert joined.json()["user"] == {"id": ali["id"], "name": "Ali"}
+    assert joined.json()["user"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
     assert joined.json()["token"] != ali["token"]
     # No new account, no slot used, no user.joined.
     assert len(trio.client.app.state.hub.users) == 1
@@ -237,7 +237,7 @@ def test_admin_revoke_tokens_signs_out_everywhere_and_closes_open_sockets(trio):
     assert code(link(trio, stale_code)) == "INVALID_LINK_CODE"
     status, out = run(trio, "new-link-code", "Ali")
     raw = out.split(": ", 1)[1].split()[0]
-    assert link(trio, raw).json()["user"] == {"id": ali["id"], "name": "Ali"}
+    assert link(trio, raw).json()["user"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
 
 
 def test_admin_new_link_code(trio):
@@ -285,7 +285,7 @@ def test_admin_remove_user(make_trio):
     assert code(trio.join("Cem")) == "SERVER_FULL"
     # Old messages keep their author's name and id.
     messages = trio.client.get("/api/channels/1/messages", headers=berk["auth"]).json()
-    assert messages["messages"][0]["author"] == {"id": ali["id"], "name": "Ali"}
+    assert messages["messages"][0]["author"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
     # ready.users lists only current accounts.
     with trio.ws(berk) as b:
         assert [u["id"] for u in b.ready["users"]] == [berk["id"], new_ali["id"]]

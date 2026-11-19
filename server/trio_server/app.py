@@ -38,6 +38,11 @@ from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
 from trio_server.message_routes import register_message_routes
+from trio_server.profile_routes import (
+    prepare_profile_dirs,
+    register_profile_routes,
+    unreferenced_profile_files,
+)
 from trio_server.ratelimit import JoinGuard, client_address
 from trio_server.uploads import (
     ATTACHMENT_ID,
@@ -165,6 +170,9 @@ def create_app(
         profile subdirectories).
         """
         stray = _unreferenced_files(upload_dir, await db.all_attachment_ids())
+        stray += unreferenced_profile_files(
+            upload_dir, await db.avatar_files(), await db.server_icon()
+        )
         _remove(*stray)
         if stray:
             logger.info("uploads.unreferenced_removed count=%s", len(stray))
@@ -197,8 +205,10 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _prepare_upload_dir(upload_dir)
+        prepare_profile_dirs(upload_dir)
         await db.open()
         hub.load(await db.list_users(), await db.list_channels())
+        hub.server = await db.get_server()
         # Not only on upload: a server nobody uploads to never swept at all.
         await sweep_orphans()
         await sweep_unreferenced_files()
@@ -474,6 +484,17 @@ def create_app(
         upload_dir=upload_dir,
         current_user=current_user,
         read_json=read_json_object,
+    )
+
+    register_profile_routes(
+        app,
+        db=db,
+        hub=hub,
+        now=now,
+        upload_dir=upload_dir,
+        current_user=current_user,
+        read_json=read_json_object,
+        space_left=space_left,
     )
 
     app.add_api_websocket_route("/ws", websocket_endpoint)

@@ -130,6 +130,8 @@ class Hub:
         # that ``ready`` is built without awaiting anything.
         self.users: dict[int, dict[str, Any]] = {}
         self.channels: dict[int, dict[str, Any]] = {}
+        # CONTRACT-V4 C: {name, icon_url}, mirrored like users and channels.
+        self.server: dict[str, Any] = {"name": "Trio", "icon_url": None}
         self.conns: dict[int, set[Connection]] = {}
         self.voice: dict[int, dict[int, VoiceMember]] = {}  # channel id -> user id -> member
         self.voice_of: dict[int, int] = {}  # user id -> channel id
@@ -159,9 +161,15 @@ class Hub:
         return {
             "type": "ready",
             "server_version": VERSION,
+            "server": self.server,
             "user": self.users[user_id],
             "users": [
-                {"id": u["id"], "name": u["name"], "online": bool(self.conns.get(u["id"]))}
+                {
+                    "id": u["id"],
+                    "name": u["name"],
+                    "avatar_url": u.get("avatar_url"),
+                    "online": bool(self.conns.get(u["id"])),
+                }
                 for u in self.users.values()
             ],
             "channels": list(self.channels.values()),
@@ -237,6 +245,17 @@ class Hub:
     def add_user(self, user: dict[str, Any]) -> None:
         self.users[user["id"]] = user
         self.broadcast({"type": "user.joined", "user": user})
+
+    def update_user(self, user: dict[str, Any]) -> None:
+        """A rename or a new avatar: ``user.updated`` to everyone."""
+        if user["id"] not in self.users:
+            return  # removed meanwhile
+        self.users[user["id"]] = user
+        self.broadcast({"type": "user.updated", "user": user})
+
+    def update_server(self, server: dict[str, Any]) -> None:
+        self.server = server
+        self.broadcast({"type": "server.updated", "server": server})
 
     def add_channel(self, channel: dict[str, Any]) -> None:
         self.channels[channel["id"]] = channel

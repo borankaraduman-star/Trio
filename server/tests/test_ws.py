@@ -52,12 +52,20 @@ def test_ready_is_the_first_frame(trio, three):
     ali, berk, cem = three
     with trio.ws(ali) as a:
         ready = a.ready
-        assert set(ready) == {"type", "server_version", "user", "users", "channels", "voice"}
-        assert ready["user"] == {"id": ali["id"], "name": "Ali"}
+        assert set(ready) == {
+            "type",
+            "server_version",
+            "server",
+            "user",
+            "users",
+            "channels",
+            "voice",
+        }
+        assert ready["user"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
         assert ready["users"] == [
-            {"id": ali["id"], "name": "Ali", "online": True},
-            {"id": berk["id"], "name": "Berk", "online": False},
-            {"id": cem["id"], "name": "Cem", "online": False},
+            {"id": ali["id"], "name": "Ali", "avatar_url": None, "online": True},
+            {"id": berk["id"], "name": "Berk", "avatar_url": None, "online": False},
+            {"id": cem["id"], "name": "Cem", "avatar_url": None, "online": False},
         ]
         assert ready["channels"] == [
             {"id": TEXT, "name": "genel", "kind": "text"},
@@ -121,7 +129,7 @@ def test_user_joined_and_channel_new_are_broadcast(trio, three):
         for sock in (a, b):
             assert sock.receive_json() == {
                 "type": "user.joined",
-                "user": {"id": dana["id"], "name": "Dana"},
+                "user": {"id": dana["id"], "name": "Dana", "avatar_url": None},
             }
         channel_id = new_voice_channel(trio, ali)
         for sock in (a, b):
@@ -165,7 +173,7 @@ def test_message_send_reaches_everyone_and_the_nonce_only_the_sender(trio, three
         }
         assert message["attachments"] == []
         assert message["channel_id"] == TEXT
-        assert message["author"] == {"id": ali["id"], "name": "Ali"}
+        assert message["author"] == {"id": ali["id"], "name": "Ali", "avatar_url": None}
         assert message["content"] == "merhaba"
         assert message["created_at"].endswith("Z")
         # The sender's other tab gets the nonce too; other users never do.
