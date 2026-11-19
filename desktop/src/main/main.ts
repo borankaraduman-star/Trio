@@ -20,6 +20,7 @@ import {
   Menu,
   nativeImage,
   net,
+  powerMonitor,
   protocol,
   session,
   shell,
@@ -35,6 +36,8 @@ import { ConfigStore } from "./config";
 import { checkHealth } from "./health";
 import { PttController } from "./ptt";
 import { badgeBitmap } from "./badge";
+import { versionArgument, versionLabel } from "../shared/appVersion";
+import { drawTrayMark, trayTooltip, trayVoiceState, type TrayVoiceState } from "./trayState";
 import { GameConfigStore, GameService, diagnosticsText } from "./gameService";
 import { listProcesses } from "./processList";
 import { autodetect, flavoursIn, type Flavour } from "./wowFolder";
@@ -110,12 +113,26 @@ let pageWantsGame = false;
 /** Folders the game window was shown and may pick from (nothing else is accepted). */
 let offeredFolders = new Set<string>();
 
-const ptt = new PttController((down) => {
-  const wc = mainWindow?.webContents;
-  if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
-    wc.send("trio:ptt", down);
-  }
-});
+const ptt = new PttController(
+  (down) => {
+    const wc = mainWindow?.webContents;
+    if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
+      wc.send("trio:ptt", down);
+    }
+  },
+  undefined,
+  undefined,
+  // CONTRACT-V6-VOICE §5: global mute/deafen keys, on the same hook.
+  (action) => {
+    const wc = mainWindow?.webContents;
+    if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
+      wc.send("trio:hotkey", action);
+    }
+  },
+);
+/** V6: the tray's own image, and the mute/deafen mark drawn on it. */
+let trayBase: Electron.NativeImage | null = null;
+let trayVoice: TrayVoiceState = "none";
 
 // ------------------------------------------------------- before app ready
 
@@ -259,6 +276,8 @@ function createMainWindow(): void {
     icon: process.platform === "linux" ? path.join(STATIC_DIR, "icon.png") : undefined,
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "app-preload.js"),
+      // CONTRACT-V6-VOICE: the sandboxed preload reads the app's version from argv.
+      additionalArguments: versionArgument(app.getVersion()),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -291,6 +310,8 @@ function createMainWindow(): void {
     // sets it again when it loads.
     if (details.isMainFrame && !details.isSameDocument) {
       ptt.setKey(null);
+      ptt.setHotkeys({});
+      setTrayVoice("none");
       // The page subscribes again when it loads (CONTRACT-V5 §5).
       pageWantsGame = false;
       updateGameRunning();
@@ -363,7 +384,7 @@ function updateUnread(count: number): void {
     // macOS dock; Linux launchers that support it (Unity/KDE).
     app.setBadgeCount(count);
   }
-  tray?.setToolTip(count > 0 ? `Trio — ${count} okunmamış` : "Trio");
+  tray?.setToolTip(trayTooltip(trayVoice, count > 0 ? `Trio — ${count} okunmamış` : "Trio"));
   if (count > previous && mainWindow && !mainWindow.isFocused()) {
     mainWindow.flashFrame(true);
   }
@@ -378,10 +399,13 @@ function createTray(): void {
   const mac = process.platform === "darwin";
   const image = nativeImage.createFromPath(path.join(STATIC_DIR, mac ? "trayTemplate.png" : "tray.png"));
   if (mac) image.setTemplateImage(true);
+  trayBase = image;
   tray = new Tray(image);
   tray.setToolTip("Trio");
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: versionLabel(app.getVersion()), enabled: false },
+      { type: "separator" },
       { label: "Trio'yu göster", click: () => showMainWindow() },
       { label: "Oyun durumu…", click: () => showGameWindow() },
       { type: "separator" },
@@ -394,6 +418,34 @@ function createTray(): void {
   });
 }
 
+/** V6: draw (or clear) the mute/deafen mark on the tray icon. */
+function setTrayVoice(state: TrayVoiceState): void {
+  if (state === trayVoice || !tray || !trayBase) return;
+  trayVoice = state;
+  tray.setToolTip(trayTooltip(state, unread > 0 ? `Trio — ${unread} okunmamış` : "Trio"));
+  if (state === "none") {
+    tray.setImage(trayBase);
+    return;
+  }
+  let marked: Electron.NativeImage | null = null;
+  for (const scaleFactor of trayBase.getScaleFactors()) {
+    const bitmap = trayBase.toBitmap({ scaleFactor });
+    const dip = trayBase.getSize(scaleFactor);
+    let width = Math.round(dip.width * scaleFactor);
+    let height = Math.round(dip.height * scaleFactor);
+    if (width * height * 4 !== bitmap.length) {
+      width = dip.width;
+      height = dip.height;
+    }
+    if (width * height * 4 !== bitmap.length) continue;
+    const drawn = drawTrayMark(bitmap, width, height, state);
+    if (!marked) marked = nativeImage.createFromBitmap(drawn, { width, height, scaleFactor });
+    else marked.addRepresentation({ scaleFactor, width, height, buffer: nativeImage.createFromBitmap(drawn, { width, height }).toPNG() });
+  }
+  // A coloured mark: not a template image (macOS would paint it one colour).
+  if (marked) tray.setImage(marked);
+}
+
 function quit(): void {
   quitting = true;
   app.quit();
@@ -402,6 +454,8 @@ function quit(): void {
 function buildAppMenu(): void {
   const isMac = process.platform === "darwin";
   const trioMenu: MenuItemConstructorOptions[] = [
+    { label: versionLabel(app.getVersion()), enabled: false },
+    { type: "separator" },
     { label: "Sunucuyu değiştir…", click: () => showConnectPage() },
     { label: "Oyun durumu…", click: () => showGameWindow() },
     { type: "separator" },
@@ -502,11 +556,28 @@ function installIpc(): void {
     else if (typeof code === "string" && code.length > 0 && code.length <= 64) ptt.setKey(code);
   });
 
+  // CONTRACT-V6-VOICE §5
+  ipcMain.on("trio:set-hotkeys", (event, keys: unknown) => {
+    if (!fromServerPage(event) || typeof keys !== "object" || keys === null) return;
+    const pick = (value: unknown): string | null =>
+      typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
+    const record = keys as Record<string, unknown>;
+    ptt.setHotkeys({ mute: pick(record.mute), deafen: pick(record.deafen) });
+  });
+  ipcMain.on("trio:voice-state", (event, state: unknown) => {
+    if (!fromServerPage(event) || typeof state !== "object" || state === null) return;
+    const record = state as Record<string, unknown>;
+    setTrayVoice(
+      trayVoiceState({ inVoice: record.inVoice === true, muted: record.muted === true, deafened: record.deafened === true }),
+    );
+  });
+  ipcMain.handle("trio:system-idle", (event) => (fromServerPage(event) ? powerMonitor.getSystemIdleTime() : null));
+
   ipcMain.handle("trio:connect-state", (event) => {
     if (!fromConnectPage(event)) return null;
     const notice = connectNotice;
     connectNotice = null;
-    return { current: config.getServerOrigin(), notice };
+    return { current: config.getServerOrigin(), notice, version: app.getVersion() };
   });
 
   ipcMain.handle("trio:connect-submit", async (event, input: unknown) => {

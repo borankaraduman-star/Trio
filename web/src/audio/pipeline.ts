@@ -1,4 +1,5 @@
 import { ContextKeeper } from './contextKeeper'
+import { analyserSizeFor } from './speaking'
 
 /**
  * The outgoing microphone, as ONE graph (CONTRACT-V2 §4):
@@ -44,6 +45,16 @@ export interface PipelineDeps {
    * returns the unsubscribe. Default: `navigator.mediaDevices` `devicechange`.
    */
   watchDevices?: (listener: () => void) => () => void
+  /** V6: creates the input gate node (lazy import of audio/gate by default). */
+  createGateNode?: (context: AudioContext, thresholdLinear: number) => Promise<AudioWorkletNode>
+}
+
+/** V6 (CONTRACT-V6-VOICE §4): the input gate after RNNoise. */
+export type GateState = 'off' | 'active' | 'unavailable'
+
+async function defaultGateNode(context: AudioContext, thresholdLinear: number): Promise<AudioWorkletNode> {
+  const { createGateNode } = await import('./gate')
+  return createGateNode(context, thresholdLinear)
 }
 
 function defaultWatchDevices(listener: () => void): () => void {
@@ -129,6 +140,13 @@ export class MicPipeline {
   private stopped = false
   /** Serialises device and noise changes so two at once cannot interleave. */
   private queue: Promise<void> = Promise.resolve()
+  // V6: microphone ──► [RNNoise] ──► [gate] ──► mute·PTT gain, with a level tap before the gate.
+  private gateNode: AudioWorkletNode | null = null
+  private gateWanted: number | null = null
+  private gateStateValue: GateState = 'off'
+  private gateIsOpen = false
+  private tap: AnalyserNode | null = null
+  private tapData: Float32Array<ArrayBuffer> | null = null
 
   private constructor(
     private readonly deps: PipelineDeps,
@@ -147,6 +165,13 @@ export class MicPipeline {
       destination.channelCount = 1
       this.gain.connect(destination)
       this.stream = destination.stream
+      try {
+        this.tap = context.createAnalyser()
+        this.tap.fftSize = analyserSizeFor(context.sampleRate, 100)
+        this.tapData = new Float32Array(new ArrayBuffer(this.tap.fftSize * 4))
+      } catch {
+        this.tap = null
+      }
     } else {
       this.gain = null
       this.stream = new MediaStream(raw.getAudioTracks())
@@ -324,9 +349,120 @@ export class MicPipeline {
     this.keeper = null
     this.disconnect()
     this.dropNoiseNode()
+    this.dropGateNode()
     stopTracks(this.raw)
     stopTracks(this.stream)
     if (this.context) void this.context.close().catch(() => undefined)
+  }
+
+  // --- V6: input gate and level ---------------------------------------------
+
+  get gateState(): GateState {
+    return this.gateStateValue
+  }
+
+  /** The gate lets sound through now (always true while it is off). */
+  get gateOpen(): boolean {
+    return this.gateStateValue !== 'active' || this.gateIsOpen
+  }
+
+  /**
+   * The loudest sample of the last ~150 ms after RNNoise and BEFORE the gate
+   * and the mute (0..1); null without the graph. The settings' level bar and
+   * the AFK speech check read it.
+   */
+  inputPeak(): number | null {
+    const tap = this.tap
+    const data = this.tapData
+    if (!tap || !data) return null
+    tap.getFloatTimeDomainData(data)
+    let peak = 0
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i] < 0 ? -data[i] : data[i]
+      if (v > peak) peak = v
+    }
+    return peak
+  }
+
+  /**
+   * The gate's threshold as a peak amplitude, or null for "Otomatik" (no gate,
+   * nothing added to the path). The sent track stays the same object; a gate
+   * that cannot be loaded leaves the microphone ungated (`unavailable`).
+   */
+  setGate(thresholdLinear: number | null): Promise<void> {
+    this.gateWanted = thresholdLinear
+    return this.enqueue(async () => {
+      const wanted = this.gateWanted
+      const context = this.context
+      const gain = this.gain
+      if (wanted === null || !context || !gain) {
+        if (this.gateNode) {
+          this.disconnect()
+          this.dropGateNode()
+          this.connect()
+        }
+        this.gateStateValue = wanted === null ? 'off' : 'unavailable'
+        this.onChange?.()
+        return
+      }
+      if (this.gateNode) {
+        this.gateNode.port.postMessage({ threshold: wanted })
+        return
+      }
+      let node: AudioWorkletNode
+      try {
+        node = await withTimeout(
+          (this.deps.createGateNode ?? defaultGateNode)(context, wanted),
+          NOISE_LOAD_TIMEOUT_MS,
+          'gate load',
+        )
+      } catch (error) {
+        console.warn('trio: the input gate could not be loaded; sending without it', error)
+        this.gateStateValue = 'unavailable'
+        this.onChange?.()
+        return
+      }
+      if (this.stopped || this.gateWanted === null) {
+        node.disconnect()
+        return
+      }
+      node.port.postMessage({ threshold: this.gateWanted })
+      node.port.onmessage = (event: MessageEvent<{ open?: unknown }>) => {
+        if (typeof event.data?.open !== 'boolean' || this.gateNode !== node) return
+        this.gateIsOpen = event.data.open
+        this.onChange?.()
+      }
+      node.onprocessorerror = () => {
+        console.warn('trio: the input gate stopped working; sending without it')
+        if (this.gateNode !== node) return
+        this.disconnect()
+        this.dropGateNode()
+        this.gateStateValue = 'unavailable'
+        this.connect()
+        this.onChange?.()
+      }
+      this.disconnect()
+      this.gateNode = node
+      node.connect(gain)
+      this.gateIsOpen = false
+      this.gateStateValue = 'active'
+      this.connect()
+      this.onChange?.()
+    })
+  }
+
+  private dropGateNode(): void {
+    const node = this.gateNode
+    this.gateNode = null
+    this.gateIsOpen = false
+    if (!node) return
+    node.port.onmessage = null
+    node.onprocessorerror = null
+    try {
+      node.disconnect()
+    } catch {
+      // Gone already.
+    }
   }
 
   // --- internals -------------------------------------------------------------
@@ -434,9 +570,13 @@ export class MicPipeline {
       this.source = null
       return
     }
+    // V6: the gate (when on) sits between RNNoise and the mute gain; the level tap before it.
+    const next: AudioNode = this.gateNode ?? gain
+    const head: AudioNode = this.noiseNode ?? this.source
+    if (this.tap) head.connect(this.tap)
     if (this.noiseNode) {
       this.source.connect(this.noiseNode)
-      this.noiseNode.connect(gain)
+      this.noiseNode.connect(next)
       const node = this.noiseNode as AudioNode & { onprocessorerror?: (() => void) | null }
       // A crashing processor outputs silence; bypass it rather than go mute.
       node.onprocessorerror = () => {
@@ -448,7 +588,7 @@ export class MicPipeline {
         this.onChange?.()
       }
     } else {
-      this.source.connect(gain)
+      this.source.connect(next)
     }
   }
 

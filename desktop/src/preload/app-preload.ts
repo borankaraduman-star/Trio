@@ -6,7 +6,8 @@
  *
  *     window.trioDesktop = { isDesktop, setPttKey(code | null), onPtt(cb) → unsubscribe }
  *
- * plus CONTRACT-V5 §5 (game status): `gameStatus: {supported: true}` and
+ * plus CONTRACT-V6-VOICE §5 (`setHotkeys`, `onHotkey`, `setVoiceState`,
+ * `getSystemIdleTime`) and CONTRACT-V5 §5 (game status): `gameStatus: {supported: true}` and
  * `onGameStatus(cb) → unsubscribe`; the first subscriber starts detection in
  * the main process, the last one leaving stops it.
  *
@@ -16,6 +17,22 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
 const LOCAL_PROTOCOL = "trio-app:";
+
+/**
+ * CONTRACT-V6-VOICE: the app's version, put on argv by the main process
+ * (`additionalArguments`). Same prefix and check as shared/appVersion.ts
+ * (a sandboxed preload imports nothing but electron; a test compares them).
+ */
+const VERSION_ARG_PREFIX = "--trio-app-version=";
+function appVersionFromArgv(): string | null {
+  for (const arg of process.argv) {
+    if (typeof arg !== "string" || !arg.startsWith(VERSION_ARG_PREFIX)) continue;
+    const value = arg.slice(VERSION_ARG_PREFIX.length);
+    return /^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}(?:[-+][0-9A-Za-z.-]{1,24})?$/.test(value) ? value : null;
+  }
+  return null;
+}
+const APP_VERSION = appVersionFromArgv();
 
 if (window.location.protocol === LOCAL_PROTOCOL) {
   contextBridge.exposeInMainWorld("trioConnect", {
@@ -27,6 +44,8 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
   let gameListeners = 0;
   contextBridge.exposeInMainWorld("trioDesktop", {
     isDesktop: true,
+    // CONTRACT-V6-VOICE "Desktop version": absent (undefined) only if argv lacked it.
+    ...(APP_VERSION ? { appVersion: APP_VERSION } : {}),
     setPttKey(code: string | null): void {
       ipcRenderer.send("trio:set-ptt-key", typeof code === "string" ? code : null);
     },
@@ -39,6 +58,33 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       return () => {
         ipcRenderer.removeListener("trio:ptt", listener);
       };
+    },
+    // CONTRACT-V6-VOICE §5: global mute/deafen keys, the tray's mute mark, system idle time.
+    setHotkeys(keys: { mute?: string | null; deafen?: string | null }): void {
+      const pick = (value: unknown): string | null => (typeof value === "string" ? value : null);
+      const record = typeof keys === "object" && keys !== null ? keys : {};
+      ipcRenderer.send("trio:set-hotkeys", { mute: pick(record.mute), deafen: pick(record.deafen) });
+    },
+    onHotkey(cb: (action: "mute" | "deafen") => void): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      const listener = (_event: IpcRendererEvent, action: unknown): void => {
+        if (action === "mute" || action === "deafen") cb(action);
+      };
+      ipcRenderer.on("trio:hotkey", listener);
+      return () => {
+        ipcRenderer.removeListener("trio:hotkey", listener);
+      };
+    },
+    setVoiceState(state: { inVoice?: boolean; muted?: boolean; deafened?: boolean }): void {
+      const record = typeof state === "object" && state !== null ? state : {};
+      ipcRenderer.send("trio:voice-state", {
+        inVoice: record.inVoice === true,
+        muted: record.muted === true,
+        deafened: record.deafened === true,
+      });
+    },
+    getSystemIdleTime(): Promise<number | null> {
+      return ipcRenderer.invoke("trio:system-idle") as Promise<number | null>;
     },
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {

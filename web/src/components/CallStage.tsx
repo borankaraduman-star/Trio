@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { useSinkId } from '../useSinkId'
+import { useRemoteVolume } from '../useRemoteVolume'
 import type { RemoteMedia } from '../voice'
 import { ExpandIcon } from './icons2'
 
@@ -106,12 +107,15 @@ function Tile({
   focused,
   small,
   onActivate,
+  overlay,
 }: {
   tile: StageTile
   deafened: boolean
   focused: boolean
   small: boolean
   onActivate: () => void
+  /** V6: controls drawn over the tile (İzlemeyi bırak, who watches). */
+  overlay?: (tile: StageTile) => ReactNode
 }) {
   const video = useRef<HTMLVideoElement>(null)
   const figure = useRef<HTMLElement>(null)
@@ -129,9 +133,8 @@ function Tile({
     }
   }, [tile.stream])
 
-  useEffect(() => {
-    if (video.current) video.current.muted = muted
-  }, [muted])
+  // V6: deafen, and the "Yayın sesi" volume of a shared screen (0–200 %).
+  useRemoteVolume(video, tile.stream, tile.userId, 'stream', deafened, tile.silent)
 
   const fullscreen = () => {
     const element = figure.current
@@ -175,6 +178,7 @@ function Tile({
         className={tile.mirrored ? 'mirrored' : undefined}
       />
       <figcaption>{tile.label}</figcaption>
+      {overlay?.(tile)}
       <button
         type="button"
         className="icon-button small call-tile-full"
@@ -198,6 +202,9 @@ export function CallStage({
   localCamera,
   deafened,
   nameOf,
+  overlay,
+  hide,
+  footer,
 }: {
   remoteScreens: readonly RemoteMedia[]
   remoteCameras: readonly RemoteMedia[]
@@ -205,36 +212,49 @@ export function CallStage({
   localCamera: MediaStream | null
   deafened: boolean
   nameOf: (userId: number) => string
+  /** V6: drawn over each tile. */
+  overlay?: (tile: StageTile) => ReactNode
+  /** V6: tiles left off the stage (a screen I stopped watching). */
+  hide?: (tile: StageTile) => boolean
+  /** V6: under the tiles (the room's people); also shown when every tile is hidden. */
+  footer?: ReactNode
 }) {
-  const tiles = useMemo(
+  const allTiles = useMemo(
     () => buildTiles({ remoteScreens, remoteCameras, localScreen, localCamera, nameOf }),
     [remoteScreens, remoteCameras, localScreen, localCamera, nameOf],
   )
+  const tiles = hide ? allTiles.filter((tile) => !hide(tile)) : allTiles
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const focused = tiles.find((tile) => tile.key === focusKey) ?? null
 
-  if (tiles.length === 0) return null
+  // V6: the people strip sits right under the stage (and stays when every tile is hidden).
+  const people = footer ? <div className="call-stage-people">{footer}</div> : null
+  if (tiles.length === 0) return people
 
   const activate = (key: string) => setFocusKey((current) => (current === key ? null : key))
 
   if (focused && tiles.length > 1) {
     const others = tiles.filter((tile) => tile !== focused)
     return (
+      <>
       <section className="call-stage focus" aria-label="Kameralar ve paylaşılan ekranlar" data-testid="stage">
         <div className="call-stage-main">
-          <Tile tile={focused} deafened={deafened} focused small={false} onActivate={() => activate(focused.key)} />
+          <Tile tile={focused} deafened={deafened} focused small={false} onActivate={() => activate(focused.key)} overlay={overlay} />
         </div>
         <div className="call-stage-strip">
           {others.map((tile) => (
-            <Tile key={tile.key} tile={tile} deafened={deafened} focused={false} small onActivate={() => activate(tile.key)} />
+            <Tile key={tile.key} tile={tile} deafened={deafened} focused={false} small onActivate={() => activate(tile.key)} overlay={overlay} />
           ))}
         </div>
       </section>
+      {people}
+      </>
     )
   }
 
   const columns = gridColumns(tiles.length)
   return (
+    <>
     <section
       className="call-stage grid"
       aria-label="Kameralar ve paylaşılan ekranlar"
@@ -250,8 +270,11 @@ export function CallStage({
           focused={tile.key === focusKey}
           small={false}
           onActivate={() => activate(tile.key)}
+          overlay={overlay}
         />
       ))}
     </section>
+    {people}
+    </>
   )
 }

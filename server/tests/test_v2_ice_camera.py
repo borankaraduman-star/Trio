@@ -247,6 +247,7 @@ def test_camera_round_trip(trio):
                     "deafened": False,
                     "screensharing": False,
                     "camera": True,
+                    "afk": False,
                     "reconnecting": False,
                 }
             ]

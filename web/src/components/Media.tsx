@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useSinkId } from '../useSinkId'
+import { useRemoteVolume } from '../useRemoteVolume'
 import type { RemoteMedia } from '../voice'
 
 function attach(element: HTMLMediaElement, stream: MediaStream): () => void {
@@ -24,9 +25,8 @@ export function RemoteAudio({ media, muted }: { media: RemoteMedia; muted: boole
     return attach(element, media.stream)
   }, [media.stream])
 
-  useEffect(() => {
-    if (ref.current) ref.current.muted = muted
-  }, [muted])
+  // V6: deafen, and the per-person volume (0–200 %).
+  useRemoteVolume(ref, media.stream, media.userId, 'voice', muted)
 
   return <audio ref={ref} autoPlay data-testid={`remote-audio-${media.userId}`} />
 }

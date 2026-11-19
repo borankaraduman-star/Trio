@@ -13,6 +13,8 @@ import { VersionFooter } from './VersionFooter'
 import { DownloadLink } from './DownloadLink'
 import { GameShareSetting } from './GameActivity'
 import { NotificationsSection } from './notify/NotificationsSection'
+import { InputSensitivitySection, ShortcutsSection } from './voice/VoiceEveningSettings'
+import { DesktopVersionFooter } from './voice/DesktopVersion'
 import { OpsSettings } from './owner/OpsSettings'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
@@ -320,6 +322,8 @@ export function SettingsDialog({
           )}
         </section>
 
+        <InputSensitivitySection />
+        <ShortcutsSection />
         <SoundsSection
           cuesEnabled={settings.cuesEnabled}
           cueVolume={settings.cueVolume}
@@ -341,6 +345,7 @@ export function SettingsDialog({
         <OpsSettings />
         <DownloadLink />
         {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}
+        {serverVersion !== undefined && <DesktopVersionFooter serverVersion={serverVersion} />}
       </div>
     </div>
   )
