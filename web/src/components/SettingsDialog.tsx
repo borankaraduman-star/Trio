@@ -10,6 +10,7 @@ import { CloseIcon } from './icons2'
 import { AccountSection, type AccountProps } from './AccountSection'
 import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
+import { DownloadLink } from './DownloadLink'
 import { GameShareSetting } from './GameActivity'
 
 const NOISE_TEXT: Record<NoiseState, string> = {
@@ -334,6 +335,7 @@ export function SettingsDialog({
 
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
         {serverSettings && <ServerSection settings={serverSettings} />}
+        <DownloadLink />
         {serverVersion !== undefined && <VersionFooter serverVersion={serverVersion} />}
       </div>
     </div>
