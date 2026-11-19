@@ -440,8 +440,8 @@ def register_backup_routes(
 
         async def body() -> AsyncIterator[bytes]:
             async for chunk in stream_plan(plan):
-                yield chunk
                 progress["sent"] += len(chunk)
+                yield chunk
             # Only reached after the last chunk was handed to the server.
             state["done"] = True
             record = {
