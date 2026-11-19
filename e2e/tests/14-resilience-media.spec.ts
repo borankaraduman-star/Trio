@@ -1,6 +1,9 @@
 import { expectTileDecoding, stageTiles } from '../lib/media'
 import { freshServer, readState, restartServer, startServer, stopServer } from '../lib/server'
 import { expect, expectConnected, expectHearing, joinVoice, test, threePeople, type Person } from '../lib/trio'
+import { pcCount } from '../lib/voiceProbe'
+
+const KEPT = 'Sunucuya yeniden bağlanılıyor… ses sürüyor'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -16,11 +19,12 @@ async function expectEveryoneHears(people: Person[]): Promise<void> {
 
 /**
  * The intended behaviour, which this test holds the client to: cameras and a
- * shared screen survive a lost server. The streams stay open in each tab
- * while the socket is down (the local previews never go), the rejoin
- * announces them (`voice.join` carries `camera`, the screen flag follows the
- * join), and the new connections carry them again with their `meta`. A
- * camera turned off while the server was away stays off.
+ * shared screen survive a lost server (CONTRACT-V4 A1). The peer connections
+ * are kept while the socket is down, so the remote tiles never go and keep
+ * decoding; the resume announces the flags (`voice.join` carries `camera`
+ * and `screensharing`) and no page makes a new connection. A camera turned
+ * off while the server is away waits (the button says so) and goes off for
+ * everybody once the call is back in step.
  */
 test('resilience: the server dies while two cameras and a screen share are on; everything comes back as it was left', async ({ browser, trio }) => {
   test.setTimeout(240_000)
@@ -34,13 +38,14 @@ test('resilience: the server dies while two cameras and a screen share are on; e
   await expectTileDecoding(zeynep.page, `remote-camera-${mehmet.user.id}`, 'camera', 'Mehmet')
   await expectTileDecoding(zeynep.page, 'remote-video', 'screen', 'Ayşe · ekran')
 
-  // Crash. The remote tiles go with the connections; the own previews stay.
+  // Crash. Nothing goes: the connections carry on without the server.
+  const made = await Promise.all(people.map((p) => pcCount(p.page)))
   const state = readState()
   await stopServer('SIGKILL')
-  for (const person of people) {
-    await expect(person.page.locator('.banner')).toHaveText('Bağlantı koptu, yeniden bağlanılıyor…')
-    await expect(person.page.locator('[data-testid^="remote-"]')).toHaveCount(0)
-  }
+  for (const person of people) await expect(person.page.locator('.banner')).toHaveText(KEPT)
+  await expectTileDecoding(zeynep.page, `remote-camera-${ayse.user.id}`, 'camera', 'Ayşe')
+  await expectTileDecoding(zeynep.page, `remote-camera-${mehmet.user.id}`, 'camera', 'Mehmet')
+  await expectTileDecoding(zeynep.page, 'remote-video', 'screen', 'Ayşe · ekran')
   await expect(ayse.page.getByTestId('local-camera')).toBeVisible()
   await expect(ayse.page.getByTestId('local-video')).toBeVisible()
   await expect(ayse.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'true')
@@ -66,14 +71,20 @@ test('resilience: the server dies while two cameras and a screen share are on; e
   }
   await expectEveryoneHears(people)
 
-  // A second crash; this time Mehmet turns his camera off while the server is away.
+  expect(await Promise.all(people.map((p) => pcCount(p.page)))).toEqual(made)
+
+  // A second crash; this time Mehmet turns his camera off while the server is
+  // away: it waits for the resume.
   await stopServer('SIGKILL')
-  await expect(mehmet.page.locator('.banner')).toHaveText('Bağlantı koptu, yeniden bağlanılıyor…')
+  await expect(mehmet.page.locator('.banner')).toHaveText(KEPT)
   await mehmet.page.getByTestId('btn-camera').click()
-  await expect(mehmet.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'false')
-  await expect(mehmet.page.getByTestId('local-camera')).toHaveCount(0)
+  await expect(mehmet.page.getByTestId('btn-camera')).toHaveAttribute('data-held', 'true')
+  await expect(mehmet.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'true')
   await startServer({ port: state.port, dataDir: state.dataDir })
   for (const person of people) await expectConnected(person.page)
+  await expect(mehmet.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'false')
+  await expect(mehmet.page.getByTestId('btn-camera')).toHaveAttribute('data-held', 'false')
+  await expect(mehmet.page.getByTestId('local-camera')).toHaveCount(0)
 
   await expectTileDecoding(zeynep.page, `remote-camera-${ayse.user.id}`, 'camera', 'Ayşe')
   await expectTileDecoding(zeynep.page, 'remote-video', 'screen', 'Ayşe · ekran')
@@ -96,4 +107,5 @@ test('resilience: the server dies while two cameras and a screen share are on; e
     await expectTileDecoding(viewer.page, `remote-camera-${ayse.user.id}`, 'camera', 'Ayşe')
   }
   await expectEveryoneHears(people)
+  expect(await Promise.all(people.map((p) => pcCount(p.page)))).toEqual(made)
 })

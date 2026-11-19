@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { freshServer, restartServer, stopServer, startServer, readState } from '../lib/server'
 import type { WebSocketRoute } from '@playwright/test'
 import { apiJoin, expect, expectConnected, expectHearing, joinVoice, personViaApi, personWithSession, test, threePeople, type Person } from '../lib/trio'
+import { expectAudioGrew, pairs, pcCount, sampleAll } from '../lib/voiceProbe'
 
 test.beforeEach(async () => {
   await freshServer()
@@ -27,12 +28,18 @@ test('resilience: the server is killed and restarted mid-session', async ({ brow
   await expect(row(ayse, mehmet)).toHaveAttribute('data-muted', 'true')
   await expectHearing(mehmet, ayse)
 
-  // Crash: SIGKILL, no goodbye. Every page says it lost the connection.
+  // Crash: SIGKILL, no goodbye. Every page says it lost the connection; the
+  // two in voice say their call goes on (CONTRACT-V4 A1).
+  const callers = pairs([ayse, mehmet])
+  const made = await Promise.all([ayse, mehmet].map((p) => pcCount(p.page)))
+  const before = await sampleAll(callers)
   const state = readState()
   await stopServer('SIGKILL')
-  for (const person of people) {
-    await expect(person.page.locator('.banner')).toHaveText('Bağlantı koptu, yeniden bağlanılıyor…')
+  await expect(zeynep.page.locator('.banner')).toHaveText('Bağlantı koptu, yeniden bağlanılıyor…')
+  for (const person of [ayse, mehmet]) {
+    await expect(person.page.locator('.banner')).toHaveText('Sunucuya yeniden bağlanılıyor… ses sürüyor')
   }
+  const during = await expectAudioGrew(callers, before, 200, 'the call goes on without the server')
   // A message typed while the server is down is not lost silently.
   await send(zeynep.page, 'sunucu yokken yazdım')
   await expect(zeynep.page.getByTestId('message').last()).toHaveAttribute('data-status', 'failed')
@@ -48,8 +55,11 @@ test('resilience: the server is killed and restarted mid-session', async ({ brow
     }
   }
 
-  // The two who were in voice re-announce themselves: the restarted server
-  // knew nothing about them. Mehmet comes back still muted.
+  // The two who were in voice resume: the restarted server knew nothing about
+  // them, and they are back on the connections they never closed. Mehmet is
+  // still muted.
+  await expectAudioGrew(callers, during, 200, 'the call goes on after the resume, on the same connections')
+  expect(await Promise.all([ayse, mehmet].map((p) => pcCount(p.page)))).toEqual(made)
   for (const viewer of people) {
     await expect(viewer.page.locator('[data-testid^="voice-user-"]')).toHaveCount(2)
     await expect(row(viewer, ayse)).toBeVisible()
@@ -68,13 +78,21 @@ test('resilience: the server is killed and restarted mid-session', async ({ brow
   }
   await expect(zeynep.page.getByTestId('message').last()).toHaveAttribute('data-status', 'sent')
 
-  // And a second crash, straight through restartServer, while Zeynep joins too.
+  // And a second crash, straight through restartServer, with Zeynep in too.
   await joinVoice(zeynep)
+  for (const listener of people) for (const speaker of people) {
+    if (listener !== speaker) await expectHearing(listener, speaker)
+  }
+  const all = pairs(people)
+  const made3 = await Promise.all(people.map((p) => pcCount(p.page)))
+  const before3 = await sampleAll(all)
   await restartServer('SIGKILL')
   for (const viewer of people) {
     await expectConnected(viewer.page)
     await expect(viewer.page.locator('[data-testid^="voice-user-"]')).toHaveCount(3)
   }
+  await expectAudioGrew(all, before3, 4_000, 'no pair stopped across the second crash')
+  expect(await Promise.all(people.map((p) => pcCount(p.page)))).toEqual(made3)
   for (const listener of people) for (const speaker of people) {
     if (listener !== speaker) await expectHearing(listener, speaker)
   }
