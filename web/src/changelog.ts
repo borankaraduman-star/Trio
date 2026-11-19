@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.7.0',
+    title: 'Müzik paylaş',
+    lines: [
+      'Müzik paylaş: bilgisayarında çalan sesi (Spotify, bir YouTube sekmesi…) sesli odadaki herkese stereo olarak gönder. Mikrofonunu sessize alsan da müzik çalmaya devam eder.',
+      'Chrome/Edge’de müziğin çaldığı sekmeyi seç ve “Sekme sesini de paylaş”ı işaretle. Windows 11 masaüstü uygulamasında tek tıkla sistem sesi paylaşılır; odadaki konuşmalar müziğe karışmaz.',
+      'Kimin ne çaldığı odada görünür: notalı işaret ve “Şu an çalıyor”. Şarkı adını göstermek isteğe bağlı.',
+      'Her paylaşanın müziği için ayrı ses düzeyi ve susturma (kişinin üstüne sağ tık ya da uzun bas); kulaklığı kapatmak müziği de susturur.',
+    ],
+  },
+  {
     version: '0.6.0',
     title: 'Telefonda kullanım',
     lines: [
