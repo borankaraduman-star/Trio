@@ -74,7 +74,10 @@ export function profileSettings(profile: ShareProfile, quality: ShareQuality): P
     case 'text':
       return {
         contentHint: 'detail',
-        constraints: { frameRate: 15 },
+        // "Full resolution" as an explicit 4K ceiling: with no width/height at
+        // all, Chromium kept the size an earlier profile had capped (measured:
+        // 1280×720 after Oyun/Orta on a 1920×1080 source).
+        constraints: { frameRate: 15, width: 3840, height: 2160 },
         maxBitrate,
         maxFramerate: 15,
         degradationPreference: 'maintain-resolution',

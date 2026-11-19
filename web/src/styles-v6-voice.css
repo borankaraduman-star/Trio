@@ -64,10 +64,11 @@
 }
 
 .share-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 40;
+  position: fixed;
+  left: var(--pop-left, 8px);
+  top: var(--pop-top, auto);
+  bottom: var(--pop-bottom, 8px);
+  z-index: 70;
   width: 300px;
   padding: 12px 14px 14px;
   border: 1px solid var(--trio-border, #2b303a);
@@ -77,11 +78,6 @@
   color: var(--trio-text, #f2f1ed);
   text-align: left;
   cursor: default;
-}
-
-.share-menu.chip .share-popover {
-  top: calc(100% + 8px);
-  bottom: auto;
 }
 
 .share-popover h4 {
@@ -389,17 +385,11 @@
   }
 
   .share-popover {
-    position: fixed;
     left: 8px;
     right: 8px;
     bottom: 8px;
     top: auto;
     width: auto;
-  }
-
-  .share-menu.chip .share-popover {
-    top: auto;
-    bottom: 8px;
   }
 }
 

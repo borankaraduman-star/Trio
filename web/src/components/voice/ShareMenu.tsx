@@ -40,6 +40,9 @@ export function ShareMenu({
   const [open, setOpen] = useState(false)
   const [available, setAvailable] = useState<(number | null)[]>([])
   const box = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  // Fixed to the viewport (the stage clips its tiles): placed from the trigger when opened.
+  const [place, setPlace] = useState<{ left: number; top: number | null; bottom: number | null }>({ left: 8, top: null, bottom: 8 })
   const sharing = voice.screensharing
   const others = Object.keys(voice.peerHealth).length
   const viewers = sharing ? voice.screenWatchers.length : others
@@ -99,13 +102,36 @@ export function ShareMenu({
         aria-expanded={open}
         title="Ekran paylaşımı ayarları"
         aria-label={`Ekran paylaşımı ayarları: ${label}`}
-        onClick={() => setOpen((value) => !value)}
+        ref={trigger}
+        onClick={() => {
+          const rect = trigger.current?.getBoundingClientRect()
+          if (rect) {
+            const width = 300
+            const left = Math.max(8, Math.min(variant === 'chip' ? rect.left : rect.right - width, window.innerWidth - width - 8))
+            setPlace(
+              variant === 'chip'
+                ? { left, top: rect.bottom + 8, bottom: null }
+                : { left, top: null, bottom: window.innerHeight - rect.top + 8 },
+            )
+          }
+          setOpen((value) => !value)
+        }}
       >
         {variant === 'chip' && <span>{label}</span>}
         <ChevronIcon size={14} />
       </button>
       {open && (
-        <div className="share-popover" role="dialog" aria-label="Ekran paylaşımı" data-testid="share-menu">
+        <div
+          className="share-popover"
+          role="dialog"
+          aria-label="Ekran paylaşımı"
+          data-testid="share-menu"
+          style={{
+            ['--pop-left' as string]: `${place.left}px`,
+            ['--pop-top' as string]: place.top === null ? 'auto' : `${place.top}px`,
+            ['--pop-bottom' as string]: place.bottom === null ? 'auto' : `${place.bottom}px`,
+          }}
+        >
           <h4>Profil</h4>
           <div className="share-options" role="radiogroup" aria-label="Profil">
             {SHARE_PROFILES.map((profile) => (

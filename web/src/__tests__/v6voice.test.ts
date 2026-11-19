@@ -26,7 +26,7 @@ describe('share profiles', () => {
     expect(profileSettings('game', 'low').maxBitrate).toBe(1_500_000)
     expect(profileSettings('text', 'high')).toEqual({
       contentHint: 'detail',
-      constraints: { frameRate: 15 },
+      constraints: { frameRate: 15, width: 3840, height: 2160 },
       maxBitrate: 6_000_000,
       maxFramerate: 15,
       degradationPreference: 'maintain-resolution',
@@ -38,13 +38,17 @@ describe('share profiles', () => {
     })
   })
 
-  it('caps with max constraints and leaves Metin at full resolution', () => {
+  it('caps with max constraints; Metin is the source size up to 4K', () => {
     expect(trackConstraints(profileSettings('game', 'mid'))).toEqual({
       frameRate: { max: 60 },
       width: { max: 1280 },
       height: { max: 720 },
     })
-    expect(trackConstraints(profileSettings('text', 'mid'))).toEqual({ frameRate: { max: 15 } })
+    expect(trackConstraints(profileSettings('text', 'mid'))).toEqual({
+      frameRate: { max: 15 },
+      width: { max: 3840 },
+      height: { max: 2160 },
+    })
   })
 
   it('estimates the mesh upload and warns on a measured shortfall', () => {
