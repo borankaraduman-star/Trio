@@ -45,13 +45,16 @@ function parse(event) {
   return { v: 1, kind: 'unknown', title: 'Trio', body: 'Yeni bildirim', tag: 'trio' }
 }
 
-/** Sum of the per-channel counts of the message notifications still shown. */
-async function refreshBadge() {
-  const nav = self.navigator
-  if (!nav || typeof nav.setAppBadge !== 'function' || !allowed()) return
-  const shown = await self.registration.getNotifications()
+/** The badge: the per-channel counts of the message notifications shown, summed. */
+function countOf(list) {
   let total = 0
-  for (const n of shown) if (MESSAGE_TAG.test(n.tag)) total += (n.data && n.data.count) || 1
+  for (const n of list) if (MESSAGE_TAG.test(n.tag)) total += (n.data && n.data.count) || 1
+  return total
+}
+
+async function setBadge(total) {
+  const nav = self.navigator
+  if (!nav || typeof nav.setAppBadge !== 'function') return
   try {
     if (total > 0) await nav.setAppBadge(total)
     else await nav.clearAppBadge()
@@ -60,13 +63,23 @@ async function refreshBadge() {
   }
 }
 
+async function refreshBadge() {
+  if (!allowed()) return
+  await setBadge(countOf(await self.registration.getNotifications()))
+}
+
 async function show(data) {
   const tag = typeof data.tag === 'string' && data.tag ? data.tag.slice(0, 64) : 'trio'
   let title = data.title
   let body = typeof data.body === 'string' ? data.body : ''
   let count = 1
-  if (MESSAGE_TAG.test(tag) && allowed()) {
-    const existing = await self.registration.getNotifications({ tag })
+  // Everything shown is read BEFORE showing, never right after: Chromium drops
+  // a notification from getNotifications() (for good) when it is read while
+  // its display is still being completed, which a read just after
+  // showNotification() resolves can hit.
+  const before = allowed() ? await self.registration.getNotifications() : []
+  const existing = before.filter((n) => n.tag === tag)
+  if (MESSAGE_TAG.test(tag)) {
     const previous = existing.length > 0 && existing[0].data ? existing[0].data.count || 1 : 0
     count = previous + 1
     if (count > 1) {
@@ -89,7 +102,7 @@ async function show(data) {
       count,
     },
   })
-  await refreshBadge()
+  if (MESSAGE_TAG.test(tag)) await setBadge(countOf(before.filter((n) => n.tag !== tag)) + count)
 }
 
 self.addEventListener('push', (event) => {
