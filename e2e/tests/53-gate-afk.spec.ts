@@ -1,8 +1,10 @@
 /**
  * CONTRACT-V6-VOICE §4: the input gate and auto-AFK.
  *
- * Gate: every microphone in this file's browser is a steady, quiet,
- * speech-like signal. The gate runs as an AudioWorklet built from a blob: URL
+ * Gate: every microphone in this file's browser is a steady speech-like
+ * signal (~-18 dBFS peak: well under the -10 dB top of the threshold, well
+ * over the speaking ring's threshold — at 0.12 it was at the ring's edge and
+ * lit it in one run of three). The gate runs as an AudioWorklet built from a blob: URL
  * in the BUILT client under the app's CSP (the fixture fails the test on any
  * CSP violation). A threshold above the signal makes the receiver get
  * silence; one below lets it through; "Otomatik" removes the gate. The sent
@@ -18,7 +20,7 @@ import { expectEnergy, fakeAudioArgs, localDescriptions, sentAudioTrackIds, voic
 import { freshServer } from '../lib/server'
 import { expect, joinVoice, personViaApi, test, type Person } from '../lib/trio'
 
-test.use({ launchOptions: { args: fakeAudioArgs(wavFile('steady-quiet-voice.wav', 10, (t) => 0.12 * voiceish(t))) } })
+test.use({ launchOptions: { args: fakeAudioArgs(wavFile('steady-voice-020.wav', 10, (t) => 0.2 * voiceish(t))) } })
 
 test.beforeEach(async () => {
   await freshServer()
@@ -42,6 +44,7 @@ test('the input gate: silence below the threshold, through above it, Otomatik re
   const mehmet = trio.add(await personViaApi(browser, 'Mehmet'))
   await joinVoice(ayse)
   await joinVoice(mehmet)
+  await expect(mehmet.page.getByTestId(`remote-audio-${ayse.user.id}`)).toHaveCount(1, { timeout: 20_000 })
   await expectEnergy(mehmet, ayse, true, 'heard before any gate')
   const tracks = await sentAudioTrackIds(ayse.page)
   const sdp = await localDescriptions(ayse.page)
