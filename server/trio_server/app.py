@@ -38,6 +38,14 @@ from trio_server.db import (
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
+from trio_server.media_routes import (
+    UPLOAD_EXTRA_PARTS,
+    prepare_previews_dir,
+    register_media_routes,
+    remove_previews,
+    unreferenced_previews,
+    upload_extras,
+)
 from trio_server.message_routes import register_message_routes
 from trio_server.profile_routes import (
     prepare_profile_dirs,
@@ -160,6 +168,7 @@ def create_app(
                 return
             await db.delete_attachments(stale)
         _remove(*(upload_dir / attachment_id for attachment_id in stale))
+        remove_previews(upload_dir, stale)
         logger.info("uploads.swept count=%s", len(stale))
 
     async def sweep_unreferenced_files() -> None:
@@ -170,7 +179,8 @@ def create_app(
         like an attachment id are considered (not ``*.part``, not the
         profile subdirectories).
         """
-        stray = _unreferenced_files(upload_dir, await db.all_attachment_ids())
+        known = await db.all_attachment_ids()
+        stray = _unreferenced_files(upload_dir, known) + unreferenced_previews(upload_dir, known)
         stray += unreferenced_profile_files(
             upload_dir, await db.avatar_files(), await db.server_icon()
         )
@@ -207,7 +217,10 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _prepare_upload_dir(upload_dir)
         prepare_profile_dirs(upload_dir)
+        prepare_previews_dir(upload_dir)
         await db.open()
+        # V6: the links of messages from before V6 (or since the last start).
+        await db.backfill_links()
         hub.load(await db.list_users(), await db.list_channels())
         hub.server = await db.get_server()
         # Not only on upload: a server nobody uploads to never swept at all.
@@ -435,6 +448,7 @@ def create_app(
                 settings.max_upload_bytes,
                 quota_bytes=remaining,
                 space_left=space_left,
+                extra_parts=UPLOAD_EXTRA_PARTS,
             )
         except ApiError as exc:
             if exc.status == 507:
@@ -444,6 +458,10 @@ def create_app(
         try:
             partial.replace(final)
             content_type = sniff_content_type(received.head, received.filename)
+            # V6: preview, dimensions, voice marker (media_routes.upload_extras).
+            extras = upload_extras(
+                received, content_type, final, upload_dir, attachment_id, remaining
+            )
             async with db.write_lock:
                 attachment = await db.create_attachment(
                     attachment_id,
@@ -452,12 +470,15 @@ def create_app(
                     content_type,
                     received.size,
                     now(),
+                    **extras,
                 )
         except StorageFullError:
             _remove(partial, final)
+            remove_previews(upload_dir, [attachment_id])
             raise storage_full() from None
         except BaseException:
             _remove(partial, final)
+            remove_previews(upload_dir, [attachment_id])
             raise
         logger.info("upload.stored user=%s size=%s", user["id"], received.size)
         return {"attachment": attachment}
@@ -497,6 +518,8 @@ def create_app(
         read_json=read_json_object,
         space_left=space_left,
     )
+
+    register_media_routes(app, db=db, hub=hub, upload_dir=upload_dir, current_user=current_user)
 
     app.add_api_websocket_route("/ws", websocket_endpoint)
 

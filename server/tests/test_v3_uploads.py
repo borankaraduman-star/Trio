@@ -275,7 +275,7 @@ def test_startup_sweep_deletes_day_old_orphans(tmp_path):
     with TestClient(create_app(settings, now=lambda: clock["t"])) as client:
         # No upload happened; the start itself swept it.
         assert client.get(orphan["url"]).status_code == 404
-        assert sorted(os.listdir(tmp_path / "up")) == ["avatars", "icons"]
+        assert sorted(os.listdir(tmp_path / "up")) == ["avatars", "icons", "previews"]
 
 
 # -- sniffing by brand -------------------------------------------------------------

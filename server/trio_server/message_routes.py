@@ -34,6 +34,7 @@ from trio_server.db import (
 from trio_server.emoji import clean_reaction_key
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
+from trio_server.media_routes import remove_previews
 from trio_server.ratelimit import SlidingWindow
 from trio_server.uploads import storage_full
 from trio_server.validation import CONTENT_MAX
@@ -128,6 +129,7 @@ def register_message_routes(
         for attachment_id in files:
             with contextlib.suppress(FileNotFoundError):
                 (upload_dir / attachment_id).unlink()
+        remove_previews(upload_dir, files)  # V6
         logger.info("message.deleted user=%s files=%s", user["id"], len(files))
         return Response(status_code=204)
 

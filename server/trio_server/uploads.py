@@ -14,7 +14,7 @@ import re
 import secrets
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -24,13 +24,18 @@ from python_multipart.multipart import MultipartParser, parse_options_header
 from starlette.requests import Request
 
 from trio_server.errors import ApiError
+from trio_server.media import audio_only
 
 FILENAME_MAX = 120
 MAX_ATTACHMENTS = 10
 ORPHAN_SECONDS = 24 * 60 * 60
 # Multipart framing (boundaries, part headers) on top of the file itself.
 FRAMING_ALLOWANCE = 64 * 1024
-SNIFF_BYTES = 64
+# What the type sniffing reads. The v2/v3 rules look at the first 64 bytes
+# only (``LEGACY_SNIFF_BYTES``); V6 looks further into WebM and MP4 headers to
+# tell a recording with no picture (audio) from a video.
+SNIFF_BYTES = 4096
+LEGACY_SNIFF_BYTES = 64
 
 ATTACHMENT_ID = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
@@ -48,6 +53,9 @@ INLINE_TYPES = frozenset(
         "audio/mpeg",
         "audio/ogg",
         "audio/wav",
+        # V6: voice messages (MediaRecorder: WebM/Opus in Chromium, MP4/AAC in Safari).
+        "audio/webm",
+        "audio/mp4",
         "application/pdf",
     }
 )
@@ -173,6 +181,12 @@ def clean_filename(raw: str) -> str | None:
 
 
 def sniff_content_type(head: bytes, filename: str) -> str:
+    """The served type: the v3 rules on the first 64 bytes, then V6's look
+    further in (``media.audio_only``) for WebM/MP4 files with no video track."""
+    return audio_only(head, _legacy_sniff(head[:LEGACY_SNIFF_BYTES], filename))
+
+
+def _legacy_sniff(head: bytes, filename: str) -> str:
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
     if head.startswith(b"\xff\xd8\xff"):
@@ -222,6 +236,8 @@ class ReceivedFile:
     filename: str
     size: int
     head: bytes
+    # V6: the small extra parts asked for (``extra_parts``), by name.
+    extras: dict[str, bytes] = field(default_factory=dict)
 
 
 def _too_large() -> ApiError:
@@ -253,6 +269,7 @@ async def receive_upload(
     *,
     quota_bytes: int | None = None,
     space_left: Callable[[], bool] | None = None,
+    extra_parts: dict[str, tuple[int, str]] | None = None,
 ) -> ReceivedFile:
     """Stream the multipart part ``file`` into ``destination``.
 
@@ -261,18 +278,24 @@ async def receive_upload(
     is left of the user's quota) 413 QUOTA_EXCEEDED. ``space_left`` is asked
     again every SPACE_CHECK_BYTES; False, or the disk filling up during a
     write, is 507 STORAGE_FULL. Any refusal removes what was written.
+
+    ``extra_parts`` (V6) names small parts kept in memory beside the file:
+    ``{name: (max_bytes, error_code)}``; a part over its size is 422
+    ``error_code``. Repeated parts: the first counts. Other parts are ignored.
     """
+    extra_parts = extra_parts or {}
+    extra_allowance = sum(limit for limit, _ in extra_parts.values())
     mime, options = parse_options_header(request.headers.get("content-type", ""))
     boundary = options.get(b"boundary")
     if mime != b"multipart/form-data" or not boundary:
         raise _invalid("expected multipart/form-data with a 'file' part")
     declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > max_bytes + FRAMING_ALLOWANCE:
+    if declared.isdigit() and int(declared) > max_bytes + FRAMING_ALLOWANCE + extra_allowance:
         raise _too_large()
     if (
         quota_bytes is not None
         and declared.isdigit()
-        and int(declared) > quota_bytes + FRAMING_ALLOWANCE
+        and int(declared) > quota_bytes + FRAMING_ALLOWANCE + extra_allowance
     ):
         raise _over_quota()
 
@@ -286,12 +309,15 @@ async def receive_upload(
         "size": 0,
         "head": b"",
         "ended": False,
+        "extra": None,
+        "extras": {},
     }
     pending: list[bytes] = []
 
     def on_part_begin() -> None:
         state["headers"] = {}
         state["in_file"] = False
+        state["extra"] = None
 
     def on_header_field(data: bytes, start: int, end: int) -> None:
         state["header_field"] += data[start:end]
@@ -315,8 +341,21 @@ async def receive_upload(
             for encoded, plain in (("%22", '"'), ("%0D", "\r"), ("%0A", "\n")):
                 name = name.replace(encoded, plain).replace(encoded.lower(), plain)
             state["filename"] = name
+        else:
+            part = (disp.get(b"name") or b"").decode("latin-1")
+            if part in extra_parts and part not in state["extras"]:
+                state["extra"] = part
+                state["extras"][part] = b""
 
     def on_part_data(data: bytes, start: int, end: int) -> None:
+        extra = state["extra"]
+        if extra is not None:
+            value = state["extras"][extra] + data[start:end]
+            limit, code = extra_parts[extra]
+            if len(value) > limit:
+                raise ApiError(422, code, f"'{extra}' is too large")
+            state["extras"][extra] = value
+            return
         if not state["in_file"]:
             return
         chunk = data[start:end]
@@ -366,7 +405,7 @@ async def receive_upload(
             with os.fdopen(fd, "wb") as out:
                 async for chunk in request.stream():
                     total += len(chunk)
-                    if total > max_bytes + FRAMING_ALLOWANCE:
+                    if total > max_bytes + FRAMING_ALLOWANCE + extra_allowance:
                         raise _too_large()
                     try:
                         parser.write(chunk)
@@ -397,7 +436,9 @@ async def receive_upload(
         if state["size"] == 0:
             raise _invalid("the file is empty")
         completed = True
-        return ReceivedFile(filename=filename, size=state["size"], head=state["head"])
+        return ReceivedFile(
+            filename=filename, size=state["size"], head=state["head"], extras=state["extras"]
+        )
     finally:
         if not completed:
             _remove(destination)

@@ -1,0 +1,157 @@
+{
+ "_about": "Shared by web/src/__tests__/linkifyShared.test.ts and server/tests/test_v6_links.py: the text of a message and the links both sides must find in it (the text as written). Regenerate expectations only by reading the browser's new URL behaviour.",
+ "cases": [
+  {
+   "text": "bak https://example.com/a?b=1#c.",
+   "links": [
+    "https://example.com/a?b=1#c"
+   ]
+  },
+  {
+   "text": "(\u015funa bak: https://tr.wikipedia.org/wiki/Kapadokya_(b\u00f6lge)) iyi",
+   "links": [
+    "https://tr.wikipedia.org/wiki/Kapadokya_(b\u00f6lge)"
+   ]
+  },
+  {
+   "text": "https://example.com/path), sonra",
+   "links": [
+    "https://example.com/path"
+   ]
+  },
+  {
+   "text": "xhttps://nope.com ve 9http://nope.com ama _https://yes.com",
+   "links": [
+    "https://yes.com"
+   ]
+  },
+  {
+   "text": "HTTPS://EXAMPLE.COM/B\u00fcy\u00fck",
+   "links": [
+    "HTTPS://EXAMPLE.COM/B\u00fcy\u00fck"
+   ]
+  },
+  {
+   "text": "http:// bo\u015f ve http://) ve https://.",
+   "links": []
+  },
+  {
+   "text": "port https://a.com:65535/x ve https://a.com:65536/y ve https://a.com:12x/z",
+   "links": [
+    "https://a.com:65535/x"
+   ]
+  },
+  {
+   "text": "ipv6 http://[::1]:8080/a ve http://[::1 ve http://[fe80::1%25eth0]/",
+   "links": [
+    "http://[::1]:8080/a"
+   ]
+  },
+  {
+   "text": "say\u0131 http://a.1/ ve http://999/ ve http://1.2.3.999/ ve http://0x7f.1/",
+   "links": [
+    "http://999/",
+    "http://0x7f.1/"
+   ]
+  },
+  {
+   "text": "\u00e7oklu http:///yol/ ve http://kullanici:sifre@host.com/ ve http://@/",
+   "links": [
+    "http:///yol/",
+    "http://kullanici:sifre@host.com/"
+   ]
+  },
+  {
+   "text": "t\u0131rnak \"https://q.com/x\" ve 'https://r.com/y' ve `https://s.com`",
+   "links": [
+    "https://q.com/x",
+    "https://r.com/y",
+    "https://s.com"
+   ]
+  },
+  {
+   "text": "t\u00fcrk\u00e7e https://\u00f6rnek.com.tr/sayfa?q=\u011f\u00fc\u015fi\u00f6\u00e7 ve sonu.",
+   "links": [
+    "https://\u00f6rnek.com.tr/sayfa?q=\u011f\u00fc\u015fi\u00f6\u00e7"
+   ]
+  },
+  {
+   "text": "y\u00fczde http://a%2eb.com/ ve http://a%zz.com/ ve http://a%41.com/",
+   "links": [
+    "http://a%2eb.com/",
+    "http://a%41.com/"
+   ]
+  },
+  {
+   "text": "nbsp https://a.com/x\u00a0devam ve https://b.com/y\ufeffz ve https://c.com/\u0085w",
+   "links": [
+    "https://a.com/x",
+    "https://b.com/y",
+    "https://c.com/\u0085w"
+   ]
+  },
+  {
+   "text": "k\u00f6\u015feli https://a.com/[1] ve https://b.com/x] ve {https://c.com/}",
+   "links": [
+    "https://a.com/[1]",
+    "https://b.com/x",
+    "https://c.com/"
+   ]
+  },
+  {
+   "text": "yasak http://a^b.com/ ve http://a|b.com/ ve http://a{b}.com/",
+   "links": [
+    "http://a{b}.com/"
+   ]
+  },
+  {
+   "text": "iki https://a.com https://a.com ayn\u0131",
+   "links": [
+    "https://a.com",
+    "https://a.com"
+   ]
+  },
+  {
+   "text": "son https://a.com/?!",
+   "links": [
+    "https://a.com/"
+   ]
+  },
+  {
+   "text": "emoji https://a.com/\ud83d\ude00 ve http://\ud83d\ude00.com/",
+   "links": [
+    "https://a.com/\ud83d\ude00",
+    "http://\ud83d\ude00.com/"
+   ]
+  },
+  {
+   "text": "sat\u0131r https://a.com/1\nhttps://b.com/2\thttps://c.com/3",
+   "links": [
+    "https://a.com/1",
+    "https://b.com/2",
+    "https://c.com/3"
+   ]
+  },
+  {
+   "text": "<https://angle.com/x> ve https://z.com/a<b",
+   "links": [
+    "https://angle.com/x",
+    "https://z.com/a"
+   ]
+  },
+  {
+   "text": "\u00bbhttps://g.com/x\u00ab ve \u201chttps://h.com/y\u201d ve \u2018https://i.com/z\u2019",
+   "links": [
+    "https://g.com/x\u00ab",
+    "https://h.com/y",
+    "https://i.com/z"
+   ]
+  },
+  {
+   "text": "yar\u0131m http://a.com:/ ve http://a:b@:80/",
+   "links": [
+    "http://a.com:/"
+   ]
+  }
+ ]
+}
