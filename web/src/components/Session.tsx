@@ -562,6 +562,7 @@ export function Session({
         onOpenSettings={() => setSettingsOpen(true)}
         onHangup={() => engine.leave()}
         onDismissVoiceError={() => engine.clearError()}
+        onRetryMic={() => void engine.retryMic()}
         onAskNotifications={askNotifications}
         onLogout={() => setLogoutOpen(true)}
       />

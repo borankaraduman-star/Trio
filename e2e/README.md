@@ -112,6 +112,10 @@ Chromium 153 facts the specs depend on, measured here:
 | `19-uploads-v3` | files of one message upload one at a time (at most one request in flight; a queued file cancelled), another device's upload in progress (429 → wait → retry), quota exceeded and a full disk (the message waits), avif inline, heic and quicktime as file rows |
 | `20-limits` | the per-address and the global join limits worded with `Retry-After` and counted down, 4429 with ten sockets open, the desktop app's join screen |
 | `21-invite-link` | `/#davet=<code>`: only a name to type, the fragment gone at once, the link in Ayarlar › Hesap, a wrong code from a link, the name remembered |
+| `22-renegotiation-growth` | 30 camera and 15 screen-with-audio cycles on one connection: the SDP stays the same size, the last tiles decode, every pair hears; screen audio is off unless chosen |
+| `23-refused-signal` | a description the server refuses (`TOO_LARGE`, forced by padding one frame in the page): the pair starts again on fresh connections, from either side, and gives up after three |
+| `24-mic-lost` | the microphone track ends and cannot be reopened: the notice, nothing sent, recovery on `devicechange` and from the retry button |
+| `25-ice-health` | ICE candidates dropped between two of three peers: reconnecting, then failed with the TURN hint, then healed when unblocked |
 
 ## Screenshots
 

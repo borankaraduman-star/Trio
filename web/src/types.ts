@@ -75,8 +75,16 @@ export type ServerEvent =
   | { type: 'channel.new'; channel: Channel }
   | { type: 'message.new'; message: Message; nonce?: string }
   | { type: 'typing'; channel_id: number; user_id: number }
-  | { type: 'voice.peers'; channel_id: number; peers: number[] }
-  | ({ type: 'voice.joined'; channel_id: number } & VoiceParticipant)
+  | {
+      type: 'voice.peers'
+      channel_id: number
+      peers: number[]
+      /** V4 A1: members in their reconnect grace; not to be connected to. */
+      reconnecting?: number[]
+      /** V4 A1: echoes the join's `resume`. */
+      resumed?: boolean
+    }
+  | ({ type: 'voice.joined'; channel_id: number; resumed?: boolean } & VoiceParticipant)
   | { type: 'voice.left'; channel_id: number; user_id: number }
   | ({ type: 'voice.state'; channel_id: number } & VoiceParticipant)
   | { type: 'signal'; from: number; data: unknown }
@@ -98,6 +106,9 @@ export type ClientEvent =
       muted?: boolean
       deafened?: boolean
       camera?: boolean
+      /** V4 A1. */
+      screensharing?: boolean
+      resume?: boolean
     }
   | { type: 'voice.leave' }
   | {

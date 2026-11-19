@@ -17,6 +17,7 @@ import {
 import { CameraIcon, SettingsIcon } from './icons2'
 import { BrandMark } from './BrandMark'
 import { EmptyState } from './EmptyState'
+import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
 
 export interface SidebarProps {
   open: boolean
@@ -41,6 +42,7 @@ export interface SidebarProps {
   onOpenSettings?: () => void
   onHangup: () => void
   onDismissVoiceError: () => void
+  onRetryMic?: () => void
   onAskNotifications: () => void
   onLogout: () => void
 }
@@ -205,6 +207,7 @@ export function Sidebar(props: SidebarProps) {
                           data-screensharing={participant.screensharing}
                           data-camera={participant.camera ?? false}
                           data-speaking={speaking.has(participant.user_id)}
+                          data-peer-health={mine ? voice.peerHealth[participant.user_id] : undefined}
                         >
                           <Avatar
                             id={participant.user_id}
@@ -214,6 +217,10 @@ export function Sidebar(props: SidebarProps) {
                           />
                           <span className="voice-user-name">{name}</span>
                           <span className="voice-user-icons">
+                            {/* The server's grace says more than ICE does (and ICE waits for it). */}
+                            {mine && !participant.reconnecting && (
+                              <PeerHealthBadge health={voice.peerHealth[participant.user_id]} />
+                            )}
                             {participant.camera && (
                               <span className="badge-live" title="Kamerası açık">
                                 <CameraIcon size={13} />
@@ -257,6 +264,8 @@ export function Sidebar(props: SidebarProps) {
           </button>
         </div>
       )}
+
+      <MicLostNotice lost={voice.micLost} onRetry={props.onRetryMic} />
 
       {inVoice && (
         <div className="voice-panel">
@@ -311,7 +320,7 @@ export function Sidebar(props: SidebarProps) {
         </div>
         <button
           type="button"
-          className={voice.muted ? 'icon-button off' : 'icon-button'}
+          className={voice.muted || voice.micLost ? 'icon-button off' : 'icon-button'}
           data-testid="btn-mute"
           data-transmitting={voice.transmitting}
           aria-pressed={voice.muted}
@@ -319,7 +328,7 @@ export function Sidebar(props: SidebarProps) {
           aria-label={voice.muted ? 'Sesi aç' : 'Sessize al'}
           onClick={props.onToggleMute}
         >
-          <MicIcon off={voice.muted} />
+          <MicIcon off={voice.muted || voice.micLost} />
         </button>
         <button
           type="button"

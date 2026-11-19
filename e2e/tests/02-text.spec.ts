@@ -73,7 +73,12 @@ test('text: unread dot and a new channel appear for everybody', async ({ browser
   // Ayşe creates a channel; everyone sees it.
   await ayse.page.getByTestId('add-channel-text').click()
   await ayse.page.getByTestId('add-channel-name').fill('oyunlar')
+  // Wait for the channel to exist (the POST answers), not just for the click.
+  const created = ayse.page.waitForResponse(
+    (response) => response.url().endsWith('/api/channels') && response.request().method() === 'POST',
+  )
   await ayse.page.getByTestId('add-channel-submit').click()
+  expect((await created).status()).toBe(201)
   const { channels } = await api<{ channels: { id: number; name: string }[] }>(ayse.token, '/api/channels')
   const oyunlar = channels.find((c) => c.name === 'oyunlar')!
   expect(oyunlar).toBeTruthy()

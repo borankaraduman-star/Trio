@@ -50,10 +50,26 @@ def encodable(value: Any) -> bool:
 
 
 class FrameError(Exception):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, **extra: Any) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        # Additive fields of the error frame (e.g. ``to`` of a refused signal).
+        self.extra = extra
+
+
+def _signal_target(text: str) -> int | None:
+    """The ``to`` of an over-sized ``signal`` frame, so the sender knows which
+    negotiation was lost (CONTRACT-V3 §6). The text is at most ``WS_MAX_SIZE``
+    (uvicorn closes anything larger), so parsing it is bounded."""
+    try:
+        frame = json.loads(text)
+    except (ValueError, RecursionError):
+        return None
+    if not isinstance(frame, dict) or frame.get("type") != "signal":
+        return None
+    to = frame.get("to")
+    return to if is_int(to) else None
 
 
 def _reply_to(frame: dict[str, Any]) -> int | None:
@@ -103,6 +119,9 @@ class Session:
     async def handle_text(self, text: str) -> None:
         try:
             if len(text) > FRAME_MAX_BYTES or len(text.encode("utf-8")) > FRAME_MAX_BYTES:
+                to = _signal_target(text)
+                if to is not None:
+                    raise FrameError("TOO_LARGE", "frame is too large", to=to)
                 raise FrameError("TOO_LARGE", "frame is too large")
             try:
                 frame = json.loads(text)
@@ -119,10 +138,10 @@ class Session:
                 raise FrameError("UNKNOWN_TYPE", "unknown frame type")
             await handler(frame)
         except FrameError as exc:
-            self.error(exc.code, exc.message)
+            self.error(exc.code, exc.message, **exc.extra)
 
-    def error(self, code: str, message: str) -> None:
-        self.conn.send({"type": "error", "code": code, "message": message})
+    def error(self, code: str, message: str, **extra: Any) -> None:
+        self.conn.send({"type": "error", "code": code, "message": message, **extra})
 
     def _text_channel(self, frame: dict[str, Any]) -> int:
         channel_id = frame.get("channel_id")
@@ -136,29 +155,33 @@ class Session:
 
     async def on_message_send(self, frame: dict[str, Any]) -> None:
         channel_id = self._text_channel(frame)
-        reply_to = _reply_to(frame)
-        ids = frame.get("attachment_ids", [])
-        if ids is None:
-            ids = []
-        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
-            raise FrameError("BAD_REQUEST", "'attachment_ids' must be a list of strings")
-        if len(ids) > MAX_ATTACHMENTS:
-            raise FrameError("INVALID_ATTACHMENT", f"at most {MAX_ATTACHMENTS} attachments")
-        if not all(ATTACHMENT_ID.match(i) for i in ids) or len(set(ids)) != len(ids):
-            raise FrameError("INVALID_ATTACHMENT", "unknown or repeated attachment")
-        raw = frame.get("content", "" if ids else None)
-        if not isinstance(raw, str) or "\x00" in raw:
-            raise FrameError("INVALID_MESSAGE", "content must be 1-4000 characters")
-        content = raw.strip()
-        if len(content) > CONTENT_MAX or (not content and not ids):
-            raise FrameError(
-                "INVALID_MESSAGE",
-                "content must be 1-4000 characters (or empty with an attachment)",
-            )
         nonce = frame.get("nonce")
         if nonce is not None and not (isinstance(nonce, str) and len(nonce) <= NONCE_MAX):
             raise FrameError("BAD_REQUEST", "'nonce' must be a short string")
         async with self.db.write_lock:
+            if nonce is not None and await self._replay(nonce):
+                return
+            # Validation does not await: nothing can store this nonce between
+            # the check above and the insert below.
+            reply_to = _reply_to(frame)
+            ids = frame.get("attachment_ids", [])
+            if ids is None:
+                ids = []
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                raise FrameError("BAD_REQUEST", "'attachment_ids' must be a list of strings")
+            if len(ids) > MAX_ATTACHMENTS:
+                raise FrameError("INVALID_ATTACHMENT", f"at most {MAX_ATTACHMENTS} attachments")
+            if not all(ATTACHMENT_ID.match(i) for i in ids) or len(set(ids)) != len(ids):
+                raise FrameError("INVALID_ATTACHMENT", "unknown or repeated attachment")
+            raw = frame.get("content", "" if ids else None)
+            if not isinstance(raw, str) or "\x00" in raw:
+                raise FrameError("INVALID_MESSAGE", "content must be 1-4000 characters")
+            content = raw.strip()
+            if len(content) > CONTENT_MAX or (not content and not ids):
+                raise FrameError(
+                    "INVALID_MESSAGE",
+                    "content must be 1-4000 characters (or empty with an attachment)",
+                )
             try:
                 message = await self.db.create_message(
                     channel_id,
@@ -183,8 +206,36 @@ class Session:
             event = {"type": "message.new", "message": message}
             self.hub.broadcast(event, exclude_user=self.user["id"])
             if nonce is not None:
+                self.hub.nonces.put(
+                    self.user["id"], nonce, (message["channel_id"], message["id"]), self.now()
+                )
                 event = {**event, "nonce": nonce}
             self.hub.send_to_user(self.user["id"], event)
+
+    async def _replay(self, nonce: str) -> bool:
+        """Answer a retry of a send that was stored (its acknowledgement was
+        lost): store nothing, and tell the sender's connections what became of
+        it. The message is re-read, so the answer carries its edits, reactions
+        and pin (CONTRACT-V4 B); a message deleted meanwhile is answered with
+        `message.deleted`. The rest of the retried frame is not read. The
+        caller holds ``write_lock``, so no change can slip between the read and
+        the send."""
+        ref = self.hub.nonces.get(self.user["id"], nonce, self.now())
+        if ref is None:
+            return False
+        channel_id, message_id = ref
+        current = await self.db.get_message(message_id)
+        if current is None:
+            event: dict[str, Any] = {
+                "type": "message.deleted",
+                "channel_id": channel_id,
+                "message_id": message_id,
+                "nonce": nonce,
+            }
+        else:
+            event = {"type": "message.new", "message": current, "nonce": nonce}
+        self.hub.send_to_user(self.user["id"], event)
+        return True
 
     async def on_typing(self, frame: dict[str, Any]) -> None:
         channel_id = self._text_channel(frame)
@@ -251,7 +302,7 @@ class Session:
         data = frame["data"]
         encoded = json.dumps(data, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         if len(encoded) > SIGNAL_DATA_MAX_BYTES:
-            raise FrameError("TOO_LARGE", "signal data is too large")
+            raise FrameError("TOO_LARGE", "signal data is too large", to=to)
         channel_id = self._own_voice_channel()
         target = self.hub.voice_member(to)
         if to == self.user["id"] or target is None or target[0] != channel_id:

@@ -83,6 +83,11 @@ the deploy) → dispatch the release.
   (`web/src/voice.ts`: the higher user id asks with `{negotiate: "request"}`
   and waits for a grant; signals from one peer are handled strictly one at a
   time). Any new reason to renegotiate must go through that same path.
+- **A stopped camera or screen stops its transceiver** (`stopSenders` in
+  `voice.ts`), not just `removeTrack`: otherwise every on/off cycle adds
+  m-lines and the offer outgrows the server's 64 KiB signal cap after ~12. A
+  negotiation the server refuses can never complete; the pair then starts
+  again on fresh connections ("fresh connections" in `voice.ts`).
 - **Assert on media, not on elements.** An `<audio>` element existing proves
   nothing; the e2e helpers check receiver stats and signal level.
 - **The sent microphone track never changes.** Mute, push-to-talk, noise
