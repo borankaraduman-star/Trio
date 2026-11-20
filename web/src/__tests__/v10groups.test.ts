@@ -110,3 +110,22 @@ describe('a crowded stage', () => {
     expect(stageLayout(tiles, 4, true).folded).toEqual([])
   })
 })
+
+describe('the member panel toggle', async () => {
+  const { loadMembersHidden, saveMembersHidden, membersTitle, MEMBERS_HIDDEN_KEY } = await import('../lib/membersPanel')
+  it('is shown unless hidden on this device, and says what it lists', () => {
+    const store = new Map<string, string>()
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    }
+    expect(loadMembersHidden(storage)).toBe(false)
+    saveMembersHidden(true, storage)
+    expect(store.get(MEMBERS_HIDDEN_KEY)).toBe('1')
+    expect(loadMembersHidden(storage)).toBe(true)
+    saveMembersHidden(false, storage)
+    expect(loadMembersHidden(storage)).toBe(false)
+    expect(membersTitle(5)).toBe('Üyeler — 5 çevrimiçi')
+  })
+})
