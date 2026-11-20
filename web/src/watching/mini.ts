@@ -112,6 +112,10 @@ class MiniPlayers {
       this.desktopOff = mini.onState((state) => {
         const instance = this.open.get(state.id)
         if (!instance) return
+        if ((state as { closed?: boolean }).closed === true) {
+          this.dispose(instance, false)
+          return
+        }
         instance.clickThrough = state.clickThrough
         instance.visible = state.visible
         if (!state.visible) viewSizes.report(instance.sharerId, `mini-${instance.id}`, null)
@@ -142,7 +146,8 @@ class MiniPlayers {
       }
     }
     this.counter += 1
-    const id = String(sharerId)
+    // The shell remembers a place per id CLASS (the id up to its first '-'): all share minis share one.
+    const id = `share-${sharerId}`
     const desktop = desktopMini()
     const docTaken = [...this.open.values()].some((instance) => instance.kind === 'docpip')
     if (!desktop && documentPipAvailable() && !docTaken) {
@@ -226,7 +231,10 @@ class MiniPlayers {
     instance.poll = setInterval(() => {
       if (instance.win.closed) this.dispose(instance, false)
     }, 500)
-    if (kind === 'desktop') desktopMini()?.setOptions(id, { opacity: watchStore.getSnapshot().miniOpacity, alwaysOnTop: true })
+    if (kind === 'desktop') {
+      const state = watchStore.getSnapshot()
+      desktopMini()?.setOptions(id, { opacity: state.miniOpacity, alwaysOnTop: true, contentProtection: state.miniContentProtection })
+    }
     return instance
   }
 
@@ -258,7 +266,7 @@ class MiniPlayers {
     for (const node of document.head.querySelectorAll('link[rel="stylesheet"], style')) doc.head.appendChild(node.cloneNode(true))
     doc.documentElement.style.height = '100%'
     doc.body.className = 'trio-mini-doc'
-    doc.title = 'Trio · küçük pencere'
+    doc.title = 'Trio · mini oynatıcı'
     const holder = doc.createElement('div')
     holder.className = 'trio-mini-root'
     doc.body.appendChild(holder)

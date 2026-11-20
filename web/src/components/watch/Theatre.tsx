@@ -171,8 +171,8 @@ export function Theatre({
         <button type="button" data-testid="theatre-chat-toggle" aria-pressed={chatOn} title="Son mesajı göster" onClick={() => setChatOn((on) => !on)}>
           {chatOn ? 'Sohbet: açık' : 'Sohbet: kapalı'}
         </button>
-        <button type="button" data-testid="theatre-mini" title="Küçük pencereye al" onClick={() => void miniPlayers.show(current).then(() => leave())}>
-          Küçük pencere
+        <button type="button" data-testid="theatre-mini" title="Mini oynatıcıya al (oyundayken köşede kalsın)" onClick={() => void miniPlayers.show(current).then(() => leave())}>
+          Mini oynatıcı
         </button>
         <button type="button" data-testid="theatre-fullscreen" title="Tam ekran (F, çift tıklama)" onClick={fullscreen}>
           Tam ekran

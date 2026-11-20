@@ -142,6 +142,14 @@
   top: 6px;
   left: 6px;
   z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+
+.v12-tile-menu-button.on {
+  opacity: 1;
+  background: var(--trio-coral, #ee997f);
+  color: #1a1d24;
 }
 
 .v12-tile-menu-button {
@@ -268,7 +276,7 @@
 
 .v12-light-badge {
   top: 10px;
-  left: 50px;
+  left: 90px;
 }
 
 .v12-receive-line {

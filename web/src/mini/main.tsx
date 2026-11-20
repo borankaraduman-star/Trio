@@ -22,7 +22,7 @@ function start(): void {
   }
   root.render(
     <p className="mini-orphan" data-testid="mini-orphan">
-      Bu küçük pencere Trio penceresinden açılır. Kapatabilirsin.
+      Bu mini oynatıcı Trio penceresinden açılır. Kapatabilirsin.
     </p>,
   )
 }

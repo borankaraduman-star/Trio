@@ -135,12 +135,18 @@ export interface DesktopMiniState {
   visible: boolean
   clickThrough: boolean
   bounds: { x: number; y: number; width: number; height: number }
+  /** Sent once when the window is gone (CONTRACT-V12-MINI-DESKTOP §2). */
+  closed?: boolean
 }
 
 /** CONTRACT-V12-WATCHING §6: the desktop shell's side of a mini window (`trio-mini-<id>`). */
 export interface DesktopMiniBridge {
   supported: true
-  setOptions(id: string, options: { opacity?: number; clickThrough?: boolean; alwaysOnTop?: boolean; aspect?: number }): void
+  /** opacity 0.4–1; aspect 0.2–5 or 0 to unlock; contentProtection: left out of my own screen share. */
+  setOptions(
+    id: string,
+    options: { opacity?: number; clickThrough?: boolean; alwaysOnTop?: boolean; aspect?: number; contentProtection?: boolean },
+  ): void
   show(id: string): void
   hide(id: string): void
   close(id: string): void
@@ -151,6 +157,7 @@ export interface DesktopWindowState {
   focused: boolean
   minimized: boolean
   hiddenToTray: boolean
+  /** Never set by the shell (nothing tells it reliably): kept for the seam's shape. */
   fullscreenAppInFront?: boolean
 }
 

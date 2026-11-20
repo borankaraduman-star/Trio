@@ -9,7 +9,7 @@ import { useWatch, watchStore } from '../../watching/store'
 
 /**
  * CONTRACT-V12-WATCHING §8: everything about watching one share, two clicks
- * away: ⋯ on its tile, then the item. Küçük pencere, resim içinde resim,
+ * away: ⋯ on its tile, then the item. Mini oynatıcı, resim içinde resim,
  * Sinema modu, tam ekran, Hafif izleme, Sadece ses, Sabitle, the share's
  * sound, the receiving line, İzlemeyi bırak.
  */
@@ -76,6 +76,20 @@ export function TileMenu({
     <div className="v12-tile-menu" ref={box} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
       <button
         type="button"
+        className={`v12-tile-menu-button mini${mini ? ' on' : ''}`}
+        data-testid={`tile-mini-button-${userId}`}
+        aria-pressed={mini}
+        aria-label={mini ? `Mini oynatıcıyı kapat: ${name}` : `Mini oynatıcıda aç: ${name}`}
+        title={mini ? 'Mini oynatıcıyı kapat' : 'Mini oynatıcı: oyun oynarken köşede, her şeyin üstünde'}
+        onClick={() => {
+          if (mini) miniPlayers.close(userId)
+          else void miniPlayers.show(userId)
+        }}
+      >
+        ⧉
+      </button>
+      <button
+        type="button"
         className="v12-tile-menu-button"
         data-testid={`tile-menu-${userId}`}
         aria-haspopup="menu"
@@ -88,7 +102,7 @@ export function TileMenu({
       </button>
       {open && (
         <div className="v12-menu" role="menu" aria-label={`${name} · ekran`} data-testid={`tile-menu-panel-${userId}`}>
-          {item('tile-mini', mini ? 'Küçük pencereyi kapat' : 'Küçük pencerede aç', () => {
+          {item('tile-mini', mini ? 'Mini oynatıcıyı kapat' : 'Mini oynatıcıda aç', () => {
             if (mini) miniPlayers.close(userId)
             else void miniPlayers.show(userId)
           }, undefined, 'Oyun oynarken arkadaşının ekranı köşede kalsın')}

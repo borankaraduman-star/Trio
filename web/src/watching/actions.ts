@@ -44,7 +44,8 @@ export function runWatchAction(action: WatchHotkeyAction, voice: VoiceSnapshot):
       return
     }
     case 'clickThrough':
-      miniPlayers.toggleClickThrough()
+      // The desktop shell toggles it itself (CONTRACT-V12-MINI-DESKTOP §3) and
+      // tells the page only so it can show it: `onState` brings the result.
       return
     case 'muteShare':
       if (share !== null) toggleShareMute(share)
@@ -72,9 +73,9 @@ export const WATCH_ACTIONS: readonly WatchHotkeyAction[] = [
 ]
 
 export const WATCH_ACTION_LABELS: Record<WatchHotkeyAction, string> = {
-  toggleMini: 'Küçük pencereyi aç / kapat',
+  toggleMini: 'Mini oynatıcıyı aç / kapat',
   nextShare: 'Sıradaki paylaşım',
-  clickThrough: 'Tıklamalar oyuna geçsin (aç / kapat)',
+  clickThrough: 'Mini oynatıcı: tıklamalar oyuna geçsin (aç / kapat)',
   muteShare: 'Yayın sesini kapat / aç',
   shareVolumeUp: 'Yayın sesini artır',
   shareVolumeDown: 'Yayın sesini azalt',

@@ -85,7 +85,7 @@ export function MiniView({ controller, win }: { controller: MiniController; win:
           </span>
         )}
         <span className="mini-drag" aria-hidden="true" />
-        <button type="button" className="mini-button" data-testid="mini-close" title="Kapat (Esc)" aria-label="Küçük pencereyi kapat" onClick={() => controller.close()}>
+        <button type="button" className="mini-button" data-testid="mini-close" title="Kapat (Esc)" aria-label="Mini oynatıcıyı kapat" onClick={() => controller.close()}>
           ✕
         </button>
       </div>

@@ -35,7 +35,7 @@ export interface ShareChoice {
 }
 
 export interface WatchSettings {
-  /** "Trio arka plandayken paylaşılan ekranı küçük pencerede göster". */
+  /** "Trio arka plandayken paylaşılan ekranı mini oynatıcıda göster". */
   autoMini: boolean
   /** The mini window's opacity, 0.4–1 (desktop app). */
   miniOpacity: number
@@ -45,6 +45,8 @@ export interface WatchSettings {
   stats: boolean
   /** A system notification when somebody starts sharing while Trio is in the background. */
   notifyShare: boolean
+  /** "Kendi paylaşımımda gizle": the desktop mini window is left out of my own screen share. */
+  miniContentProtection: boolean
 }
 
 export interface WatchState extends WatchSettings {
@@ -79,6 +81,7 @@ export const DEFAULT_WATCH_SETTINGS: WatchSettings = {
   lightInGame: false,
   stats: false,
   notifyShare: false,
+  miniContentProtection: false,
 }
 
 const NO_CHOICE: ShareChoice = { light: false, audioOnly: false }
@@ -101,7 +104,7 @@ function load(): WatchState {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Record<string, unknown> | null
     if (!raw || typeof raw !== 'object') return state
     if (raw.stageMode === 'focus') state.stageMode = 'focus'
-    for (const key of ['autoMini', 'lightInGame', 'stats', 'notifyShare'] as const) {
+    for (const key of ['autoMini', 'lightInGame', 'stats', 'notifyShare', 'miniContentProtection'] as const) {
       if (typeof raw[key] === 'boolean') state[key] = raw[key] as boolean
     }
     if (typeof raw.miniOpacity === 'number' && raw.miniOpacity >= 0.4 && raw.miniOpacity <= 1) state.miniOpacity = raw.miniOpacity
@@ -194,6 +197,7 @@ class WatchStore {
           lightInGame: s.lightInGame,
           stats: s.stats,
           notifyShare: s.notifyShare,
+          miniContentProtection: s.miniContentProtection,
           desktopKeys: s.desktopKeys,
           pageKeys: s.pageKeys,
         }),
