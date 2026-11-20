@@ -198,21 +198,31 @@ export function markTipSeen(): void {
 }
 
 /**
- * Columns × rows for `count` screens side by side in a box of `width` ×
+ * Columns × rows for `count` screens side by side in a box at most `width` ×
  * `height` CSS px, each of aspect `aspect` (width / height of the pictures,
- * their average): the arrangement whose tiles are largest. 2 screens on a
- * wide stage are two columns; 2 portrait ones too; 2 ultrawide ones stack.
+ * their average), and the tile height that gives. The arrangement whose
+ * tiles are largest; one within 15 % of it that needs fewer rows is taken
+ * instead (two 16:9 screens on a wide stage sit side by side and leave the
+ * chat its room; two ultrawide ones stack; two portrait ones sit side by side).
  */
-export function sideBySide(count: number, width: number, height: number, aspect: number): { columns: number; rows: number } {
-  let best = { columns: 1, rows: Math.max(1, count), area: 0 }
+export function sideBySide(
+  count: number,
+  width: number,
+  height: number,
+  aspect: number,
+): { columns: number; rows: number; tileHeight: number } {
   const ratio = aspect > 0 ? aspect : 16 / 9
+  const gap = 10
+  const options: { columns: number; rows: number; area: number; tileHeight: number }[] = []
   for (let columns = 1; columns <= Math.max(1, count); columns += 1) {
     const rows = Math.ceil(count / columns)
-    const cellW = width / columns
-    const cellH = height / rows
-    const tileW = Math.min(cellW, cellH * ratio)
-    const area = tileW * (tileW / ratio)
-    if (area > best.area + 0.5) best = { columns, rows, area }
+    const cellW = (width - gap * (columns - 1)) / columns
+    const cellH = (height - gap * (rows - 1)) / rows
+    const tileW = Math.max(0, Math.min(cellW, cellH * ratio))
+    options.push({ columns, rows, area: tileW * (tileW / ratio), tileHeight: tileW / ratio })
   }
-  return { columns: best.columns, rows: best.rows }
+  const best = Math.max(...options.map((o) => o.area))
+  const near = options.filter((o) => o.area >= best * 0.85).sort((a, b) => a.rows - b.rows || b.area - a.area)
+  const chosen = near[0] ?? options[0]
+  return { columns: chosen.columns, rows: chosen.rows, tileHeight: Math.floor(chosen.tileHeight) }
 }

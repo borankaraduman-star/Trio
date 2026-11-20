@@ -406,17 +406,23 @@ function MultiStage({
   onActivate: (key: string) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
-  const [size, setSize] = useState({ width: 960, height: 420 })
+  const [width, setWidth] = useState(960)
+  const [viewport, setViewport] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight))
   const [aspects, setAspects] = useState<Record<string, number>>({})
   useEffect(() => {
     const element = box.current
     if (!element || typeof ResizeObserver !== 'function') return
     const observer = new ResizeObserver(() => {
       const rect = element.getBoundingClientRect()
-      if (rect.width > 0 && rect.height > 0) setSize({ width: rect.width, height: rect.height })
+      if (rect.width > 0) setWidth(rect.width)
     })
     observer.observe(element)
-    return () => observer.disconnect()
+    const onResize = () => setViewport(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', onResize)
+    }
   }, [mode])
   useEffect(() => {
     const element = box.current
@@ -456,7 +462,9 @@ function MultiStage({
 
   const known = main.map((tile) => aspects[tile.key]).filter((a): a is number => typeof a === 'number')
   const aspect = known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : 16 / 9
-  const grid = chosen ? { columns: 1, rows: 1 } : sideBySide(main.length, size.width, size.height, aspect)
+  // The screens may take up to ~62 % of the window's height, less the strip under them.
+  const room = Math.max(160, viewport * (phone ? 0.5 : 0.62) - (stripOrdered.length > 0 ? (phone ? 74 : 106) : 0) - 24)
+  const grid = chosen ? { columns: 1, rows: 1, tileHeight: Math.floor(room) } : sideBySide(main.length, width, room, aspect)
 
   const move = (step: number) => {
     const current = chosen?.userId ?? focusedShare(order, focusUser, pinned)
@@ -486,12 +494,17 @@ function MultiStage({
       data-count={tiles.length}
       data-shown={tiles.length}
       data-screens={screens.length}
+      tabIndex={-1}
       onKeyDown={onKeyDown}
     >
       <div
         ref={box}
         className="v12-main"
-        style={{ ['--v12-columns' as string]: String(grid.columns), ['--v12-rows' as string]: String(grid.rows) }}
+        style={{
+          ['--v12-columns' as string]: String(grid.columns),
+          ['--v12-rows' as string]: String(grid.rows),
+          ['--v12-height' as string]: `${grid.tileHeight * grid.rows + 10 * (grid.rows - 1)}px`,
+        }}
       >
         {main.map((tile) => (
           <div key={tile.key} className="v12-cell" data-tile-key={tile.key}>

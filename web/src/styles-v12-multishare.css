@@ -84,12 +84,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  height: min(64vh, 720px);
+  height: auto;
   max-height: none;
 }
 
 .v12-main {
-  flex: 1;
+  flex: none;
+  height: var(--v12-height, 360px);
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(var(--v12-columns, 2), minmax(0, 1fr));
@@ -125,6 +126,7 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: none;
   grid-auto-rows: calc((100vw - 24px) * 9 / 16);
+  height: auto;
   max-height: 52vh;
   overflow-y: auto;
 }
