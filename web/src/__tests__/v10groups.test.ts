@@ -88,7 +88,7 @@ describe('@ suggestions', () => {
   })
   it('filters fifteen names, prefix first, folded like mentions', () => {
     expect(filterMentionNames(people, 'm').map((p) => p.name)).toEqual(['Mehmet', 'Mert', 'Cem', 'Kerem'])
-    expect(filterMentionNames(people, 'isil').map((p) => p.name)).toEqual(['Işıl'])
+    expect(filterMentionNames(people, 'IŞI').map((p) => p.name)).toEqual(['Işıl'])
     expect(filterMentionNames(people, 'e').map((p) => p.name)[0]).toBe('Ece')
     expect(filterMentionNames(people, '')).toHaveLength(8)
   })

@@ -93,7 +93,7 @@ function folded(text: string): string {
 /**
  * A "@" suggestion list: names that start with the query first, then names
  * with a word that starts with it, then names that contain it; folded as the
- * mention matcher folds (Turkish İ/ı, case), so "@isil" offers "Işıl".
+ * mention matcher folds (Turkish İ/ı, case), so "@IŞI" and "@işı" offer "Işıl".
  */
 export function filterMentionNames<T extends { name: string }>(people: readonly T[], query: string, limit = 8): T[] {
   const q = folded(query)
