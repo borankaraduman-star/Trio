@@ -25,16 +25,9 @@
   color: var(--trio-online, #69b9aa);
 }
 
-/* One line in the member list (the game keeps its two-line clamp). */
-.member .listening-activity .game-activity-text {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.member .game-activity.listening-activity {
-  align-items: center;
+/* In the member list the song may take two lines like the game; the note sits on the first. */
+.member .game-activity.listening-activity svg {
+  margin-top: 3px;
 }
 
 /* The drawer (phone, and no member column): under the name and the room. */

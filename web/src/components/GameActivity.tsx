@@ -92,7 +92,7 @@ export function GameActivityLine({ userId, testid }: { userId: number; testid: s
   )
 }
 
-/** V11: "Spotify · Sanatçı — Şarkı" under a name. `skipTitle`: a V8 sharer's room line already says it. */
+/** V11: "Sanatçı — Şarkı" under a name (the app is in the tooltip). `skipTitle`: a V8 sharer's room line already says it. */
 export function ListeningLine({ userId, testid, skipTitle }: { userId: number; testid: string; skipTitle?: string | null }) {
   const entry = useActivityOf(userId)
   const listening = entry?.activity.listening
@@ -101,7 +101,7 @@ export function ListeningLine({ userId, testid, skipTitle }: { userId: number; t
   return (
     <span className="game-activity listening-activity" data-testid={testid} title={listeningTooltip(listening)}>
       <NoteIcon size={11} />
-      <span className="game-activity-text">{listeningLine(listening)}</span>
+      <span className="game-activity-text">{songText(listening)}</span>
     </span>
   )
 }
@@ -123,7 +123,7 @@ export function CompactActivity({ userId, testid }: { userId: number; testid: st
   const { activity } = entry
   const text = shortActivity(activity)
   if (!text) return null
-  const full = [activityLine(activity), activity.listening ? listeningLine(activity.listening) : ''].filter(Boolean).join('\n')
+  const full = [activityLine(activity), activity.listening ? `Dinliyor: ${listeningLine(activity.listening)}` : ''].filter(Boolean).join('\n')
   return (
     <span className="compact-activity" data-testid={testid} title={full} data-kind={activity.game !== null ? 'game' : 'music'}>
       {activity.game !== null ? <PadIcon size={11} /> : <NoteIcon size={10} />}

@@ -289,7 +289,7 @@ describe('ActivityForwarder with listening', () => {
     expect(t.sent.at(-1)).toEqual({ type: 'activity.set', game: 'Dota 2', since: T0, listening: SONG })
   })
 
-  it('a new song waits for the 5 s gap; stopping goes after the 3 s frame gap only', () => {
+  it('a new song waits for the 5 s gap; stopping goes at once', () => {
     const t = setup()
     t.forwarder.start()
     t.forwarder.onReady(['game', 'listening'])
@@ -309,8 +309,8 @@ describe('ActivityForwarder with listening', () => {
     t.advance(LISTEN_GAP_MS)
     expect(t.sent).toHaveLength(3)
     expect(t.sent.at(-1)).toEqual({ type: 'activity.set', listening: { ...SONG, title: 'Dört' } })
-    // Stopping (the setting off): no listening gap.
-    t.advance(MIN_GAP_MS)
+    // Stopping (the setting off): at once, past both gaps.
+    t.advance(10)
     t.set(null)
     expect(t.sent.at(-1)).toEqual({ type: 'activity.clear' })
   })

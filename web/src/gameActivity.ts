@@ -301,6 +301,8 @@ export class ActivityForwarder {
   private sentKey: string | null = null
   private sentAt = -Infinity
   private sentListening: string | null = null
+  /** The game part of the last frame sent (to tell "only the song stopped"). */
+  private sentGame = 'null'
   private listeningSentAt = -Infinity
   private timer: unknown = null
   private unbridge: (() => void) | null = null
@@ -422,7 +424,14 @@ export class ActivityForwarder {
     // Nothing known yet from a part that may still speak: do not clear on its behalf.
     if (want === null && !this.resolved()) return
     const listening = frame && 'listening' in frame && frame.listening ? JSON.stringify(frame.listening) : null
-    let wait = this.sentAt + MIN_GAP_MS - now
+    // Taking the song away (stopped, or the setting turned off) is the private
+    // direction: it goes at once, past the frame gap too, when it is the only change.
+    const onlyStops =
+      listening === null &&
+      this.sentListening !== null &&
+      this.sentListening !== 'unknown' &&
+      JSON.stringify(this.game) === this.sentGame
+    let wait = onlyStops ? 0 : this.sentAt + MIN_GAP_MS - now
     // A new song waits for the listening gap; stopping does not.
     if (listening !== null && listening !== this.sentListening) {
       wait = Math.max(wait, this.listeningSentAt + LISTEN_GAP_MS - now)
@@ -434,6 +443,7 @@ export class ActivityForwarder {
     if (!this.send(frame ?? { type: 'activity.clear' })) return // not connected: onReady sends it
     this.sentKey = want
     this.sentAt = now
+    this.sentGame = JSON.stringify(this.game)
     if (listening !== this.sentListening) {
       this.sentListening = listening
       if (listening !== null) this.listeningSentAt = now
