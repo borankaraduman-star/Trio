@@ -391,3 +391,14 @@ def test_a_full_room_cannot_ring(make_trio):
         assert frame["request"] == "voice.ring"
         assert frame["limit"] == 2
         assert [f for f in drain_until_pong(c) if f["type"] == "voice.ring"] == []
+
+
+def test_fifteen_joins_from_one_address_are_not_refused(trio):
+    """A group setting up on one network: successes give their attempt back."""
+    here = {"X-Forwarded-For": "203.0.113.50"}
+    for name in NAMES:
+        assert trio.join(name, headers=here).status_code == 201
+    # Wrong codes from the same address are still limited at ten.
+    for _ in range(10):
+        assert trio.join("x", code="wrong", headers=here).status_code == 403
+    assert trio.join("x", code="wrong", headers=here).status_code == 429

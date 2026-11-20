@@ -88,6 +88,12 @@ class SlidingWindow:
             self._events.popitem(last=False)
         return True
 
+    def refund(self, key: str) -> None:
+        """Take back the newest event of ``key`` (it turned out not to count)."""
+        events = self._events.get(key)
+        if events:
+            events.pop()
+
     def retry_after(self, key: str) -> int:
         """Seconds until ``key``'s oldest live event leaves the window (at least 1)."""
         now = self._now()
@@ -175,6 +181,13 @@ class JoinGuard:
             return max(1, math.ceil(wait))
         self._last_trickle = now
         return None
+
+    def succeeded(self, address: str) -> None:
+        """CONTRACT-V10-GROUPS §5: an account was made or a device linked. Its
+        attempt is given back, so a group setting up together on one network
+        (an office, a dorm: one public address) is not stopped after ten; a
+        guesser never succeeds, so nothing changes for brute force."""
+        self.attempts.refund(address)
 
     def failed(self, address: str) -> None:
         """The code that was checked was wrong."""
