@@ -35,7 +35,7 @@ def test_the_server_refuses_to_start_without_an_invite_code():
 def test_settings_defaults_and_parsing():
     settings = Settings.from_env({"TRIO_INVITE_CODE": "x"})
     assert settings.db_path == "./trio.db"
-    assert settings.max_users == 5  # v3: lowered from 10 (CONTRACT-V3 §1)
+    assert settings.max_users == 15  # V10: a small group (CONTRACT-V10-GROUPS §1)
     assert settings.static_dir is None
     assert settings.stun_urls == ("stun:stun.l.google.com:19302",)
     settings = Settings.from_env(

@@ -400,6 +400,7 @@ def register_owner_routes(
                 "max_upload_bytes": settings.max_upload_bytes,
                 "max_connections_per_user": MAX_CONNECTIONS_PER_USER,
                 "trusted_proxy_hops": settings.trusted_proxy_hops,
+                "voice_room_max": settings.voice_room_max,
                 **limits,
             },
             "backup": await backups.status(),

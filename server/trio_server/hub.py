@@ -46,6 +46,18 @@ RING_WINDOW_SECONDS = 30.0
 # CONTRACT-V7-READING: ``channel.read`` frames per user per window.
 READ_LIMIT = 120
 READ_WINDOW_SECONDS = 60.0
+# CONTRACT-V10-GROUPS §5: ``typing`` frames per user per window. The client
+# sends one every 3 s while typing; past this they are dropped silently (a
+# typing line is advisory), so one tab cannot make the hub fan out a frame to
+# every socket of every member as fast as it can type.
+TYPING_LIMIT = 10
+TYPING_WINDOW_SECONDS = 10.0
+# CONTRACT-V10-GROUPS §2: the default people per voice room (TRIO_VOICE_ROOM_MAX).
+DEFAULT_VOICE_ROOM_MAX = 8
+# CONTRACT-V10-GROUPS §2: right after a start (a deploy) the room lists are
+# empty and every call comes back with ``resume: true``; such resumes are not
+# refused for a full room for this long, so a restart never drops a member.
+RESTART_RESUME_SECONDS = 120.0
 
 
 @dataclass(eq=False)
@@ -141,7 +153,11 @@ class VoiceMember:
 class Hub:
     def __init__(self, now: Callable[[], float] = time.time) -> None:
         self.now = now
+        self.started_at = now()
         self.grace_seconds = VOICE_GRACE_SECONDS
+        # CONTRACT-V10-GROUPS §2: people per voice room (set from the settings).
+        self.voice_room_max = DEFAULT_VOICE_ROOM_MAX
+        self.typings = SlidingWindow(TYPING_LIMIT, TYPING_WINDOW_SECONDS, now)
         # user id -> the task that ends their grace (see voice_disconnected).
         self._grace_tasks: dict[int, asyncio.Task[None]] = {}
         self.rings = SlidingWindow(RING_LIMIT, RING_WINDOW_SECONDS, now)
@@ -219,6 +235,8 @@ class Hub:
                 if channel["kind"] == "voice"
             },
             "activity": self.activity.snapshot(),
+            # CONTRACT-V10-GROUPS §2.
+            "voice_room_max": self.voice_room_max,
         }
 
     def connect(self, conn: Connection) -> None:
@@ -462,6 +480,22 @@ class Hub:
         )
         if self.notify is not None:
             self.notify.voice_joined(channel_id, user_id, opened=opened, resumed=resume)
+
+    def room_full(self, user_id: int, channel_id: int, *, resume: bool) -> bool:
+        """CONTRACT-V10-GROUPS §2: would this ``voice.join`` exceed the room's cap?
+
+        The user's own place never counts against it (a second tab, a resume
+        that takes the membership over in its grace or by its ``session``),
+        and no resume is refused in the
+        first ``RESTART_RESUME_SECONDS`` after a start: the server forgot the
+        rooms and everybody is coming back.
+        """
+        members = self.voice.get(channel_id, {})
+        if user_id in members:
+            return False
+        if resume and self.now() - self.started_at < RESTART_RESUME_SECONDS:
+            return False
+        return len(members) >= self.voice_room_max
 
     def voice_ring(self, user_id: int, channel_id: int) -> None:
         """``voice.ring`` to every online user not listed in ``channel_id``."""

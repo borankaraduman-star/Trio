@@ -281,6 +281,8 @@ class Session:
 
     async def on_typing(self, frame: dict[str, Any]) -> None:
         channel_id = self._text_channel(frame)
+        if not self.hub.typings.allow(str(self.user["id"])):
+            return  # CONTRACT-V10-GROUPS §5: dropped silently, a typing line is advisory
         self.hub.broadcast(
             {"type": "typing", "channel_id": channel_id, "user_id": self.user["id"]},
             exclude_user=self.user["id"],
@@ -303,6 +305,15 @@ class Session:
             isinstance(session, str) and 1 <= len(session) <= VOICE_SESSION_MAX
         ):
             raise FrameError("BAD_REQUEST", "'session' must be a short string")
+        if self.hub.room_full(self.user["id"], channel_id, resume=resume):
+            limit = self.hub.voice_room_max
+            raise FrameError(
+                "ROOM_FULL",
+                f"the voice room is full ({limit} people)",
+                request="voice.join",
+                channel_id=channel_id,
+                limit=limit,
+            )
         self.hub.voice_join(
             self.conn,
             channel_id,

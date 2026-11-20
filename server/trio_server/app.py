@@ -159,6 +159,7 @@ def create_app(
     db = Database(settings.db_path)
     # CONTRACT-V6-OPS: the hub that marks the owner in their ``ready.user``.
     hub: Hub = OwnerAwareHub(now, settings.owner)
+    hub.voice_room_max = settings.voice_room_max
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,
