@@ -48,7 +48,11 @@ export function CallBar({
     <div className="v7-call-bar" data-testid="call-bar" role="region" aria-label="Görüşme">
       <button type="button" className="v7-call-room" data-testid="call-bar-room" onClick={onOpenRoom} title="Odadakileri göster">
         <strong className={connected ? 'ok' : 'wait'}>{connected ? roomName : 'Bağlanıyor…'}</strong>
-        <span data-testid="call-bar-talking" data-speaking={voice.speaking.length > 0}>
+        <span
+          data-testid="call-bar-talking"
+          data-speaking={voice.speaking.length > 0}
+          title={connected ? talkingLine(voice.speaking, me, participantCount, nameOf) : undefined}
+        >
           {connected ? talkingLine(voice.speaking, me, participantCount, nameOf) : roomName}
         </span>
       </button>

@@ -51,7 +51,8 @@ describe('talking line with many speakers', () => {
     expect(namesWithMore(['A', 'B', 'C'])).toBe('A, B, C')
     expect(namesWithMore(['A', 'B', 'C', 'D', 'E'])).toBe('A, B +3')
     const nameOf = (id: number) => NAMES[id - 1]
-    expect(talkingLine([2, 3, 4, 5, 1], 1, 8, nameOf)).toBe('Konuşuyor: Mehmet, Zeynep +3')
+    expect(talkingLine([2, 3, 4, 5, 1], 1, 8, nameOf)).toBe('5 kişi konuşuyor: Mehmet, Zeynep +3')
+    expect(talkingLine([2, 3, 1], 1, 8, nameOf)).toBe('Konuşuyor: Mehmet, Zeynep, Sen')
     expect(talkingLine([2, 1], 1, 8, nameOf)).toBe('Konuşuyor: Mehmet, Sen')
   })
 })

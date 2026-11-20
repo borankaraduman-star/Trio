@@ -67,8 +67,10 @@ export function saveStageCollapsed(collapsed: boolean, storage: Pick<Storage, 's
 /** "Konuşuyor: Ayşe, Sen" / "3 kişi" — the call bar's second line. */
 export function talkingLine(speakingIds: readonly number[], me: number, participantCount: number, nameOf: (id: number) => string): string {
   const names = speakingIds.map((id) => (id === me ? 'Sen' : nameOf(id)))
-  // V10: a crowded room names two and counts the rest ("Ayşe, Sen +3").
-  if (names.length > 0) return `Konuşuyor: ${namesWithMore(names)}`
+  // V10: a crowded room leads with the count (the line is short on a phone) and
+  // names two ("4 kişi konuşuyor: Ayşe, Sen +2"). Three or fewer read as before.
+  if (names.length > 3) return `${names.length} kişi konuşuyor: ${namesWithMore(names)}`
+  if (names.length > 0) return `Konuşuyor: ${names.join(', ')}`
   return participantCount <= 1 ? 'Odada yalnızsın' : `${participantCount} kişi`
 }
 

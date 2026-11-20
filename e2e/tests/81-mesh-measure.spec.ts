@@ -55,6 +55,15 @@ async function cameraOut(person: Person): Promise<{ perViewerBps: number[]; heig
   })
 }
 
+/** The camera track's own size (what the encoder scales down from). */
+async function cameraSource(person: Person): Promise<{ width: number; height: number }> {
+  return person.page.evaluate(() => {
+    const tracks = (window as unknown as { __trioCameraTracks: MediaStreamTrack[] }).__trioCameraTracks.filter((t) => t.readyState === 'live')
+    const settings = tracks[tracks.length - 1].getSettings()
+    return { width: settings.width ?? 0, height: settings.height ?? 0 }
+  })
+}
+
 async function cameraOn(person: Person): Promise<void> {
   await person.page.getByTestId('btn-camera').click()
   await expect(person.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'true')
@@ -74,9 +83,14 @@ test('a mesh of eight: audio for everybody, and the camera sent smaller as the r
   await cameraOn(first)
   await expect.poll(async () => (await cameraOut(first)).perViewerBps.every((bps) => bps > 50_000), { timeout: 30_000 }).toBe(true)
   // The bandwidth estimate ramps up over the first seconds: read after it settles.
-  await first.page.waitForTimeout(8000)
+  await first.page.waitForTimeout(15_000)
   const small = await cameraOut(first)
-  console.log(`[81] camera in a room of 4: per viewer ${small.perViewerBps.map((b) => round(b / 1000)).join('/')} kbit/s, height ${small.heights.join('/')}`)
+  const source = await cameraSource(first)
+  const total = (out: { perViewerBps: number[] }) => round(out.perViewerBps.reduce((a, b) => a + b, 0) / 1000)
+  console.log(
+    `[81] camera source ${source.width}x${source.height}; in a room of 4: per viewer ${small.perViewerBps.map((b) => round(b / 1000)).join('/')} kbit/s ` +
+      `(total ${total(small)}), height ${small.heights.join('/')}`,
+  )
 
   // Four more join at once: a room of eight, 28 connections.
   const started = Date.now()
@@ -88,10 +102,11 @@ test('a mesh of eight: audio for everybody, and the camera sent smaller as the r
 
   await first.page.waitForTimeout(8000)
   const big = await cameraOut(first)
-  console.log(`[81] camera in a room of 8: per viewer ${big.perViewerBps.map((b) => round(b / 1000)).join('/')} kbit/s, height ${big.heights.join('/')}`)
+  console.log(`[81] camera in a room of 8: per viewer ${big.perViewerBps.map((b) => round(b / 1000)).join('/')} kbit/s (total ${total(big)}), height ${big.heights.join('/')}`)
   expect(big.perViewerBps).toHaveLength(7)
   for (const bps of big.perViewerBps) expect(bps).toBeLessThan(350_000 * 1.25)
-  for (const height of big.heights) expect(height).toBeLessThanOrEqual(Math.ceil(Math.max(...small.heights) / 2) + 2)
+  // Half the source's size at most (scaleResolutionDownBy 2; the encoder may go lower still under load).
+  for (const height of big.heights) expect(height).toBeLessThanOrEqual(Math.ceil(source.height / 2) + 2)
   // Never a renegotiation: the encoding is a sender parameter (one m-line per kind, as before).
   const params = await first.page.evaluate(() =>
     (window as unknown as { __trioPcs: RTCPeerConnection[] }).__trioPcs

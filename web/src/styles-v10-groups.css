@@ -130,16 +130,23 @@
   font-size: 12px;
 }
 
-/* Every tile at once: the grid scrolls inside the stage's share of the screen. */
+/* Every tile at once: rows keep 16:9 and the grid scrolls inside the stage's share of the screen. */
 .call-stage.grid.all {
-  height: min(58vh, calc((100vw - var(--sidebar-width) - var(--members-width)) / var(--stage-columns, 1) * 9 / 16 * var(--stage-rows, 1) + 16px));
-  grid-auto-rows: minmax(96px, 1fr);
+  height: auto;
+  max-height: 58vh;
+  grid-auto-rows: calc((100vw - var(--sidebar-width) - var(--members-width) - 16px) / var(--stage-columns, 1) * 9 / 16);
   overflow-y: auto;
+}
+
+@media (max-width: 960px) {
+  .call-stage.grid.all {
+    grid-auto-rows: calc((100vw - var(--sidebar-width) - 16px) / var(--stage-columns, 1) * 9 / 16);
+  }
 }
 
 @media (max-width: 680px) {
   .call-stage.grid.all {
-    height: 50vh;
+    max-height: 50vh;
     grid-auto-rows: calc((100vw - 24px) / var(--stage-columns, 1) * 9 / 16);
   }
 }

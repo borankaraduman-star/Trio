@@ -281,7 +281,8 @@ export function CallStage({
   const more = folded.length > 0
   const less = showAll && tiles.length > limit
   const cells = shown.length + (more || less ? 1 : 0)
-  const columns = gridColumns(cells)
+  // A phone showing every tile keeps two columns and scrolls (four were too small to read).
+  const columns = phone && less ? 2 : gridColumns(cells)
   const rows = Math.ceil(cells / columns)
   return (
     <>
