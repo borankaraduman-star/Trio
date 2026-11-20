@@ -209,3 +209,17 @@ cd web && npm install && npm run dev      # http://localhost:5173, /api ve /ws :
 - Dosya silme yok; kullanıcı kotası ömür boyu toplamdır.
 - Mesajlar ve dosyalar sunucuda şifresiz durur. Dosya bağlantıları gizli kimlik içerir; bağlantıyı bilen herkes dosyayı açabilir, bu yüzden bağlantıları dışarı paylaşma. Ses, kamera ve ekran tarayıcılar arasında uçtan uca şifrelidir.
 - iOS Safari'de ekran paylaşımı yok (tarayıcı desteklemiyor); izlemek mümkün.
+
+## Lisans
+
+Trio [MIT lisansı](LICENSE) ile açık kaynaktır. Kullanılan üçüncü taraf yazılımlar ve lisansları [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) dosyasında (masaüstü kurulumunda da `resources/` içinde); dosyayı `scripts/third-party-notices.py` üretir.
+
+### Code signing policy
+
+Windows releases are currently **not signed**. The project intends to sign them through the SignPath Foundation; once that is in place, signed releases carry:
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- **What is signed:** only Trio's own Windows files, built from this repository by the [release workflow](.github/workflows/release.yml) on GitHub-hosted runners: `Trio.exe`, its uninstaller and the installer `Trio-<version>-win-x64.exe`. Third-party files inside the installer (Electron's runtime, native modules such as `uiohook-napi`, NSIS's `elevate.exe`) are shipped as their authors publish them and are not signed with this certificate. Every signing request is approved by hand.
+- **Team roles:** committers and reviewers: [borankaraduman-star](https://github.com/borankaraduman-star) (the maintainer; changes are often drafted with AI coding assistants and reviewed and merged by the maintainer). Approvers (signing requests): [borankaraduman-star](https://github.com/borankaraduman-star). Everyone in these roles must use multi-factor authentication on GitHub and SignPath.
+- **Privacy:** Trio has no analytics and no server of its own. The desktop app connects only to the Trio server address you enter (a server you or your friends run), and, to update itself, checks GitHub Releases of this repository for a newer version (45 seconds after start, then every 4 hours) and downloads it from there; automatic download can be turned off in the app's settings. Voice and video may be relayed through the TURN service that server configures. What the server stores is described above in this README.
