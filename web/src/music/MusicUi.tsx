@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { screenShareSupported } from '../lib/phone'
 import { useSinkId } from '../useSinkId'
+import { ducker } from '../audio/ducking'
 import type { RemoteMedia, VoiceEngine, VoiceSnapshot } from '../voice'
 import { desktopMusicBridge, type MusicSupport } from './capture'
 import { musicElementState, musicOf, musicPrefsStore, nowPlayingTitle } from './musicPrefs'
@@ -275,9 +276,13 @@ export function RemoteMusic({ media, deafened }: { media: RemoteMedia; deafened:
   useEffect(() => {
     const element = ref.current
     if (!element) return
-    element.volume = volume
     element.muted = muted
     element.dataset.volume = String(volume)
+    // V12: times the ducker's factor while somebody speaks (when "Müziği de kıs" is on).
+    return ducker.add('music', (duck) => {
+      element.volume = volume * duck
+      element.dataset.duck = String(Math.round(duck * 1000) / 1000)
+    })
   }, [volume, muted])
 
   return <audio ref={ref} autoPlay data-testid={`remote-music-${media.userId}`} />

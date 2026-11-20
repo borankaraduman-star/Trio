@@ -15,6 +15,7 @@ import { StatusSettings } from './GameActivity'
 import { ShowChannelSetting } from './ChannelViewers'
 import { NotificationsSection } from './notify/NotificationsSection'
 import { InputSensitivitySection, ShortcutsSection } from './voice/VoiceEveningSettings'
+import { DuckingSection } from './voice/DuckingSettings'
 import { DesktopVersionFooter } from './voice/DesktopVersion'
 import { StorageSection } from './owner/StorageSection'
 import { OwnerSection } from './owner/OwnerSection'
@@ -318,6 +319,7 @@ export function SettingsDialog({
           )}
         </section>
         <InputSensitivitySection />
+        <DuckingSection />
         <ShortcutsSection />
         <SoundsSection
           cuesEnabled={settings.cuesEnabled}
