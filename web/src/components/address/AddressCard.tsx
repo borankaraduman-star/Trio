@@ -177,7 +177,7 @@ export function AddressCard() {
           {view.bulk.live > 0 ? ` Şu an ${view.bulk.live} kod kullanılmayı bekliyor.` : ''}
         </p>
         <div className="ops-actions">
-          <button type="button" className="secondary" data-testid="owner-bulk-make" onClick={() => setAsking(true)}>
+          <button type="button" className="ghost" data-testid="owner-bulk-make" onClick={() => setAsking(true)}>
             Herkese giriş kodu üret
           </button>
           {view.bulk.live > 0 && (
