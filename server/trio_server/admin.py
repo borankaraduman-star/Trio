@@ -184,7 +184,7 @@ def do_new_link_code(
         user = find_user(conn, who)
         conn.execute("DELETE FROM link_codes WHERE expires_ts <= ?", (now,))
         (live,) = conn.execute(
-            "SELECT count(*) FROM link_codes WHERE user_id = ?", (user["id"],)
+            "SELECT count(*) FROM link_codes WHERE user_id = ? AND bulk = 0", (user["id"],)
         ).fetchone()
         if live >= linkcodes.MAX_LIVE_PER_USER:
             raise TooManyCodesError(

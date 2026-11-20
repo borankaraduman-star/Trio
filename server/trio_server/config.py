@@ -21,7 +21,9 @@ _TEST_HTTP_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
 RECOVERY_CODE_MIN = 24
 
 
-def normalize_public_url(raw: str, *, allow_test_http: bool = False) -> str:
+def normalize_public_url(
+    raw: str, *, allow_test_http: bool = False, name: str = "TRIO_PUBLIC_URL"
+) -> str:
     """CONTRACT-V11-ADDRESS §1: a plain origin, lower-case host, no trailing slash."""
     value = raw.strip()
     if value.endswith("/"):
@@ -32,9 +34,7 @@ def normalize_public_url(raw: str, *, allow_test_http: bool = False) -> str:
         return candidate
     if allow_test_http and _TEST_HTTP_ORIGIN.match(candidate):
         return candidate
-    raise ConfigError(
-        "TRIO_PUBLIC_URL must be a plain https origin such as https://trio.example.org"
-    )
+    raise ConfigError(f"{name} must be a plain https origin such as https://trio.example.org")
 
 
 class ConfigError(RuntimeError):
@@ -82,6 +82,9 @@ class Settings:
     # CONTRACT-V11-ADDRESS: the canonical address (a plain origin) and the
     # owner's recovery code; both None = off.
     public_url: str | None = None
+    # The address the server will move to soon (the rename path): clients are
+    # told beforehand, and a move code is redeemable there too.
+    next_url: str | None = None
     recovery_code: str | None = None
     # TESTS ONLY: lets public_url be http://127.0.0.1|localhost:<port>.
     test_http_public_url: bool = False
@@ -115,6 +118,10 @@ class Settings:
             self.public_url, allow_test_http=self.test_http_public_url
         ):
             raise ConfigError("TRIO_PUBLIC_URL must be given normalised")
+        if self.next_url is not None and self.next_url != normalize_public_url(
+            self.next_url, allow_test_http=self.test_http_public_url, name="TRIO_NEXT_URL"
+        ):
+            raise ConfigError("TRIO_NEXT_URL must be given normalised")
         if self.recovery_code is not None and (
             len(self.recovery_code) < RECOVERY_CODE_MIN
             or any(ch.isspace() for ch in self.recovery_code)
@@ -151,7 +158,8 @@ class Settings:
             f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r}, "
             f"voice_room_max={self.voice_room_max}, "
             f"test_push_service={self.test_push_service!r}, "
-            f"public_url={self.public_url!r}, recovery_code_set={self.recovery_code is not None})"
+            f"public_url={self.public_url!r}, next_url={self.next_url!r}, "
+            f"recovery_code_set={self.recovery_code is not None})"
         )
 
     @classmethod
@@ -190,6 +198,12 @@ class Settings:
             if raw_public is None
             else normalize_public_url(raw_public, allow_test_http=test_http)
         )
+        raw_next = optional("TRIO_NEXT_URL")
+        next_url = (
+            None
+            if raw_next is None
+            else normalize_public_url(raw_next, allow_test_http=test_http, name="TRIO_NEXT_URL")
+        )
         recovery = optional("TRIO_RECOVERY_CODE")
 
         return cls(
@@ -212,6 +226,7 @@ class Settings:
             owner=optional("TRIO_OWNER"),
             voice_room_max=integer("TRIO_VOICE_ROOM_MAX", 8),
             public_url=public_url,
+            next_url=next_url,
             recovery_code=recovery,
             test_http_public_url=test_http,
         )

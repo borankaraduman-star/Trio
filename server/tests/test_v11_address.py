@@ -539,3 +539,122 @@ def test_backup_snapshot_has_no_move_codes(make_trio):
         snap = sqlite3.connect(tmp.name)
         assert snap.execute("SELECT count(*) FROM move_codes").fetchone() == (0,)
         snap.close()
+
+
+# -- §8: the rename path: TRIO_NEXT_URL and 7-day move codes ---------------------------
+
+NEXT = "http://localhost:9100"
+NEXT_HOST = {"Host": "localhost:9100"}
+
+
+def test_next_url_validation():
+    base = {"TRIO_INVITE_CODE": "x"}
+    assert (
+        Settings.from_env({**base, "TRIO_NEXT_URL": "https://triosohbet.up.railway.app/"}).next_url
+        == "https://triosohbet.up.railway.app"
+    )
+    for bad in ("http://triosohbet.up.railway.app", "https://a.example/x", NEXT):
+        with pytest.raises(ConfigError, match="TRIO_NEXT_URL"):
+            Settings.from_env({**base, "TRIO_NEXT_URL": bad})
+
+
+def test_next_code_survives_a_rename(make_trio):
+    trio = make_trio(next_url=NEXT, test_http_public_url=True)
+    assert trio.client.get("/api/health").json()["next_url"] == NEXT
+    ali = trio.user("Ali")
+    made = trio.client.post(
+        "/api/move/next", json={"prefs": {"trio.lastName": "Ali"}}, headers=ali["auth"]
+    )
+    assert made.status_code == 201, made.text
+    body = made.json()
+    assert body["url"] == f"{NEXT}/#tasi={body['code']}" and body["next_url"] == NEXT
+    assert trio.client.get("/api/owner/address", headers=ali["auth"]).json()["prepared"] == {
+        "sessions": 1,
+        "total": 1,
+    }
+    # a day later (the rename), on the new host: still valid, redeemed there
+    trio.clock.value += 24 * 3600
+    token = trio.client.post(
+        "/api/join", json={"link_code": body["code"]}, headers=NEXT_HOST
+    ).json()
+    assert token["move"]["prefs"] == {"trio.lastName": "Ali"}
+    auth = {"Authorization": f"Bearer {token['token']}"}
+    assert trio.client.post("/api/move/confirm", headers={**auth, **NEXT_HOST}).json() == {
+        "ended": 1
+    }
+
+
+def test_next_code_lifetime_and_refusals(make_trio):
+    trio = make_trio(next_url=NEXT, test_http_public_url=True)
+    ali = trio.user("Ali")
+    on_new = trio.client.post("/api/move/next", json={}, headers={**ali["auth"], **NEXT_HOST})
+    assert on_new.json()["error"]["code"] == "ALREADY_HERE"
+    code = trio.client.post("/api/move/next", json={}, headers=ali["auth"]).json()["code"]
+    # a 10-minute move code does not replace it (one of each kind)
+    assert make_trio().client.post("/api/move/next", json={}).status_code == 401
+    trio.clock.value += 7 * 24 * 3600 + 1
+    assert (
+        trio.client.post("/api/join", json={"link_code": code}, headers=NEXT_HOST).status_code
+        == 403
+    )
+    plain = make_trio()
+    bob = plain.user("Bob")
+    assert (
+        plain.client.post("/api/move/next", json={}, headers=bob["auth"]).json()["error"]["code"]
+        == "NO_NEXT_URL"
+    )
+
+
+# -- §9: a code for everybody --------------------------------------------------------------
+
+
+def _bulk(trio, owner, code=INVITE, address="203.0.113.150"):
+    return trio.client.post(
+        "/api/owner/bulk-codes",
+        json={"confirm_code": code},
+        headers={**owner["auth"], "X-Forwarded-For": address},
+    )
+
+
+def test_bulk_codes_lifecycle(make_trio):
+    trio = make_trio(next_url=NEXT, test_http_public_url=True)
+    ali = trio.user("Ali")
+    berk = trio.user("Berk")
+    cem = trio.user("Cem")
+    assert _bulk(trio, berk).status_code == 403  # not the owner
+    assert _bulk(trio, ali, "wrong").json()["error"]["code"] == "INVALID_CONFIRM_CODE"
+    made = _bulk(trio, ali)
+    assert made.status_code == 201
+    codes = made.json()["codes"]
+    assert [c["user"]["name"] for c in codes] == ["Berk", "Cem"]
+    assert codes[0]["url"] == f"http://testserver/#cihaz={codes[0]['code']}"
+    # they do not eat the person's own five link codes
+    for _ in range(5):
+        assert trio.client.post("/api/link-codes", headers=berk["auth"]).status_code == 201
+    status = trio.client.get("/api/owner/bulk-codes", headers=ali["auth"]).json()
+    assert status["live"] == 2
+    # 23 hours later: still good; single use
+    trio.clock.value += 23 * 3600
+    first = trio.client.post("/api/join", json={"link_code": codes[0]["code"]})
+    assert first.status_code == 200 and first.json()["user"]["id"] == berk["id"]
+    assert trio.client.post("/api/join", json={"link_code": codes[0]["code"]}).status_code == 403
+    # cancel all outstanding
+    assert trio.client.delete("/api/owner/bulk-codes", headers=ali["auth"]).json() == {
+        "cancelled": 1
+    }
+    assert trio.client.post("/api/join", json={"link_code": codes[1]["code"]}).status_code == 403
+    assert cem  # Cem's code was cancelled
+    # again, and past 24 hours
+    again = _bulk(trio, ali, address="203.0.113.151").json()["codes"]
+    second = _bulk(trio, ali, address="203.0.113.152").json()["codes"]
+    assert trio.client.post("/api/join", json={"link_code": again[0]["code"]}).status_code == 403
+    trio.clock.value += 24 * 3600 + 1
+    assert trio.client.post("/api/join", json={"link_code": second[0]["code"]}).status_code == 403
+
+
+def test_bulk_codes_use_the_public_url(make_trio):
+    trio = _app(make_trio)
+    ali = trio.user("Ali")
+    trio.user("Berk")
+    codes = _bulk(trio, ali).json()["codes"]
+    assert codes[0]["url"].startswith(f"{CANON}/#cihaz=")

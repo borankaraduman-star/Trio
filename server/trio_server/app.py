@@ -337,6 +337,8 @@ def create_app(
         # CONTRACT-V11-ADDRESS §2: only when set (unset, the answer is v10's).
         if settings.public_url is not None:
             body["public_url"] = settings.public_url
+        if settings.next_url is not None:
+            body["next_url"] = settings.next_url
         return body
 
     @app.post("/api/join", status_code=201)

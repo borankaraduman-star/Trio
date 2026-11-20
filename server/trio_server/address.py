@@ -30,6 +30,10 @@ from trio_server.ratelimit import JoinGuard, client_address
 logger = logging.getLogger("trio")
 
 MOVE_TTL_SECONDS = 10 * 60
+# §9: the owner's "a code for everybody" after the old address died.
+BULK_TTL_SECONDS = 24 * 3600
+# §8: saved before a rename, used after it; a week covers "wait a day" with room.
+NEXT_TTL_SECONDS = 7 * 24 * 3600
 MOVE_BODY_MAX_BYTES = 160 * 1024
 PREF_VALUE_MAX = 32 * 1024
 PREFS_TOTAL_MAX = 64 * 1024
@@ -133,6 +137,7 @@ def register_address_routes(
     http_transport: httpx.AsyncBaseTransport | None,
 ) -> None:
     public_url = settings.public_url
+    next_url = settings.next_url
     state: dict[str, Any] = {"recovery_uses": 0, "reachable": None, "reachable_ts": None}
     origins = SessionOrigins(db)
     app.state.session_origins = origins
@@ -168,7 +173,8 @@ def register_address_routes(
         )
 
     def require_canonical(request: Request) -> None:
-        if public_url is None or not same_origin(page_origin(request), public_url):
+        here = page_origin(request)
+        if not any(same_origin(here, target) for target in (public_url, next_url)):
             raise ApiError(409, "NOT_CANONICAL", "use the server's canonical address")
 
     async def find_move(code_hash: str) -> dict[str, Any] | None:
@@ -211,16 +217,15 @@ def register_address_routes(
 
     # -- the old origin ------------------------------------------------------
 
-    @app.post("/api/move", status_code=201)
-    async def create_move(request: Request, user: User) -> Any:
-        if public_url is None:
-            raise ApiError(409, "NO_PUBLIC_URL", "this server has no canonical address")
+    async def issue(
+        request: Request, user: dict[str, Any], target: str, kind: str, ttl: float
+    ) -> dict[str, Any]:
         here = page_origin(request)
         sent_origin = request.headers.get("origin")
         if sent_origin is not None and not same_origin(sent_origin, here):
             raise ApiError(403, "FORBIDDEN", "cross-origin request")
-        if same_origin(here, public_url):
-            raise ApiError(409, "ALREADY_HERE", "this is the canonical address already")
+        if same_origin(here, target):
+            raise ApiError(409, "ALREADY_HERE", "this is that address already")
         body = await read_json(request, MOVE_BODY_MAX_BYTES)
         raw = body.get("prefs", {})
         if not isinstance(raw, dict):
@@ -231,27 +236,45 @@ def register_address_routes(
         clock = now()
         async with db.write_lock:
             await db.conn.execute("DELETE FROM move_codes WHERE expires_ts <= ?", (clock,))
-            await db.conn.execute("DELETE FROM move_codes WHERE from_token_hash = ?", (token_hash,))
+            # One live code of each kind per session: asking again replaces it.
             await db.conn.execute(
-                "INSERT INTO move_codes (code_hash, user_id, from_token_hash, prefs, "
-                "created_ts, expires_ts) VALUES (?, ?, ?, ?, ?, ?)",
+                "DELETE FROM move_codes WHERE from_token_hash = ? AND kind = ?", (token_hash, kind)
+            )
+            await db.conn.execute(
+                "INSERT INTO move_codes (code_hash, user_id, from_token_hash, prefs, kind, "
+                "created_ts, expires_ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     hash_move_code(code),
                     user["id"],
                     token_hash,
                     json.dumps(prefs),
+                    kind,
                     clock,
-                    clock + MOVE_TTL_SECONDS,
+                    clock + ttl,
                 ),
             )
             await db.conn.commit()
-        logger.info("move.code user=%s prefs=%s", user["id"], len(prefs))
+        logger.info("move.code kind=%s user=%s prefs=%s", kind, user["id"], len(prefs))
         return {
             "code": code,
-            "expires_at": utc_iso(clock + MOVE_TTL_SECONDS),
-            "public_url": public_url,
-            "url": f"{public_url}/#tasi={code}",
+            "expires_at": utc_iso(clock + ttl),
+            "url": f"{target}/#tasi={code}",
         }
+
+    @app.post("/api/move", status_code=201)
+    async def create_move(request: Request, user: User) -> Any:
+        if public_url is None:
+            raise ApiError(409, "NO_PUBLIC_URL", "this server has no canonical address")
+        made = await issue(request, user, public_url, "move", MOVE_TTL_SECONDS)
+        return {**made, "public_url": public_url}
+
+    @app.post("/api/move/next", status_code=201)
+    async def create_next(request: Request, user: User) -> Any:
+        """§8: before a rename, a 7-day move code for the address the server announced."""
+        if next_url is None:
+            raise ApiError(409, "NO_NEXT_URL", "this server announced no next address")
+        made = await issue(request, user, next_url, "next", NEXT_TTL_SECONDS)
+        return {**made, "next_url": next_url}
 
     # -- the canonical origin --------------------------------------------------
 
@@ -286,7 +309,13 @@ def register_address_routes(
             await db.conn.execute(
                 "INSERT INTO tokens (token_hash, user_id, created_at, last_origin, via_move, "
                 "moved_from) VALUES (?, ?, ?, ?, 1, ?)",
-                (hash_token(token), found["user"]["id"], utc_iso(now()), public_url, found["from"]),
+                (
+                    hash_token(token),
+                    found["user"]["id"],
+                    utc_iso(now()),
+                    page_origin(request),
+                    found["from"],
+                ),
             )
             await db.conn.commit()
         join_guard.succeeded(address)
@@ -435,11 +464,23 @@ def register_address_routes(
             else:
                 counts["other"] += 1
                 others[origin] = others.get(origin, 0) + 1
+        clock = now()
+        async with db.conn.execute(
+            "SELECT count(DISTINCT m.from_token_hash) FROM move_codes m "
+            "JOIN tokens t ON t.token_hash = m.from_token_hash "
+            "JOIN users u ON u.id = t.user_id "
+            "WHERE m.kind = 'next' AND m.expires_ts > ? AND u.removed_at IS NULL",
+            (clock,),
+        ) as cur:
+            (prepared,) = await cur.fetchone()
         shown = sorted(others.items(), key=lambda item: (-item[1], item[0]))[:OTHER_ORIGINS_SHOWN]
         reach = await reachable()
         used_at = await get_meta(db, RECOVERY_USED_KEY) if settings.recovery_code else None
         return {
             "public_url": public_url,
+            "next_url": next_url,
+            "prepared": {"sessions": prepared, "total": counts["total"]},
+            "bulk": await bulk_status(),
             "request_origin": page_origin(request),
             "reachable": reach,
             "sessions": counts,
@@ -457,3 +498,76 @@ def register_address_routes(
                 and counts["other"] == 0
             ),
         }
+
+    # -- §9: a sign-in code for everybody ---------------------------------------------
+
+    def confirm_code(request: Request, body: dict[str, Any]) -> JSONResponse | None:
+        """The invite code again (CONTRACT-V6-OPS §1), spending the join limiter."""
+        address, refused = admit(request)
+        if refused is not None:
+            return refused
+        supplied = body.get("confirm_code")
+        supplied_bytes = supplied.encode("utf-8") if isinstance(supplied, str) else b""
+        if not hmac.compare_digest(supplied_bytes, settings.invite_code.encode("utf-8")):
+            join_guard.failed(address)
+            return error_response(403, "INVALID_CONFIRM_CODE", "the invite code is not right")
+        return None
+
+    async def bulk_status() -> dict[str, Any]:
+        async with db.conn.execute(
+            "SELECT count(*), max(expires_ts) FROM link_codes WHERE bulk = 1 AND expires_ts > ?",
+            (now(),),
+        ) as cur:
+            live, latest = await cur.fetchone()
+        return {"live": live, "expires_at": None if latest is None else utc_iso(latest)}
+
+    def links_origin(request: Request) -> str | None:
+        return public_url if public_url is not None else page_origin(request)
+
+    @app.post("/api/owner/bulk-codes", status_code=201)
+    async def bulk_codes(request: Request, user: Owner) -> Any:
+        refused = confirm_code(request, await read_json(request))
+        if refused is not None:
+            return refused
+        clock = now()
+        expires = clock + BULK_TTL_SECONDS
+        origin = links_origin(request)
+        out = []
+        async with db.write_lock:
+            async with db.conn.execute(
+                "SELECT id, name FROM users WHERE removed_at IS NULL AND id != ? ORDER BY id",
+                (user["id"],),
+            ) as cur:
+                people = await cur.fetchall()
+            await db.conn.execute("DELETE FROM link_codes WHERE expires_ts <= ?", (clock,))
+            # Asking again replaces everybody's previous bulk code: one each, at most.
+            await db.conn.execute("DELETE FROM link_codes WHERE bulk = 1")
+            for person in people:
+                code = linkcodes.new_code()
+                await db.conn.execute(
+                    "INSERT INTO link_codes (code_hash, user_id, created_ts, expires_ts, bulk) "
+                    "VALUES (?, ?, ?, ?, 1)",
+                    (linkcodes.hash_code(code), person["id"], clock, expires),
+                )
+                out.append(
+                    {
+                        "user": {"id": person["id"], "name": person["name"]},
+                        "code": code,
+                        "url": None if origin is None else f"{origin}/#cihaz={code}",
+                    }
+                )
+            await db.conn.commit()
+        logger.warning("owner.bulk_codes count=%s by=%s ttl_hours=24", len(out), user["id"])
+        return {"codes": out, "expires_at": utc_iso(expires)}
+
+    @app.get("/api/owner/bulk-codes")
+    async def bulk_codes_status(user: Owner) -> Any:
+        return await bulk_status()
+
+    @app.delete("/api/owner/bulk-codes")
+    async def cancel_bulk_codes(user: Owner) -> Any:
+        async with db.write_lock:
+            cur = await db.conn.execute("DELETE FROM link_codes WHERE bulk = 1")
+            await db.conn.commit()
+        logger.warning("owner.bulk_codes.cancelled count=%s by=%s", cur.rowcount, user["id"])
+        return {"cancelled": cur.rowcount}
