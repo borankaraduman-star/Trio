@@ -52,7 +52,8 @@ or proxy handing back something else, and a release whose metadata does not fit
 its files. It does **not** protect against somebody who controls the GitHub
 account or the repository's release workflow: they can publish a new release
 with a matching `latest.yml`, and every installed Windows and Linux app would
-download and run it within hours, without anybody clicking a download link.
+download it within about a quarter of an hour (§4a) and run it at the next
+restart, quit or start, without anybody clicking a download link.
 That is the same trust root as today's manual flow (people download the
 installer from the same releases page and run it, and the `/indir` page's
 SHA-256 also comes from that release), only faster and with no human in the
@@ -95,21 +96,86 @@ new document counts as not in voice until it says so again.
 
 ## 4. When (the shell's schedule)
 
-- First check **45 s** after start, then every **4 hours**
-  (`FIRST_CHECK_DELAY_MS`, `CHECK_INTERVAL_MS`).
-- **In a voice room**: no automatic check and no automatic download start; the
-  one that came due runs **60 s after leaving** (`AFTER_CALL_DELAY_MS`). A
-  download already running continues. "Güncellemeleri denetle" is honoured at
-  any time (the user asked).
+- First check **30 s** after start, then every **45–60 min** (`CHECK_INTERVAL_MS`
+  45 min + up to `CHECK_JITTER_MS` 15 min at random, so a group's apps do not
+  ask in step). A check is three requests to github.com's web front
+  (`releases.atom`, `releases/latest` as JSON, `latest*.yml`; electron-updater
+  6.8.11 `GitHubProvider` deliberately avoids the REST API for github.com), from
+  the user's own address; hourly is far below any limit (GitHub documents none
+  for these pages; the REST API's unauthenticated 60/h per IP does not apply).
+  Do not go below ~15 min: the page's "look now" (§4a) is the fast path.
+- **Waking up**: `powerMonitor` `resume` and the window shown again from the
+  tray (or a minimised window restored) check when the last check is older than
+  **15 min** (`WAKE_MIN_GAP_MS`).
+- **Whenever the page asks** (`checkForUpdates()`, §4a, and "Güncellemeleri
+  denetle").
+- **In a voice room the check and the download run like anywhere else.** Only
+  the restart waits. Until 20 Nov 2026 nothing automatic ran during a call;
+  people sit in a voice room for hours with the app open for days, so the
+  shell never looked. A download is ~100 MB (Windows fetches only the changed
+  blocks when the installed version's blockmap is in its release): it competes
+  with the call's incoming media only on a line it saturates; nothing is
+  throttled (electron-updater has no throttle, and a slower download only
+  delays "ready").
 - A found update downloads in the background when "Güncellemeleri kendiliğinden
   indir" is on (default; `<userData>/trio-update.json`), else it waits as
   "available" for "İndir".
-- **Never restarts by itself while the user is in a voice room**: the restart
-  happens only on "Yeniden başlat ve güncelle", which is not offered (band) /
-  disabled (Ayarlar) during a call and refused by the main process then.
-  Otherwise a ready update is applied when the app quits
-  (`autoInstallOnAppQuit`): the next start is the new version. Windows installs
-  silently (`/S`) into the existing per-user folder and starts the app again.
+- **Never restarts by itself while the user is in a voice room**, and never
+  restarts by itself in the middle of a session at all: the restart happens on
+  "Yeniden başlat ve güncelle" (band, Ayarlar, tray menu), which is not offered
+  (band) / disabled (Ayarlar, tray) during a call and refused by the main
+  process then. No idle-time restart either.
+- **Quitting** (tray "Çıkış", app menu) with a ready update installs it
+  silently (`autoInstallOnAppQuit`, electron-updater runs the installer from its
+  `quit` handler when the exit code is 0) and does **not** start the app again;
+  the next start is the new version.
+- **The next start**: an update downloaded in an earlier run that was never
+  quit (Windows shut down or restarted, the process was killed: electron-updater's
+  `quit` handler does not run then, and the downloaded file stays in its cache,
+  `%LOCALAPPDATA%\trio-desktop-updater\pending`) is remembered
+  (`readyVersion` in `trio-update.json`). The next start checks after **5 s**
+  (`START_INSTALL_CHECK_DELAY_MS`); electron-updater finds the cached file valid
+  and is "ready" at once; if that happens within **2 min** of start
+  (`START_INSTALL_WINDOW_MS`) and the page does not say the user is in a voice
+  room (a call that survives a restart, V4, may rejoin by itself), it installs
+  silently and starts the new version. The user sees the window close a few
+  seconds after start and Trio open again as the new version. **Once per
+  version** (`startInstallTried`): an installer that fails cannot loop the app.
+
+### 4a. The page says "look now", and the latency that follows
+
+The web client keeps the newest desktop release (`GET /api/downloads`) fresh
+while it is open: on load, every **5 min** (`RELEASE_POLL_MS`), when it becomes
+visible again (respecting the 5 min) and on every socket `ready` (every
+reconnect, at most once per 30 s). The server answers from its 10-minute cache
+of GitHub's latest release (CONTRACT-V6-DOWNLOAD), so these are in-memory
+answers; no frame was added to the protocol. When that release is newer than
+`appVersion`, the shell's state is `auto` and not already busy with or done
+with an update (`checking`, `downloading`, `ready`, `installing`), and the
+shell has not already found this version and waits for "İndir", the page calls
+`checkForUpdates()`, **at most once per version per 10 min**
+(`HINT_RETRY_MS`, kept in `localStorage` `trio.desktopUpdateHint` so a reload
+does not ask again). A failed **download** (status `error` with a version) is
+not retried from the page: a file that keeps failing its hash would be fetched
+every ten minutes. The shell stays the authority: it reads its own pinned feed
+and applies every check of §2; the page only chooses the moment.
+
+This works with the shells already installed: `checkForUpdates()` exists since
+0.8.0 and runs a "manual" check there, which in 0.8.0/0.9.0 is honoured during
+a call and, with automatic download on, downloads right away.
+
+**Timeline rule — a release is noticed by every open app within ≈ 15 min**
+(server cache ≤ 10 min, then the page's poll ≤ 5 min), typically ~8 min, then
+downloaded (a minute or several, by line). An app that was asleep or closed
+notices it at most 15 min after waking / within 30 s of starting. Without the
+page (connect page, server down) the shell's own hourly check is the bound.
+
+Why 0.9.0 was not noticed by an open 0.8.0 app (20 Nov 2026): the app had been
+running since before the release, so its 45 s start check had found nothing;
+the next one was up to 4 h away, and every one that came due while the user
+was in a voice room was deferred to 60 s after leaving, which with hours-long
+calls meant never; the page had read `/api/downloads` once at load and never
+again. "Güncellemeleri denetle" bypassed all of it and worked at once.
 
 ## 5. What the page shows (`web/src/components/voice/DesktopVersion.tsx`)
 
@@ -118,12 +184,28 @@ The notice now follows the newest **desktop release**, `GET /api/downloads`
 and by the page), never the server's version. A web-only release (no new
 desktop release) shows nothing.
 
-- **App with the updater, capability auto** — band:
-  "Güncelleme hazır: 0.8.0" + **Yeniden başlat ve güncelle** + **Sonra**
-  (hidden until the page loads again); during a call "… — sesli odadan çıkınca
-  yeniden başlatabilirsin" and no button. With automatic download off:
-  "Masaüstü uygulamasının yeni sürümü var (X)." + **İndir** + **Sonra**.
-  Nothing while checking or downloading. Ayarlar › Hakkında: the version,
+- **App with the updater, capability auto** — band, one line, without opening
+  Ayarlar: "Güncelleme indiriliyor: X (%40)" + **Sonra**; then
+  "Güncelleme hazır: X" + **Yeniden başlat ve güncelle** + **Sonra**. In a
+  voice room both say "… — sesli odadan çıkınca kurulabilir" and there is no
+  restart button. With automatic download off: "Masaüstü uygulamasının yeni
+  sürümü var (X)." + **İndir** + **Sonra**. **Sonra** on available/downloading
+  hides that version until it is ready (`localStorage`
+  `trio.desktopUpdateLater`); on ready it hides it until the page loads again.
+  Nothing while checking. A coral dot on the settings button (and on the
+  drawer button) while the shell has an available, downloading or ready
+  version (`desktop-update-dot`, `data-status`).
+- **Outside the page** (the shell): the tray menu's second line
+  ("Güncelleme indiriliyor: X (%40)" in tens, "Yeni sürüm var: X",
+  "Yeniden başlat ve güncelle (X)" outside a call, "Güncelleme hazır: X
+  (sesli odadan çıkınca)" greyed in one), the tray tooltip "Trio — Güncelleme
+  hazır: X", and when it becomes ready while the window is hidden (in the tray
+  or minimised) one silent native notification "Trio güncellemesi hazır" /
+  "X indirildi. Tepsideki menüden yeniden başlatabilirsin; uygulamadan çıkınca
+  da kurulur." (in a call: "Sesli odadan çıkınca yeniden başlatabilirsin; …"),
+  once per version per run, only where `Notification.isSupported()` (the
+  system's own notification settings decide whether it shows); clicking it
+  shows the window. Ayarlar › Hakkında: the version,
   the state line (Güncel · Güncellemeler denetleniyor… · Yeni sürüm var: X ·
   İndiriliyor %40 · Hazır: X — yeniden başlatınca kurulur · Yeniden
   başlatılıyor… · Güncelleme denetlenemedi (neden)), **Güncellemeleri denetle**,
@@ -223,8 +305,8 @@ installer. `docs/signpath-basvuru.md` is the owner's side.
 
 ## Test ids
 
-`desktop-update` (`data-kind` manual | available | ready, `data-version`,
-`data-in-voice`), `desktop-update-download` (`data-platform`),
+`desktop-update` (`data-kind` manual | available | downloading | ready,
+`data-version`, `data-in-voice`), `desktop-update-dot` (`data-status`), `desktop-update-download` (`data-platform`),
 `desktop-update-last`, `desktop-update-dismiss`, `desktop-update-install`,
 `desktop-update-fetch`, `desktop-update-later`, `desktop-update-settings`,
 `desktop-version`, `desktop-update-status` (`data-status`),
@@ -233,10 +315,20 @@ installer. `docs/signpath-basvuru.md` is the owner's side.
 `desktop-update-in-voice`, `desktop-update-auto`, `desktop-update-line`,
 `desktop-update-line-download`.
 
+## Verified on a real machine
+
+- **20 Nov 2026, Windows, unsigned 0.8.0 → 0.9.0** (the owner): check →
+  download → install worked through "Güncellemeleri denetle" in Ayarlar ›
+  Hakkında. The unsigned NSIS path (no `publisherName`, §1) is accepted, and
+  the app came back as 0.9.0. What did not happen is discovery: left open, the
+  app never noticed the release by itself (§4a, "why").
+
 ## Not verified
 
-A real update on a real machine (this repository's CI and sandbox build only
-Linux, and no release with `latest*.yml` exists yet): Windows silent install
-into the existing per-user folder and restart, SmartScreen during a silent
-update, differential download from GitHub, the AppImage replacement, a signed
-macOS update. The manual check is `docs/guncelleme-kontrol.md`.
+The automatic discovery of §4/§4a on a real machine (the page's "look now" and
+the hourly / resume / show checks; only the fake updater and a stubbed bridge
+in the suites); the install at the next start after a Windows shutdown with a
+ready update; the tray line and the native notification on Windows/macOS/Linux
+desktops; SmartScreen during a silent update; whether the download was
+differential; the AppImage replacement; a signed macOS update. The manual
+check is `docs/guncelleme-kontrol.md`.
