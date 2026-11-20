@@ -15,6 +15,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.9.1',
+    lines: [
+      'Masaüstü uygulaması yeni sürümü artık kendisi fark ediyor: yayımlandıktan sonra birkaç dakika içinde arka planda indirir, sesli odadayken de.',
+      'Güncelleme hazır olunca üstte bir satır, ayarlar düğmesinde bir nokta ve tepsi menüsünde “Yeniden başlat ve güncelle” görünür; görüşmedeyken kendiliğinden yeniden başlamaz.',
+      'Uygulamadan çıkmadan bilgisayarı kapattıysan, güncelleme bir sonraki açılışta kurulur.',
+    ],
+  },
+  {
     version: '0.9.0',
     title: 'Gruplar için',
     lines: [
