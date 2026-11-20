@@ -42,7 +42,7 @@ export function MovedScreen({
         </p>
         {shell ? (
           <p className="join-hint" data-testid="address-moved-shell">
-            Uygulama menüsü › Sunucu adresini değiştir › <b>{host}</b>
+            Trio menüsü › Sunucuyu değiştir… › <b>{host}</b>
           </p>
         ) : (
           <a

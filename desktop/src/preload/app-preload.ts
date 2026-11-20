@@ -48,6 +48,8 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
     state: (): Promise<unknown> => ipcRenderer.invoke("trio:connect-state"),
     submit: (url: string): Promise<unknown> =>
       ipcRenderer.invoke("trio:connect-submit", String(url)),
+    // CONTRACT-V11-ADDRESS §8: go to the remembered next address.
+    useNext: (): Promise<unknown> => ipcRenderer.invoke("trio:connect-next"),
   });
 } else {
   let gameListeners = 0;
@@ -147,6 +149,19 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
     },
     ...music,
     ...update,
+    // CONTRACT-V11-ADDRESS §5, §8: the main process checks every address with the trusted server.
+    moveServer(request: { origin: string; code: string }): Promise<unknown> {
+      const record = typeof request === "object" && request !== null ? request : { origin: "", code: "" };
+      return ipcRenderer.invoke("trio:move-server", { origin: String(record.origin), code: String(record.code) });
+    },
+    storeNextMove(request: { origin: string; code: string; expiresAt: string }): Promise<unknown> {
+      const record = typeof request === "object" && request !== null ? request : { origin: "", code: "", expiresAt: "" };
+      return ipcRenderer.invoke("trio:store-next-move", {
+        origin: String(record.origin),
+        code: String(record.code),
+        expiresAt: String(record.expiresAt),
+      });
+    },
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {
       if (typeof cb !== "function") return () => undefined;

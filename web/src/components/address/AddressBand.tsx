@@ -283,13 +283,13 @@ export function AddressBand({ auth, moveCode, onMoveCodeUsed }: { auth: Auth; mo
           </div>
           {shell === 'old-shell' && !manual && (
             <p className="address-band-line" data-testid="address-old-shell">
-              Uygulama menüsü › Sunucu adresini değiştir › <b>{host}</b>. Önce “Bu cihazı taşı”ya bas: çıkan kodu yeni
+              Trio menüsü › Sunucuyu değiştir… › <b>{host}</b>. Önce “Bu cihazı taşı”ya bas: çıkan kodu yeni
               adreste “Zaten hesabım var”a yazarsın.
             </p>
           )}
           {manual && (
             <p className="address-band-line" data-testid="address-manual">
-              Uygulama menüsü › Sunucu adresini değiştir › <b>{manual.host}</b>, sonra “Zaten hesabım var”a bu kodu yaz:{' '}
+              Trio menüsü › Sunucuyu değiştir… › <b>{manual.host}</b>, sonra “Zaten hesabım var”a bu kodu yaz:{' '}
               <code className="link-code" data-testid="address-manual-code">
                 {formatLinkCode(manual.code)}
               </code>{' '}

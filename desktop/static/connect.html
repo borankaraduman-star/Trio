@@ -12,6 +12,11 @@
     <form class="card" id="form" novalidate>
       <h1><img src="icon.png" alt="">Trio</h1>
       <p>Grubunun Trio sunucusunun adresini gir: seni davet eden kişi verir.</p>
+      <div class="next" id="next" hidden>
+        <p>Sunucu adres değiştireceğini önceden söylemişti:</p>
+        <div class="row"><button class="btn" id="next-go" type="button"></button></div>
+        <p class="hint">Ya da yeni adresi aşağıya yaz.</p>
+      </div>
       <label for="url">Sunucu adresi</label>
       <input id="url" type="url" inputmode="url" autocomplete="url" spellcheck="false"
              placeholder="https://trio.up.railway.app" required autofocus>
