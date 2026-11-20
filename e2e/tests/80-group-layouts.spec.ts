@@ -117,13 +117,15 @@ test('the call stage with eight cameras and a shared screen, at 1440 and 390', a
   await expect(phone.page.locator('.voice-status strong')).toHaveText('Ses bağlı')
   await phone.page.locator('.backdrop').tap({ position: { x: 370, y: 400 } })
 
-  // Eight cameras (everybody at a desk), Mehmet shares his screen.
+  // Mehmet shares his screen, then eight cameras (everybody at a desk). The
+  // share first: under the CI-like throttle a picker answer behind eight
+  // encoders took longer than ten seconds.
+  await mehmet.page.getByTestId('btn-screen').click()
+  await expect(mehmet.page.getByTestId('btn-screen')).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 })
   for (const person of people.slice(0, 8)) {
     await person.page.getByTestId('btn-camera').click()
-    await expect(person.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'true')
+    await expect(person.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 })
   }
-  await mehmet.page.getByTestId('btn-screen').click()
-  await expect(mehmet.page.getByTestId('btn-screen')).toHaveAttribute('aria-pressed', 'true')
 
   // 1440: nine tiles (the screen, seven cameras, my own) fit the stage's nine.
   const stage = ayse.page.getByTestId('stage')
