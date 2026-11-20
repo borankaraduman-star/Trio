@@ -26,6 +26,7 @@ from trio_server.activity import ActivityBoard
 from trio_server.nonces import NonceCache
 from trio_server.ratelimit import SlidingWindow
 from trio_server.version import VERSION
+from trio_server.viewers import VIEWING_LIMIT, VIEWING_WINDOW_SECONDS, ViewerBoard
 
 # Frames waiting for one slow client. Past it the connection is dropped rather
 # than letting one stalled tab hold memory or delay everybody else.
@@ -176,6 +177,11 @@ class Hub:
         self.nonces = NonceCache()
         # CONTRACT-V5: game status, presence-like and in memory only.
         self.activity = ActivityBoard(self.broadcast, now)
+        # CONTRACT-V10-GROUPS §4b: who is in which text channel right now.
+        self.viewers = ViewerBoard(
+            self.broadcast, lambda cid: self.channels.get(cid, {}).get("kind") == "text"
+        )
+        self.viewings = SlidingWindow(VIEWING_LIMIT, VIEWING_WINDOW_SECONDS, now)
         # CONTRACT-V6-PUSH: notify.Notifier (set by the app), told about messages,
         # rooms opening and rings right after their broadcast. None: no pushes.
         self.notify: Any = None
@@ -237,6 +243,8 @@ class Hub:
             "activity": self.activity.snapshot(),
             # CONTRACT-V10-GROUPS §2.
             "voice_room_max": self.voice_room_max,
+            # CONTRACT-V10-GROUPS §4b.
+            "viewers": self.viewers.snapshot(),
         }
 
     def connect(self, conn: Connection) -> None:
@@ -263,6 +271,7 @@ class Hub:
         conns.discard(conn)
         if not conns:
             del self.conns[conn.user_id]
+        self.viewers.disconnected(conn.user_id, conn)
         channel_id = self.voice_of.get(conn.user_id)
         if channel_id is not None and self.voice[channel_id][conn.user_id].conn is conn:
             if grace:
@@ -301,6 +310,7 @@ class Hub:
         for user_id in [uid for uid in self.users if uid not in current]:
             del self.users[user_id]
             self.activity.clear(user_id)
+            self.viewers.forget_user(user_id)
             self.broadcast({"type": "user.removed", "user_id": user_id})
         for user in users:
             if user["id"] not in self.users:
@@ -394,6 +404,7 @@ class Hub:
             task.cancel()
         self._grace_tasks.clear()
         self.activity.close()
+        self.viewers.close()
 
     def voice_leave(self, user_id: int) -> None:
         self._cancel_grace(user_id)

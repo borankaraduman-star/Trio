@@ -407,8 +407,18 @@ class Session:
         channel_id = frame.get("channel_id")
         if channel_id is not None and not is_int(channel_id):
             raise FrameError("BAD_REQUEST", "'channel_id' must be a channel id or null")
+        # CONTRACT-V10-GROUPS §4b: "Hangi kanalda olduğumu göster" off = false.
+        show = _bool(frame, "show_channel", default=True)
+        if not self.hub.viewings.allow(str(self.user["id"])):
+            raise FrameError(
+                "RATE_LIMITED", "too many client.viewing frames", request="client.viewing"
+            )
         if self.hub.notify is not None:
+            # Push decisions keep the whole report, shared or not (CONTRACT-V6-PUSH §3).
             self.hub.notify.set_viewing(self.conn, viewing, channel_id)
+        channel = self.hub.channels.get(channel_id) if channel_id is not None else None
+        shared = channel_id if show and channel is not None and channel["kind"] == "text" else None
+        self.hub.viewers.report(self.user["id"], self.conn, viewing=viewing, channel_id=shared)
 
     # -- CONTRACT-V7-READING: how far I have read -----------------------------
 
