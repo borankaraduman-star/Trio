@@ -46,6 +46,8 @@ import { badgeText, parseUnread } from "../shared/title";
 import { MusicCaptureArm, musicCaptureSupport } from "../shared/musicCapture";
 import { NowPlayingWatcher, defaultSource } from "./nowPlaying";
 import { answerDisplayMedia } from "./displayMedia";
+import { UpdateController, UpdateSettingsStore, type UpdaterLike } from "./updater";
+import { downloadPlatform, updateCapability, UPDATE_OWNER, UPDATE_REPO, type UpdateState } from "../shared/update";
 import {
   isExternalOpenable,
   isSameOrigin,
@@ -148,6 +150,8 @@ const nowPlaying = new NowPlayingWatcher(defaultSource(), (info) => {
 /** V6: the tray's own image, and the mute/deafen mark drawn on it. */
 let trayBase: Electron.NativeImage | null = null;
 let trayVoice: TrayVoiceState = "none";
+/** CONTRACT-V10-UPDATE: created in onReady. */
+let updates: UpdateController | null = null;
 
 // ------------------------------------------------------- before app ready
 
@@ -172,6 +176,7 @@ function onReady(): void {
   installDisplayMediaHandler(ses);
   installIpc();
   installGameStatus();
+  installUpdates();
   buildAppMenu();
   createTray();
   createMainWindow();
@@ -187,6 +192,7 @@ app.on("will-quit", () => {
   ptt.dispose();
   gameService?.stop();
   nowPlaying.dispose();
+  updates?.dispose();
 });
 
 app.on("window-all-closed", () => {
@@ -333,6 +339,8 @@ function createMainWindow(): void {
       updateGameRunning();
       // CONTRACT-V8-MUSIC: a new document is not sharing music yet.
       nowPlaying.setWatch(false);
+      // CONTRACT-V10-UPDATE: nor in a voice room (the page says so again when it rejoins).
+      updates?.setInVoice(false);
     }
   });
 
@@ -586,6 +594,7 @@ function installIpc(): void {
   ipcMain.on("trio:voice-state", (event, state: unknown) => {
     if (!fromServerPage(event) || typeof state !== "object" || state === null) return;
     const record = state as Record<string, unknown>;
+    updates?.setInVoice(record.inVoice === true);
     setTrayVoice(
       trayVoiceState({ inVoice: record.inVoice === true, muted: record.muted === true, deafened: record.deafened === true }),
     );
@@ -638,6 +647,71 @@ function installIpc(): void {
     if (!fromPicker(event)) return;
     finishPick(null);
   });
+}
+
+// ---------------------------------------------------------------- updates
+
+/** CONTRACT-V10-UPDATE: whether this build may update itself, and the controller. */
+function installUpdates(): void {
+  let macSigned = false;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), "package.json"), "utf8")) as {
+      trioBuild?: { macSigned?: unknown };
+    };
+    macSigned = pkg.trioBuild?.macSigned === true;
+  } catch {
+    macSigned = false;
+  }
+  const capability = updateCapability({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    env: process.env,
+    hasUpdateConfig: app.isPackaged && fs.existsSync(path.join(process.resourcesPath, "app-update.yml")),
+    macSigned,
+  });
+  updates = new UpdateController({
+    capability,
+    currentVersion: app.getVersion(),
+    platform: downloadPlatform(process.platform, process.arch),
+    settings: new UpdateSettingsStore(app.getPath("userData")),
+    createUpdater: () => {
+      // Loaded only where self-update is possible.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { autoUpdater } = require("electron-updater") as typeof import("electron-updater");
+      // Pinned in code: whatever app-update.yml says, the source is this public
+      // repository's GitHub releases over https, without a token.
+      autoUpdater.setFeedURL({ provider: "github", owner: UPDATE_OWNER, repo: UPDATE_REPO, private: false });
+      autoUpdater.logger = { info: () => undefined, warn: (m: unknown) => console.warn("[trio] updater", m), error: () => undefined, debug: () => undefined };
+      return autoUpdater as unknown as UpdaterLike;
+    },
+    onState: (state) => sendUpdateState(state),
+    beforeInstall: () => {
+      quitting = true;
+    },
+  });
+
+  ipcMain.handle("trio:update-state", (event) => (fromServerPage(event) ? updates?.snapshot ?? null : null));
+  ipcMain.handle("trio:update-check", async (event) =>
+    fromServerPage(event) && updates ? await updates.checkNow() : null,
+  );
+  ipcMain.handle("trio:update-download", async (event) =>
+    fromServerPage(event) && updates ? await updates.downloadNow() : null,
+  );
+  ipcMain.handle("trio:update-install", (event) =>
+    fromServerPage(event) && updates ? updates.install() : { ok: false, reason: "manual" },
+  );
+  ipcMain.on("trio:update-auto", (event, on: unknown) => {
+    if (fromServerPage(event) && typeof on === "boolean") updates?.setAutoDownload(on);
+  });
+
+  updates.start();
+}
+
+function sendUpdateState(state: UpdateState): void {
+  const wc = mainWindow?.webContents;
+  if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
+    wc.send("trio:update-changed", state);
+  }
 }
 
 // ------------------------------------------------------ screen capture
