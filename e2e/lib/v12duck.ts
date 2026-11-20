@@ -122,7 +122,7 @@ export async function tapPeaks(page: Page, keys: string[], ms = 1000): Promise<(
   return page.evaluate(
     async ([wanted, windowMs]) => {
       const taps = (window as unknown as { __trioVolumeTaps?: Record<string, AnalyserNode> }).__trioVolumeTaps ?? {}
-      const peaks = wanted.map((k) => (taps[k] ? 0 : null))
+      const peaks: (number | null)[] = wanted.map((k) => (taps[k] ? 0 : null))
       const data = new Float32Array(2048)
       const until = performance.now() + windowMs
       while (performance.now() < until) {
