@@ -81,7 +81,7 @@
       "entitlementsInherit": "resources/entitlements.mac.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Trio, sesli odalarda konuşabilmen için mikrofonunu kullanır.",
-        "NSCameraUsageDescription": "Trio, sesli odalarda kameranı açtığında görüntünü arkadaşlarına göndermek için kamerayı kullanır."
+        "NSCameraUsageDescription": "Trio, sesli odalarda kameranı açtığında görüntünü odadakilere göndermek için kamerayı kullanır."
       }
     },
     "dmg": {
@@ -97,7 +97,7 @@
         }
       ],
       "category": "Network;Chat;InstantMessaging",
-      "synopsis": "Arkadaşlar için küçük, kendi sunucunda çalışan sohbet",
+      "synopsis": "Gruplar için küçük, kendi sunucunda çalışan sohbet",
       "syncDesktopName": true
     }
   }
