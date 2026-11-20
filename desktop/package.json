@@ -20,6 +20,7 @@
   },
   "desktopName": "trio-desktop.desktop",
   "dependencies": {
+    "electron-updater": "6.8.11",
     "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {
