@@ -11,7 +11,7 @@ import { AccountSection, type AccountProps } from './AccountSection'
 import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
 import { DownloadLink } from './DownloadLink'
-import { GameShareSetting } from './GameActivity'
+import { StatusSettings } from './GameActivity'
 import { ShowChannelSetting } from './ChannelViewers'
 import { NotificationsSection } from './notify/NotificationsSection'
 import { InputSensitivitySection, ShortcutsSection } from './voice/VoiceEveningSettings'
@@ -360,7 +360,7 @@ export function SettingsDialog({
     hesap: () => (
       <>
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
-        <GameShareSetting />
+        <StatusSettings />
         <ShowChannelSetting />
         {serverSettings && <ServerSection settings={serverSettings} />}
       </>

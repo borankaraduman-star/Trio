@@ -42,7 +42,7 @@ describe('ActivityStore', () => {
     expect(Object.keys(store.getSnapshot())).toEqual(['1'])
     expect(store.get(1)?.activity.detail?.zone).toBe('Orgrimmar')
     store.handleEvent({ type: 'activity', user_id: 3, activity: { game: 'Dota 2', since: T0, detail: null }, updated_at: 'x' })
-    expect(store.get(3)?.activity).toEqual({ game: 'Dota 2', since: T0, detail: null })
+    expect(store.get(3)?.activity).toEqual({ game: 'Dota 2', since: T0, detail: null, listening: null })
     store.handleEvent({ type: 'activity', user_id: 3, activity: null })
     expect(store.get(3)).toBeUndefined()
     store.handleEvent({ type: 'activity', user_id: 3, activity: null }) // nothing to remove: no change
@@ -62,9 +62,9 @@ describe('ActivityStore', () => {
 
 describe('display', () => {
   it('the line', () => {
-    expect(activityLine({ game: 'WoW Forever', since: T0, detail: DETAIL })).toBe('WoW Forever · 37 · Orgrimmar')
-    expect(activityLine({ game: 'Counter-Strike 2', since: T0, detail: null })).toBe('Counter-Strike 2')
-    expect(activityLine({ game: 'WoW', since: T0, detail: { ...DETAIL, zone: '', subzone: 'Dalaran' } })).toBe('WoW · 37 · Dalaran')
+    expect(activityLine({ game: 'WoW Forever', since: T0, detail: DETAIL, listening: null })).toBe('WoW Forever · 37 · Orgrimmar')
+    expect(activityLine({ game: 'Counter-Strike 2', since: T0, detail: null, listening: null })).toBe('Counter-Strike 2')
+    expect(activityLine({ game: 'WoW', since: T0, detail: { ...DETAIL, zone: '', subzone: 'Dalaran' }, listening: null })).toBe('WoW · 37 · Dalaran')
   })
 
   it('elapsed time', () => {
@@ -76,7 +76,7 @@ describe('display', () => {
 
   it('the tooltip names character, realm, class, place and freshness', () => {
     const text = activityTooltip(
-      { activity: { game: 'WoW Forever', since: T0, detail: { ...DETAIL, realm: 'Kazzak' } }, updatedAt: new Date(T0 * 1000).toISOString() },
+      { activity: { game: 'WoW Forever', since: T0, detail: { ...DETAIL, realm: 'Kazzak' }, listening: null }, updatedAt: new Date(T0 * 1000).toISOString() },
       T0 * 1000 + 3 * 60_000,
     )
     expect(text).toContain('Kahve Kokusu (Kazzak) · 37. seviye · Haydut')

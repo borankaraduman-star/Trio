@@ -25,11 +25,29 @@ export interface GameDetail {
   source: 'log' | 'saved'
 }
 
+/** CONTRACT-V11-ACTIVITY: what somebody is listening to. */
+export interface Listening {
+  title: string
+  /** "" when unknown. */
+  artist: string
+  /** "" when unknown; a short friendly name ("Spotify"). */
+  app: string
+}
+
 export interface Activity {
-  game: string
-  /** Unix seconds: when the game was first seen running. */
-  since: number
+  /** Null when only listening (V11). */
+  game: string | null
+  /** Unix seconds: when the game was first seen running; null without a game. */
+  since: number | null
   detail: GameDetail | null
+  listening: Listening | null
+}
+
+/** An activity with a game (V5's shape). */
+export type GameActivity = Activity & { game: string; since: number }
+
+export function hasGame(activity: Activity): activity is GameActivity {
+  return activity.game !== null && activity.since !== null
 }
 
 export interface ActivityEntry {
@@ -58,12 +76,32 @@ function str(value: unknown, max: number): string {
   return typeof value === 'string' ? value.trim().slice(0, max) : ''
 }
 
+export function parseListening(value: unknown): Listening | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  const title = oneLine(v.title, 120)
+  if (!title) return null
+  return { title, artist: oneLine(v.artist, 120), app: oneLine(v.app, 40) }
+}
+
+/** A string as one line of text: controls and bidi characters out, whitespace collapsed, capped. */
+export function oneLine(value: unknown, max: number): string {
+  if (typeof value !== 'string') return ''
+  // eslint-disable-next-line no-control-regex
+  const text = value.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, ' ')
+  return Array.from(text.replace(/\s+/g, ' ').trim()).slice(0, max).join('').trim()
+}
+
 /** A server activity, checked field by field; null when unusable. */
 export function parseActivity(value: unknown): Activity | null {
   if (!value || typeof value !== 'object') return null
   const v = value as Record<string, unknown>
+  const listening = parseListening(v.listening)
   const game = str(v.game, 64)
-  if (!game || typeof v.since !== 'number' || !Number.isFinite(v.since)) return null
+  const timed = typeof v.since === 'number' && Number.isFinite(v.since)
+  if (!game || !timed) {
+    return listening ? { game: null, since: null, detail: null, listening } : null
+  }
   let detail: GameDetail | null = null
   if (v.detail && typeof v.detail === 'object') {
     const d = v.detail as Record<string, unknown>
@@ -81,7 +119,7 @@ export function parseActivity(value: unknown): Activity | null {
       }
     }
   }
-  return { game, since: v.since, detail }
+  return { game, since: v.since as number, detail, listening }
 }
 
 export class ActivityStore {
@@ -196,18 +234,41 @@ export function gameStatusBridge(): GameStatusBridge | null {
   return bridge
 }
 
+interface GamePart {
+  game: string
+  since: number
+  detail?: GameDetail
+}
+
 export type ActivityFrame =
-  | { type: 'activity.set'; game: string; since: number; detail?: Omit<GameDetail, never> }
+  | { type: 'activity.set'; game?: string; since?: number; detail?: GameDetail; listening?: Listening }
   | { type: 'activity.clear' }
 
 /** The desktop's status as an `activity.set` frame, or null when unusable. */
 export function toFrame(status: DesktopGameStatus | null): ActivityFrame | null {
+  const part = toGamePart(status)
+  return part ? { type: 'activity.set', ...part } : null
+}
+
+function toGamePart(status: DesktopGameStatus | null): GamePart | null {
   if (!status) return null
-  const parsed = parseActivity({ ...status, since: Math.floor(Number(status.since)) })
-  if (!parsed) return null
-  const frame: ActivityFrame = { type: 'activity.set', game: parsed.game, since: parsed.since }
-  if (parsed.detail) frame.detail = parsed.detail
-  return frame
+  const parsed = parseActivity({ ...status, listening: null, since: Math.floor(Number(status.since)) })
+  if (!parsed || !hasGame(parsed)) return null
+  const part: GamePart = { game: parsed.game, since: parsed.since }
+  if (parsed.detail) part.detail = parsed.detail
+  return part
+}
+
+/**
+ * CONTRACT-V11-ACTIVITY: the listening half the forwarder merges in
+ * (`activity/listening.ts`'s ListeningSource). `resolved` is false while the
+ * desktop app has not said yet what plays (the forwarder then waits after a
+ * `ready` instead of clearing what the server holds).
+ */
+export interface ListeningInput {
+  subscribe(listener: () => void): () => void
+  value(): Listening | null
+  resolved(): boolean
 }
 
 export interface ForwarderTimers {
@@ -226,18 +287,30 @@ const realTimers: ForwarderTimers = {
 export const REFRESH_MS = 4 * 60_000
 /** At most one frame per this interval (the server allows 30 a minute). */
 export const MIN_GAP_MS = 3_000
+/** V11: a new song at most this often (the server refuses one within 4 s). Stopping goes at once. */
+export const LISTEN_GAP_MS = 5_000
 
-export class GameForwarder {
-  private current: ActivityFrame | null = null
+/**
+ * Sends this user's activity: the game part from the desktop app
+ * (`onGameStatus`, while "Oyun durumumu paylaş" is on) and the listening part
+ * (V11, `ListeningInput`), merged into one frame.
+ */
+export class ActivityForwarder {
+  private game: GamePart | null = null
   /** What the server has from us: the last frame sent, or null when cleared/nothing. */
   private sentKey: string | null = null
   private sentAt = -Infinity
+  private sentListening: string | null = null
+  private listeningSentAt = -Infinity
   private timer: unknown = null
   private unbridge: (() => void) | null = null
   private unshare: (() => void) | null = null
+  private unlisten: (() => void) | null = null
   private started = false
   /** The desktop app has told us something since sharing was (re)enabled. */
   private heard = false
+  /** The server knows the listening part (`ready.activity_parts`). */
+  private serverListening = false
 
   constructor(
     private readonly send: (frame: ActivityFrame) => boolean,
@@ -246,12 +319,14 @@ export class GameForwarder {
     private readonly myId: () => number | null,
     private readonly timers: ForwarderTimers = realTimers,
     private readonly store: Pick<ActivityStore, 'get'> = activityStore,
+    private readonly listening: ListeningInput | null = null,
   ) {}
 
   start(): void {
     if (this.started) return
     this.started = true
     this.unshare = this.share.subscribe(() => this.applyShare(true))
+    this.unlisten = this.listening?.subscribe(() => this.flush()) ?? null
     this.applyShare(false)
   }
 
@@ -259,6 +334,8 @@ export class GameForwarder {
     this.started = false
     this.unshare?.()
     this.unshare = null
+    this.unlisten?.()
+    this.unlisten = null
     this.unbridge?.()
     this.unbridge = null
     if (this.timer !== null) this.timers.clearTimeout(this.timer)
@@ -273,10 +350,10 @@ export class GameForwarder {
     } else {
       this.unbridge?.()
       this.unbridge = null
-      this.current = null
+      this.game = null
       this.heard = false
       if (changed) {
-        // Switched off here and now: clear what the server holds for us.
+        // Switched off here and now: what the server holds for us changes.
         this.sentKey = 'unknown'
         this.flush()
       }
@@ -286,33 +363,40 @@ export class GameForwarder {
   private onStatus(status: DesktopGameStatus | null): void {
     if (!this.share.getSnapshot()) return
     this.heard = true
-    this.current = toFrame(status)
+    this.game = toGamePart(status)
     this.flush()
+  }
+
+  /** Every part has spoken (or is off), so "nothing" really means nothing. */
+  private resolved(): boolean {
+    const gameKnown = !this.bridge || !this.share.getSnapshot() || this.heard
+    const listenKnown = !this.listening || this.listening.resolved()
+    return gameKnown && listenKnown
   }
 
   /**
    * After every `ready` (a connect or a reconnect): the server may have lost
    * our entry (a restart) or still hold one from before the switch went off.
    */
-  onReady(): void {
-    // Only the desktop app speaks for this user's game; a plain browser tab
-    // never sends anything on its own (it would fight the desktop app).
-    if (!this.bridge) return
+  onReady(parts?: unknown): void {
+    this.serverListening = Array.isArray(parts) && parts.includes('listening')
+    // Only the desktop app speaks for this user; a plain browser tab never
+    // sends anything on its own (it would fight the desktop app).
+    if (!this.bridge && !this.listening) return
     const me = this.myId()
     const held = me !== null && this.store.get(me) !== undefined
     this.sentAt = -Infinity
-    if (!this.share.getSnapshot()) {
-      this.sentKey = held ? 'unknown' : null
-    } else if (this.heard) {
-      this.sentKey = this.current || held ? 'unknown' : null
-    } else {
-      return // the desktop's first status is on its way and will be sent
-    }
-    this.flush()
+    this.listeningSentAt = -Infinity
+    this.sentKey = held ? 'unknown' : null
+    this.sentListening = held ? 'unknown' : null
+    // Not everything has spoken yet: its first word is on its way and is sent then.
+    if (this.resolved()) this.flush()
   }
 
-  private key(): string | null {
-    return this.current ? JSON.stringify(this.current) : null
+  private wanted(): Extract<ActivityFrame, { type: 'activity.set' }> | null {
+    const listening = this.serverListening ? (this.listening?.value() ?? null) : null
+    if (!this.game && !listening) return null
+    return { type: 'activity.set', ...(this.game ?? {}), ...(listening ? { listening } : {}) }
   }
 
   private schedule(ms: number): void {
@@ -325,26 +409,42 @@ export class GameForwarder {
 
   /** Send what the server should have, within the rate; keep it fresh. */
   flush(): void {
+    if (!this.started) return
     const now = this.timers.now()
-    const want = this.key()
+    const frame = this.wanted()
+    const want = frame ? JSON.stringify(frame) : null
     const stale = want !== null && now - this.sentAt >= REFRESH_MS
     if (want === this.sentKey && !stale) {
       if (want !== null) this.schedule(this.sentAt + REFRESH_MS - now)
       return
     }
     if (want === null && this.sentKey === null) return
-    const wait = this.sentAt + MIN_GAP_MS - now
+    // Nothing known yet from a part that may still speak: do not clear on its behalf.
+    if (want === null && !this.resolved()) return
+    const listening = frame && 'listening' in frame && frame.listening ? JSON.stringify(frame.listening) : null
+    let wait = this.sentAt + MIN_GAP_MS - now
+    // A new song waits for the listening gap; stopping does not.
+    if (listening !== null && listening !== this.sentListening) {
+      wait = Math.max(wait, this.listeningSentAt + LISTEN_GAP_MS - now)
+    }
     if (wait > 0) {
       this.schedule(wait)
       return
     }
-    const frame: ActivityFrame = this.current ?? { type: 'activity.clear' }
-    if (!this.send(frame)) return // not connected: onReady sends it
+    if (!this.send(frame ?? { type: 'activity.clear' })) return // not connected: onReady sends it
     this.sentKey = want
     this.sentAt = now
+    if (listening !== this.sentListening) {
+      this.sentListening = listening
+      if (listening !== null) this.listeningSentAt = now
+    }
     if (want !== null) this.schedule(REFRESH_MS)
   }
 }
+
+/** V5's name. */
+export const GameForwarder = ActivityForwarder
+export type GameForwarder = ActivityForwarder
 
 // --------------------------------------------------------------------- display
 
@@ -365,8 +465,9 @@ export const CLASSES: Record<string, { name: string; color: string }> = {
   EVOKER: { name: 'Evoker', color: '#33937F' },
 }
 
-/** "WoW Forever · 37 · Orgrimmar", or just the game. */
+/** "WoW Forever · 37 · Orgrimmar", or just the game; "" without a game. */
 export function activityLine(activity: Activity): string {
+  if (activity.game === null) return ''
   const parts = [activity.game]
   const d = activity.detail
   if (d) {
@@ -374,6 +475,32 @@ export function activityLine(activity: Activity): string {
     const place = d.zone || d.subzone
     if (place) parts.push(place)
   }
+  return parts.join(' · ')
+}
+
+/** "Sanatçı — Şarkı" (the V8 title's shape), or the title alone when it already names the artist. */
+export function songText(listening: Listening): string {
+  const { title, artist } = listening
+  return artist && !title.includes(artist) ? `${artist} — ${title}` : title
+}
+
+/** "Spotify · Sanatçı — Şarkı" (the app first when known). */
+export function listeningLine(listening: Listening): string {
+  const song = songText(listening)
+  return listening.app ? `${listening.app} · ${song}` : song
+}
+
+/** The one short thing for a tight row: the game's name, else the song. */
+export function shortActivity(activity: Activity): string {
+  return activity.game ?? (activity.listening ? songText(activity.listening) : '')
+}
+
+/** One line for a list of people's tooltips: "Ece — WoW Forever · 37 · Orgrimmar · ♪ Spotify · Şarkı". */
+export function activitySummary(activity: Activity): string {
+  const parts: string[] = []
+  const game = activityLine(activity)
+  if (game) parts.push(game)
+  if (activity.listening) parts.push(`dinliyor: ${listeningLine(activity.listening)}`)
   return parts.join(' · ')
 }
 
@@ -407,8 +534,18 @@ export function activityTooltip(entry: ActivityEntry, nowMs: number): string {
     if (place) lines.push(place)
     if (d.source === 'saved') lines.push('Oyundan çıkarken kaydedilen bilgi')
   }
-  lines.push(`${activity.game} · ${elapsedText(activity.since, nowMs)} oynuyor`)
+  if (activity.game !== null && activity.since !== null) {
+    lines.push(`${activity.game} · ${elapsedText(activity.since, nowMs)} oynuyor`)
+  }
   const ago = agoText(entry.updatedAt, nowMs)
   if (ago) lines.push(`Güncellendi: ${ago}`)
+  return lines.join('\n')
+}
+
+/** The music line's tooltip. */
+export function listeningTooltip(listening: Listening): string {
+  const lines = [listening.title]
+  if (listening.artist) lines.push(listening.artist)
+  lines.push(listening.app ? `${listening.app} ile dinliyor` : 'Dinliyor')
   return lines.join('\n')
 }

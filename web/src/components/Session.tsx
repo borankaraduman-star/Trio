@@ -39,6 +39,7 @@ import { MemberList } from './MemberList'
 import { loadMembersHidden, saveMembersHidden } from '../lib/membersPanel'
 import { viewersOf } from '../lib/viewers'
 import { HereLine } from './ChannelViewers'
+import { ListeningNotice } from './GameActivity'
 import { MessageList } from './MessageList'
 import { SendTimers } from '../lib/sendTimers'
 import { isViewing, onViewingChange } from '../lib/viewing'
@@ -54,7 +55,8 @@ import { replyFields, useMessageFamily } from '../useMessageFamily'
 import { PinsButton } from './message/PinsButton'
 import { ReplyBar } from './message/ReplyBar'
 import { FamilyNotice } from './message/FamilyNotice'
-import { activityStore, GameForwarder, gameShare, gameStatusBridge } from '../gameActivity'
+import { activityStore, ActivityForwarder, gameShare, gameStatusBridge } from '../gameActivity'
+import { listeningSource } from '../activity/listening'
 import { notifyHub } from '../lib/notify/notifyHub'
 import { NotifyBridge } from './notify/NotifyBridge'
 import { MediaButton, MediaGallery } from './media/MediaGallery'
@@ -129,14 +131,17 @@ export function Session({
   const identity = useIdentity({ token, me: state.me, server: state.server, ready: state.ready, dispatch, onLogout })
 
   const [socket] = useState(() => new TrioSocket(token))
-  // CONTRACT-V5: the desktop app's game status, forwarded over this socket.
+  // CONTRACT-V5 / V11: the desktop app's game and listening status, forwarded over this socket.
   const [gameForwarder] = useState(
     () =>
-      new GameForwarder(
+      new ActivityForwarder(
         (frame) => socket.send(frame as unknown as ClientEvent),
         gameStatusBridge(),
         gameShare,
         () => stateRef.current.me.id,
+        undefined,
+        undefined,
+        listeningSource.supported ? listeningSource : null,
       ),
   )
   const [engine] = useState(
@@ -362,7 +367,7 @@ export function Session({
       const before = stateRef.current
       dispatch({ type: 'server', event, now: Date.now(), viewing: isViewing() })
       activityStore.handleEvent(event as unknown as { type: string } & Record<string, unknown>)
-      if (event.type === 'ready') gameForwarder.onReady()
+      if (event.type === 'ready') gameForwarder.onReady((event as unknown as { activity_parts?: unknown }).activity_parts)
       if (event.type === 'ready') notifyHub.connected()
       engine.handleEvent(event)
       alerts.handleEvent(event, (channelId) => (before.voice[channelId] ?? []).map((p) => p.user_id))
@@ -441,6 +446,7 @@ export function Session({
       onTooMany: (streak) => setTooMany(streak > 0),
     }
     socket.connect()
+    listeningSource.start()
     gameForwarder.start()
 
     api.me(token).catch((error: unknown) => {
@@ -449,6 +455,7 @@ export function Session({
 
     return () => {
       gameForwarder.stop()
+      listeningSource.stop()
       activityStore.reset()
       socket.handlers = {}
       socket.close()
@@ -933,6 +940,7 @@ export function Session({
         )}
 
         <DesktopUpdateBand serverVersion={state.serverVersion} ready={state.ready} />
+        <ListeningNotice />
 
         {calls.incoming && (
           <RingBand

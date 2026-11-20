@@ -15,7 +15,8 @@ this wins. Additive on the wire.
     ready             gains  activity_parts: ["game", "listening"]
 
     Activity  = {game: string | null, since: int | null, detail: Detail | null,
-                 listening: Listening | null}
+                 listening?: Listening}      — `listening` absent when none, so a
+                                               V5 entry is byte for byte as before
     Listening = {title, artist, app}            — artist/app "" when unknown
 
 - A frame carries **at least one** part: a game (`game` + `since`, `detail`
@@ -29,7 +30,8 @@ this wins. Additive on the wire.
   title empty after cleaning → `INVALID_ACTIVITY`.
 - **Track changes are rate limited**: a frame whose `listening` differs from
   the stored one less than **4 s** after the stored one changed → `RATE_LIMITED`
-  (nothing stored). The client waits 5 s between listening changes, so this
+  (nothing stored). A frame WITHOUT `listening` (stopping, or the setting
+  turned off) is never held back: that is the private direction. The client waits 5 s between listening changes, so this
   never fires for it. V5's 30 frames per user per minute still covers all.
 - Everything else is V5: one entry per user, replaced by every `activity.set`,
   in memory only (never in the database, no history, no "last listened"),
@@ -66,7 +68,7 @@ up to 15 people) and nobody else; it is not stored anywhere.
   with "Tamam" (send from now on; remembered, `trio.v11.listenAck` = "1") and
   "Kapat" (turns the setting off). `listen-notice`, `listen-notice-ok`,
   `listen-notice-off`.
-- Game status keeps V5's own switch, "Oyunumu göster" (`settings-game-share`,
+- Game status keeps V5's own switch, "Oyun durumumu paylaş" (`settings-game-share`,
   `trio.gameShare`, on by default). Both are under one "Durum" heading.
 - Browsers without the app detect nothing (they still see others). No typed
   manual status line: it would need storing to survive a restart and is not
@@ -144,7 +146,7 @@ window-title fallback (V8 §5) counts as Spotify.
 
 - `activityStore` keeps both parts; `ActivityForwarder` (was `GameForwarder`)
   sends one frame with both, at most one per 3 s, a listening change at most
-  one per 5 s (latest wins), refreshed unchanged every 4 min and after every
+  one per 5 s (latest wins; stopping goes at once), refreshed unchanged every 4 min and after every
   `ready`.
 - **Shown wherever a person is listed**, text only, one line each, ellipsis
   when long, a small pad (game) or note (music) glyph:

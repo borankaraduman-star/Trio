@@ -132,14 +132,14 @@ def test_a_track_change_sooner_than_four_seconds_is_rate_limited(trio, three):
 
 
 def test_stopping_listening_is_not_rate_limited_as_a_change_to_nothing(trio, three):
-    """Dropping the listening part is a change too (to none): the same 4 s rule."""
+    """Dropping the listening part (the private direction) is never rate limited."""
     ali, berk, _ = three
     with trio.ws(ali) as a, trio.ws(berk) as b:
         expect(a, "presence")
         a.send_json(listening(game="Dota 2", since=NOW))
         expect(b, "activity")
         expect(a, "activity")
-        trio.clock.value += 5
+        trio.clock.value += 1  # well inside the 4 s: stopping is never held back
         a.send_json({"type": "activity.set", "game": "Dota 2", "since": NOW})
         assert "listening" not in expect(b, "activity")["activity"]
         # activity.clear is never held back.

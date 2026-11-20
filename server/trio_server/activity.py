@@ -241,6 +241,9 @@ class ActivityBoard:
         entry = self.entries.get(user_id)
         if entry is None or not self._live(entry):
             return False
+        # Stopping (no listening part) is never held back: it is the private direction.
+        if activity.get("listening") is None:
+            return False
         if entry.activity.get("listening") == activity.get("listening"):
             return False
         return self.now() - entry.listening_changed_at < LISTENING_GAP_SECONDS
