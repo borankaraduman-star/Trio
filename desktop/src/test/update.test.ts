@@ -370,3 +370,22 @@ test("the settings file keeps the switch; default on", () => {
   fs.writeFileSync(path.join(dir, "trio-update.json"), "not json");
   assert.equal(store.getAutoDownload(), true);
 });
+
+test("bridge wiring: every update channel of the preload is origin-checked in main; the preload still imports only electron", () => {
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload", "app-preload.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main", "main.js"), "utf8");
+  const requires = [...preload.matchAll(/require\("([^"]+)"\)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(requires)], ["electron"]);
+  for (const member of ["getUpdateState", "onUpdateState", "checkForUpdates", "downloadUpdate", "installUpdate", "setAutoUpdate"]) {
+    assert.ok(preload.includes(`${member}(`), `${member} exposed`);
+  }
+  for (const channel of ["trio:update-state", "trio:update-check", "trio:update-download", "trio:update-install", "trio:update-auto"]) {
+    assert.ok(preload.includes(JSON.stringify(channel)), `${channel} used by the preload`);
+    const at = main.indexOf(JSON.stringify(channel));
+    assert.ok(at > 0, `${channel} handled in main`);
+    const handler = main.slice(at, at + 200);
+    assert.ok(handler.includes("fromServerPage(event)"), `${channel} checks the sender's origin`);
+  }
+  // The feed is pinned in code to the public repository, without a token.
+  assert.ok(/setFeedURL\(\{ provider: "github", owner: [^,]+, repo: [^,]+, private: false \}\)/.test(main));
+});
