@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import {
   DESKTOP_RELEASES_URL,
+  ReleaseWatch,
+  bandText,
+  loadHint,
+  loadLater,
+  saveHint,
+  saveLater,
+  shouldAskShell,
+  type HintRecord,
   LAST_MANUAL_TEXT,
   desktopLine,
   desktopNotice,
@@ -82,34 +90,67 @@ function useShellState(): { bridge: Bridge | null; updater: ReturnType<typeof up
   return { bridge, updater, shell }
 }
 
-// `/api/downloads`: the newest DESKTOP release. Asked at most every 10 minutes per page.
-let releaseCache: { at: number; promise: Promise<DesktopRelease | null> } | null = null
-const RELEASE_TTL_MS = 10 * 60 * 1000
-
-function fetchRelease(): Promise<DesktopRelease | null> {
-  const now = Date.now()
-  if (releaseCache && now - releaseCache.at < RELEASE_TTL_MS) return releaseCache.promise
-  const promise = fetch('/api/downloads', { headers: { Accept: 'application/json' } })
-    .then((response) => (response.ok ? response.json() : null))
-    .then((json: unknown) => parseRelease(json))
-    .catch(() => null)
-  releaseCache = { at: now, promise }
-  return promise
-}
+// `/api/downloads`: the newest DESKTOP release, kept fresh while the app is open (§4a).
+const releaseWatch = new ReleaseWatch({
+  fetchRelease: () =>
+    fetch('/api/downloads', { headers: { Accept: 'application/json' } })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json: unknown) => parseRelease(json)),
+  now: () => Date.now(),
+  setInterval: (cb, ms) => setInterval(cb, ms),
+  clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+})
 
 function useRelease(enabled: boolean): DesktopRelease | null {
-  const [release, setRelease] = useState<DesktopRelease | null>(null)
+  const [release, setRelease] = useState<DesktopRelease | null>(releaseWatch.current)
   useEffect(() => {
     if (!enabled) return
-    let alive = true
-    void fetchRelease().then((value) => {
-      if (alive) setRelease(value)
-    })
+    const unsubscribe = releaseWatch.subscribe(setRelease)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void releaseWatch.refresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
-      alive = false
+      unsubscribe()
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }, [enabled])
   return release
+}
+
+/** In-memory twin of the stored hint record (private mode, or storage that throws). */
+let lastHint: HintRecord | null = null
+
+/**
+ * §4a: a newer desktop release than this app, and a shell that has not seen
+ * it yet: ask the shell to look now (once per version per ten minutes). The
+ * shell reads its own pinned feed; with automatic download on (the default)
+ * it also downloads, during a call too, and never restarts by itself.
+ */
+function useUpdateHint(
+  bridge: Bridge | null,
+  updater: ReturnType<typeof updaterOf>,
+  shell: ShellUpdateState | null,
+  release: DesktopRelease | null,
+): void {
+  const appVersion = bridge?.appVersion
+  useEffect(() => {
+    if (!updater) return
+    const now = Date.now()
+    const stored = loadHint()
+    const last = [stored, lastHint].filter((r): r is HintRecord => r !== null).sort((a, b) => b.at - a.at)[0] ?? null
+    if (!shouldAskShell({ appVersion, hasUpdater: true, shell, release, last, now })) return
+    if (!release) return
+    lastHint = { version: release.version, at: now }
+    saveHint(lastHint)
+    try {
+      void updater.checkForUpdates().catch(() => undefined)
+    } catch {
+      // The bridge went away with the window.
+    }
+  // `release` is a new object after every successful poll, so a shell that found
+  // nothing yet is asked again once the ten minutes are over.
+  }, [updater, appVersion, shell?.status, shell?.version, shell?.capability, release])
 }
 
 function useNotice(): {
@@ -117,9 +158,11 @@ function useNotice(): {
   updater: ReturnType<typeof updaterOf>
   shell: ShellUpdateState | null
   notice: DesktopNotice | null
+  release: DesktopRelease | null
 } {
   const { bridge, updater, shell } = useShellState()
   const release = useRelease(bridge !== null)
+  useUpdateHint(bridge, updater, shell, release)
   const notice = desktopNotice({
     isDesktop: bridge !== null,
     appVersion: bridge?.appVersion,
@@ -128,7 +171,7 @@ function useNotice(): {
     release,
     userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
   })
-  return { bridge, updater, shell, notice }
+  return { bridge, updater, shell, notice, release }
 }
 
 /** Direct download(s) of this machine's installer; each opens in the system browser (the app's window-open guard). */
@@ -246,11 +289,33 @@ export function DesktopVersionFooter(_props: { serverVersion?: string | null }) 
 /** "Sonra" on a ready update: hidden until the page loads again (the app restarts on its own only on quit). */
 let laterVersion: string | null = null
 
+/** A dot on the settings button while the shell has an update to show (§5). */
+export function DesktopUpdateDot() {
+  const { shell } = useShellState()
+  if (!shell || shell.capability !== 'auto' || !shell.version) return null
+  if (!['available', 'downloading', 'ready'].includes(shell.status)) return null
+  return (
+    <span
+      className="ops-dot update-dot"
+      data-testid="desktop-update-dot"
+      data-status={shell.status}
+      aria-label="Masaüstü güncellemesi"
+      title={shell.status === 'ready' ? `Güncelleme hazır: ${shell.version}` : `Güncelleme: ${shell.version}`}
+    />
+  )
+}
+
 /** The band in the app. */
 export function DesktopUpdateBand({ ready }: { serverVersion?: string | null; ready: boolean }) {
   const { updater, notice } = useNotice()
   const [dismissed, setDismissed] = useState(loadDismissed)
   const [later, setLater] = useState(laterVersion)
+  const [laterPre, setLaterPre] = useState(loadLater)
+  // Every (re)connect asks for the newest release again (a release published
+  // while the socket was down, or a server that restarted for a deploy).
+  useEffect(() => {
+    if (ready) void releaseWatch.refresh(true)
+  }, [ready])
   if (!ready || !notice) return null
 
   if (notice.kind === 'manual') {
@@ -279,10 +344,17 @@ export function DesktopUpdateBand({ ready }: { serverVersion?: string | null; re
     )
   }
 
-  if (notice.kind === 'downloading' || !updater || later === notice.version) return null
+  if (!updater) return null
+  const pre = notice.kind === 'available' || notice.kind === 'downloading'
+  if (pre ? laterPre === notice.version : later === notice.version) return null
   const hide = () => {
-    laterVersion = notice.version
-    setLater(notice.version)
+    if (pre) {
+      saveLater(notice.version)
+      setLaterPre(notice.version)
+    } else {
+      laterVersion = notice.version
+      setLater(notice.version)
+    }
   }
   const laterButton = (
     <button type="button" className="ghost" data-testid="desktop-update-later" onClick={hide}>
@@ -290,11 +362,18 @@ export function DesktopUpdateBand({ ready }: { serverVersion?: string | null; re
     </button>
   )
 
-  if (notice.kind === 'available') {
-    return (
-      <div className="desktop-update-band" role="status" data-testid="desktop-update" data-kind="available" data-version={notice.version}>
-        <span>{updateText(notice.version)}</span>
-        <span className="desktop-update-actions">
+  return (
+    <div
+      className="desktop-update-band"
+      role="status"
+      data-testid="desktop-update"
+      data-kind={notice.kind}
+      data-version={notice.version}
+      data-in-voice={notice.inVoice}
+    >
+      <span>{bandText(notice)}</span>
+      <span className="desktop-update-actions">
+        {notice.kind === 'available' && (
           <button
             type="button"
             className="primary"
@@ -303,27 +382,8 @@ export function DesktopUpdateBand({ ready }: { serverVersion?: string | null; re
           >
             İndir
           </button>
-          {laterButton}
-        </span>
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className="desktop-update-band"
-      role="status"
-      data-testid="desktop-update"
-      data-kind="ready"
-      data-version={notice.version}
-      data-in-voice={notice.inVoice}
-    >
-      <span>
-        Güncelleme hazır: {notice.version}
-        {notice.inVoice && ' — sesli odadan çıkınca yeniden başlatabilirsin'}
-      </span>
-      <span className="desktop-update-actions">
-        {!notice.inVoice && (
+        )}
+        {notice.kind === 'ready' && !notice.inVoice && (
           <button
             type="button"
             className="primary"

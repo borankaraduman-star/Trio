@@ -17,8 +17,13 @@ taşıyan ilk sürüm ya da sonrası olmalı (0.7.1 ve öncesi kendini güncelle
    `latest-linux.yml`, `latest-mac.yml`, `Trio-N+1-win-x64.exe.blockmap`,
    `Trio-N+1-mac-arm64.zip`, `Trio-N+1-mac-x64.zip`. İş akışındaki "Check update
    metadata" adımı yeşil olmalı.
-4. Uygulamada Ayarlar › Hakkında › **Güncellemeleri denetle**. (Beklemek
-   istersen: açılıştan 45 saniye sonra, sonra 4 saatte bir kendisi bakar.)
+4. **Hiçbir şeye basma, bekle.** Açık uygulama yeni sürümü kendisi fark
+   etmeli: sayfa `/api/downloads`'ı 5 dakikada bir sorar (sunucu GitHub'ı 10
+   dakika önbellekte tutar), yeni sürümü görünce kabuğa "şimdi bak" der. En
+   geç ~15 dakika içinde bant "Güncelleme indiriliyor: N+1 (%…)" ve ayarlar
+   düğmesinde turuncu nokta çıkmalı. (Sesli odadayken de olmalı.) Sürenin
+   kaç dakika olduğunu not et. Olmazsa Ayarlar › Hakkında › **Güncellemeleri
+   denetle** yine çalışır (20 Kas 2026'da 0.8.0 → 0.9.0 böyle çalıştı).
 
 ## Yol B: ön sürümle (kimseyi etkilemeden)
 
@@ -38,9 +43,16 @@ Bu yüzden önce bir ön sürüm kur, sonra bir sonrakini yayımla:
       (yüzde artıyor) → "Hazır: N+1 — yeniden başlatınca kurulur".
 - [ ] Uygulamanın üstünde bant: **Güncelleme hazır: N+1 — Yeniden başlat ve
       güncelle** ve **Sonra**.
-- [ ] Bir sesli odaya gir: bantta düğme kaybolur, "sesli odadan çıkınca yeniden
-      başlatabilirsin" yazar; Hakkında'daki düğme gri. Uygulama kendiliğinden
-      yeniden başlamaz.
+- [ ] Tepsi simgesinin üstüne gel: "Trio — Güncelleme hazır: N+1". Tepsi
+      menüsünde **Yeniden başlat ve güncelle (N+1)**.
+- [ ] Pencere tepsideyken (kapatılmış) hazır olursa bir kez sessiz bildirim:
+      "Trio güncellemesi hazır".
+- [ ] Bir sesli odaya gir: bantta düğme kaybolur, "sesli odadan çıkınca
+      kurulabilir" yazar; Hakkında'daki düğme ve tepsi menüsündeki satır gri.
+      Uygulama kendiliğinden yeniden başlamaz.
+- [ ] Hazır güncellemeyle bilgisayarı kapat (uygulamadan çıkmadan), aç, Trio'yu
+      başlat: birkaç saniye sonra pencere kapanır ve N+1 olarak açılır
+      ("sonraki açılışta kurulur"; sesli odaya kendiliğinden girdiyse kurmaz).
 - [ ] Odadan çık, **Yeniden başlat ve güncelle**: pencere kapanır, kurulum
       ekranı **çıkmadan** birkaç saniyede Trio N+1 olarak yeniden açılır.
       Sunucu adresi ve ayarlar yerinde. (SmartScreen'in araya girip girmediğini
@@ -48,8 +60,8 @@ Bu yüzden önce bir ön sürüm kur, sonra bir sonrakini yayımla:
 - [ ] Hakkında: "Masaüstü uygulaması N+1", "Güncel".
 - [ ] Kurulum klasörü değişmedi (ilk kurulumda başka klasör seçtiysen orada
       kaldı): Ayarlar › Uygulamalar › Trio.
-- [ ] İkinci yol: hazır güncellemeyle **Çıkış** (tepsi menüsü) yap, Trio'yu
-      yeniden aç → N+1 açılmalı.
+- [ ] İkinci yol: hazır güncellemeyle **Çıkış** (tepsi menüsü) yap (kurulum
+      sessizce yapılır, Trio kendisi açılmaz), Trio'yu yeniden aç → N+1.
 - [ ] Kendiliğinden indirme kapalıyken (Hakkında'daki kutu): bant "yeni sürümü
       var (N+1)" + **İndir** der; İndir'e basınca iner.
 - [ ] Ağı kes, **Güncellemeleri denetle**: "Güncelleme denetlenemedi (internet

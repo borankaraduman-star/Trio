@@ -5,9 +5,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { UpdateController, UpdateSettingsStore, type Timers, type UpdaterLike } from "../main/updater";
 import {
-  AFTER_CALL_DELAY_MS,
   CHECK_INTERVAL_MS,
+  CHECK_JITTER_MS,
   FIRST_CHECK_DELAY_MS,
+  START_INSTALL_CHECK_DELAY_MS,
+  START_INSTALL_WINDOW_MS,
+  WAKE_MIN_GAP_MS,
+  readyNotification,
+  trayUpdateItem,
+  trayUpdateTooltip,
   compareVersions,
   downloadPlatform,
   errorReason,
@@ -159,16 +165,36 @@ class FakeUpdater implements UpdaterLike {
   }
 }
 
-function memorySettings(initial = true) {
+function memorySettings(initial = true, ready: string | null = null, tried: string | null = null) {
   let value = initial;
-  return { getAutoDownload: () => value, setAutoDownload: (on: boolean) => void (value = on), get value() { return value } };
+  let readyVersion = ready;
+  let startInstallTried = tried;
+  return {
+    getAutoDownload: () => value,
+    setAutoDownload: (on: boolean) => void (value = on),
+    getReadyVersion: () => readyVersion,
+    setReadyVersion: (v: string | null) => void (readyVersion = v),
+    getStartInstallTried: () => startInstallTried,
+    setStartInstallTried: (v: string) => void (startInstallTried = v),
+    get value() {
+      return value;
+    },
+    get ready() {
+      return readyVersion;
+    },
+    get tried() {
+      return startInstallTried;
+    },
+  };
 }
 
-function setup(opts: { capability?: Capability; auto?: boolean; current?: string } = {}) {
+function setup(
+  opts: { capability?: Capability; auto?: boolean; current?: string; ready?: string; tried?: string; random?: number } = {},
+) {
   const timers = new FakeTimers();
   const updater = new FakeUpdater();
   const states: UpdateState[] = [];
-  const settings = memorySettings(opts.auto ?? true);
+  const settings = memorySettings(opts.auto ?? true, opts.ready ?? null, opts.tried ?? null);
   let created = 0;
   let quitting = false;
   const controller = new UpdateController({
@@ -185,6 +211,7 @@ function setup(opts: { capability?: Capability; auto?: boolean; current?: string
       quitting = true;
     },
     timers,
+    random: () => opts.random ?? 0,
     log: { info: () => undefined, warn: () => undefined },
   });
   return { timers, updater, states, controller, settings, created: () => created, quitting: () => quitting };
@@ -212,15 +239,24 @@ test("checking → available → downloading → ready → installing, after a d
   assert.equal(quitting(), true);
 });
 
-test("checks again every few hours; up to date says so", async () => {
-  const { timers, updater, controller } = setup();
+test("checks again about hourly, with jitter; up to date says so", async () => {
+  const { timers, updater, controller } = setup({ random: 0.5 });
   updater.latest = { version: "0.7.1", files: files("0.7.1") };
   controller.start();
   await timers.advance(FIRST_CHECK_DELAY_MS);
   assert.equal(controller.snapshot.status, "up-to-date");
   assert.equal(controller.snapshot.checkedAt, FIRST_CHECK_DELAY_MS);
-  await timers.advance(CHECK_INTERVAL_MS);
+  const next = CHECK_INTERVAL_MS + CHECK_JITTER_MS / 2;
+  assert.deepEqual(timers.pending, [next]);
+  assert.ok(next >= 30 * 60 * 1000 && CHECK_INTERVAL_MS + CHECK_JITTER_MS <= 60 * 60 * 1000, "between half an hour and an hour");
+  await timers.advance(next - 1);
+  assert.equal(updater.checks, 1);
+  await timers.advance(1);
   assert.equal(updater.checks, 2);
+  // A release published meanwhile is found by the next periodic check.
+  updater.latest = { version: "0.8.0", files: files("0.8.0") };
+  await timers.advance(next);
+  assert.equal(controller.snapshot.status, "ready");
 });
 
 test("a downgrade or the same version is refused, and never downloaded", async () => {
@@ -269,49 +305,160 @@ test("a download whose hash does not match never becomes ready; it can be retrie
   assert.equal(controller.snapshot.status, "ready");
 });
 
-test("in a voice room: no automatic check, no restart; leaving runs the check a minute later", async () => {
-  const { timers, updater, controller } = setup();
+test("in a voice room: the automatic check and the download run, the restart never does", async () => {
+  const { timers, updater, controller, quitting } = setup();
   controller.start();
   controller.setInVoice(true);
   await timers.advance(FIRST_CHECK_DELAY_MS);
-  assert.equal(updater.checks, 0, "deferred during the call");
-  controller.setInVoice(false);
-  await timers.advance(AFTER_CALL_DELAY_MS - 1);
-  assert.equal(updater.checks, 0);
-  await timers.advance(1);
-  assert.equal(updater.checks, 1);
+  assert.equal(updater.checks, 1, "checked during the call");
+  assert.equal(updater.downloads, 1, "downloaded during the call");
   assert.equal(controller.snapshot.status, "ready");
-  controller.setInVoice(true);
+  assert.equal(controller.snapshot.inVoice, true);
   assert.deepEqual(controller.install(), { ok: false, reason: "in-voice" });
   assert.equal(updater.installs.length, 0, "never restarts during a call");
+  assert.equal(quitting(), false);
+  await timers.advance(CHECK_INTERVAL_MS * 3);
+  assert.equal(updater.installs.length, 0, "nor later, by itself");
   controller.setInVoice(false);
+  assert.equal(updater.installs.length, 0, "leaving the call does not restart either");
   assert.deepEqual(controller.install(), { ok: true });
 });
 
-test("a manual check during a call is honoured (the user asked)", async () => {
+test("the page's \"look now\" during a call checks and downloads (what 0.8.0/0.9.0 shells did with checkNow too)", async () => {
   const { updater, controller } = setup();
   controller.start();
   controller.setInVoice(true);
   await controller.checkNow();
   assert.equal(updater.checks, 1);
   assert.equal(controller.snapshot.status, "ready");
+  // Asked again while ready: nothing new is fetched.
+  await controller.checkNow();
+  assert.equal(updater.checks, 1);
 });
 
-test("an automatic check that finds an update as a call starts downloads only after the call", async () => {
+test("a call that starts while a check is on its way: the found update still downloads", async () => {
   const { timers, updater, controller } = setup();
   controller.start();
   let open!: () => void;
   updater.checkGate = new Promise((resolve) => (open = resolve));
   await timers.advance(FIRST_CHECK_DELAY_MS);
-  controller.setInVoice(true); // joins while the check is on its way
+  controller.setInVoice(true);
   open();
   await flush();
-  assert.equal(controller.snapshot.status, "available");
-  assert.equal(updater.downloads, 0, "no download during the call");
-  controller.setInVoice(false);
-  await timers.advance(AFTER_CALL_DELAY_MS);
+  await flush();
   assert.equal(updater.downloads, 1);
   assert.equal(controller.snapshot.status, "ready");
+});
+
+test("waking from sleep or showing the window checks when the last check is old enough", async () => {
+  const { timers, updater, controller } = setup();
+  updater.latest = { version: "0.7.1", files: files("0.7.1") };
+  controller.start();
+  controller.wake(); // nothing checked yet: look now
+  await timers.advance(0);
+  assert.equal(updater.checks, 1);
+  await timers.advance(WAKE_MIN_GAP_MS - 1);
+  controller.wake();
+  await timers.advance(0);
+  assert.equal(updater.checks, 1, "not twice within the gap");
+  await timers.advance(1);
+  controller.wake();
+  await timers.advance(0);
+  assert.equal(updater.checks, 2);
+  // The periodic schedule continues from the wake-up.
+  assert.equal(timers.pending.length, 1);
+});
+
+test("an update downloaded in an earlier run is installed by the next start, once, and not in a call", async () => {
+  // Downloaded, never quit (Windows shut down): the next start finds it waiting.
+  {
+    const { timers, updater, controller, settings } = setup({ ready: "0.8.0" });
+    controller.start();
+    await timers.advance(START_INSTALL_CHECK_DELAY_MS);
+    assert.equal(controller.snapshot.status, "installing");
+    assert.deepEqual(updater.installs, [[true, true]]);
+    assert.equal(settings.tried, "0.8.0", "tried once: a failing installer cannot loop the app");
+  }
+  // The same version was already tried by a start: no second attempt.
+  {
+    const { timers, updater, controller } = setup({ ready: "0.8.0", tried: "0.8.0" });
+    controller.start();
+    await timers.advance(FIRST_CHECK_DELAY_MS);
+    assert.equal(controller.snapshot.status, "ready");
+    assert.equal(updater.installs.length, 0);
+  }
+  // Back in the call (it survives a restart, V4): it waits for the user.
+  {
+    const { timers, updater, controller } = setup({ ready: "0.8.0" });
+    controller.start();
+    controller.setInVoice(true);
+    await timers.advance(START_INSTALL_CHECK_DELAY_MS);
+    assert.equal(controller.snapshot.status, "ready");
+    assert.equal(updater.installs.length, 0);
+  }
+  // Ready only after the window (offline at start): no surprise restart later.
+  {
+    const { timers, updater, controller } = setup({ ready: "0.8.0" });
+    updater.checkError = new Error("getaddrinfo ENOTFOUND github.com");
+    controller.start();
+    await timers.advance(START_INSTALL_WINDOW_MS + 1);
+    updater.checkError = null;
+    await controller.checkNow();
+    assert.equal(controller.snapshot.status, "ready");
+    assert.equal(updater.installs.length, 0);
+  }
+  // Already installed (by quitting): the record is cleared, the normal schedule runs.
+  {
+    const { timers, updater, controller, settings } = setup({ ready: "0.8.0", current: "0.8.0" });
+    controller.start();
+    assert.equal(settings.ready, null);
+    await timers.advance(START_INSTALL_CHECK_DELAY_MS);
+    assert.equal(updater.checks, 0);
+  }
+});
+
+test("a download that becomes ready is remembered for the next start", async () => {
+  const { updater, controller, settings } = setup();
+  controller.start();
+  await controller.checkNow();
+  assert.equal(controller.snapshot.status, "ready");
+  assert.equal(settings.ready, "0.8.0");
+  assert.equal(updater.installs.length, 0, "a normal run never installs by itself");
+});
+
+test("tray line, tooltip and the notification follow the state", () => {
+  const base: UpdateState = {
+    capability: "auto",
+    reason: null,
+    platform: "windows",
+    currentVersion: "0.9.0",
+    autoDownload: true,
+    status: "up-to-date",
+    version: null,
+    percent: null,
+    error: null,
+    checkedAt: 1,
+    inVoice: false,
+  };
+  assert.equal(trayUpdateItem(base), null);
+  assert.equal(trayUpdateTooltip(base), null);
+  assert.equal(readyNotification(base), null);
+  assert.deepEqual(trayUpdateItem({ ...base, status: "downloading", version: "0.9.1", percent: 47 }), {
+    label: "Güncelleme indiriliyor: 0.9.1 (%40)",
+    enabled: false,
+    install: false,
+  });
+  const ready = { ...base, status: "ready" as const, version: "0.9.1", percent: 100 };
+  assert.deepEqual(trayUpdateItem(ready), { label: "Yeniden başlat ve güncelle (0.9.1)", enabled: true, install: true });
+  assert.deepEqual(trayUpdateItem({ ...ready, inVoice: true }), {
+    label: "Güncelleme hazır: 0.9.1 (sesli odadan çıkınca)",
+    enabled: false,
+    install: false,
+  });
+  assert.equal(trayUpdateTooltip(ready), "Güncelleme hazır: 0.9.1");
+  assert.equal(readyNotification(ready)?.title, "Trio güncellemesi hazır");
+  assert.match(readyNotification({ ...ready, inVoice: true })?.body ?? "", /Sesli odadan çıkınca/);
+  assert.equal(trayUpdateItem({ ...ready, capability: "manual" }), null);
 });
 
 test("automatic download off: available, the user downloads; switching it on downloads", async () => {
@@ -361,12 +508,22 @@ test("an updater that cannot be created falls back to the manual path", () => {
   assert.deepEqual(timers.pending, []);
 });
 
-test("the settings file keeps the switch; default on", () => {
+test("the settings file keeps the switch (default on) and the waiting version", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "trio-update-"));
   const store = new UpdateSettingsStore(dir);
   assert.equal(store.getAutoDownload(), true);
+  assert.equal(store.getReadyVersion(), null);
   store.setAutoDownload(false);
-  assert.equal(new UpdateSettingsStore(dir).getAutoDownload(), false);
+  store.setReadyVersion("0.9.1");
+  store.setStartInstallTried("0.9.1");
+  const again = new UpdateSettingsStore(dir);
+  assert.equal(again.getAutoDownload(), false);
+  assert.equal(again.getReadyVersion(), "0.9.1");
+  assert.equal(again.getStartInstallTried(), "0.9.1");
+  // An older file (only the switch) still reads.
+  fs.writeFileSync(path.join(dir, "trio-update.json"), JSON.stringify({ autoDownload: false }));
+  assert.equal(store.getAutoDownload(), false);
+  assert.equal(store.getReadyVersion(), null);
   fs.writeFileSync(path.join(dir, "trio-update.json"), "not json");
   assert.equal(store.getAutoDownload(), true);
 });

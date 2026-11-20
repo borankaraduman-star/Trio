@@ -21,6 +21,7 @@ import {
   Menu,
   nativeImage,
   net,
+  Notification,
   powerMonitor,
   protocol,
   screen,
@@ -48,7 +49,16 @@ import { MusicCaptureArm, musicCaptureSupport } from "../shared/musicCapture";
 import { NowPlayingWatcher, defaultSource } from "./nowPlaying";
 import { answerDisplayMedia } from "./displayMedia";
 import { UpdateController, UpdateSettingsStore, type UpdaterLike } from "./updater";
-import { downloadPlatform, updateCapability, UPDATE_OWNER, UPDATE_REPO, type UpdateState } from "../shared/update";
+import {
+  downloadPlatform,
+  readyNotification,
+  trayUpdateItem,
+  trayUpdateTooltip,
+  updateCapability,
+  UPDATE_OWNER,
+  UPDATE_REPO,
+  type UpdateState,
+} from "../shared/update";
 import { initialWindowSize } from "../shared/windowSize";
 import {
   isExternalOpenable,
@@ -154,6 +164,9 @@ let trayBase: Electron.NativeImage | null = null;
 let trayVoice: TrayVoiceState = "none";
 /** CONTRACT-V10-UPDATE: created in onReady. */
 let updates: UpdateController | null = null;
+/** The last update state the tray shows, and the version already notified (once each). */
+let trayUpdate: UpdateState | null = null;
+let notifiedUpdate: string | null = null;
 
 // ------------------------------------------------------- before app ready
 
@@ -395,9 +408,12 @@ function showMainWindow(): void {
     createMainWindow();
     return;
   }
+  const wasHidden = !mainWindow.isVisible() || mainWindow.isMinimized();
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  // CONTRACT-V10-UPDATE §4: back from the tray after a long time, look again.
+  if (wasHidden) updates?.wake();
 }
 
 // -------------------------------------------------------- unread / badge
@@ -415,7 +431,7 @@ function updateUnread(count: number): void {
     // macOS dock; Linux launchers that support it (Unity/KDE).
     app.setBadgeCount(count);
   }
-  tray?.setToolTip(trayTooltip(trayVoice, count > 0 ? `Trio — ${count} okunmamış` : "Trio"));
+  refreshTrayTooltip();
   if (count > previous && mainWindow && !mainWindow.isFocused()) {
     mainWindow.flashFrame(true);
   }
@@ -433,27 +449,46 @@ function createTray(): void {
   trayBase = image;
   tray = new Tray(image);
   tray.setToolTip("Trio");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: versionLabel(app.getVersion()), enabled: false },
-      { type: "separator" },
-      { label: "Trio'yu göster", click: () => showMainWindow() },
-      { label: "Oyun durumu…", click: () => showGameWindow() },
-      { type: "separator" },
-      { label: "Çıkış", click: () => quit() },
-    ]),
-  );
+  refreshTrayMenu();
   tray.on("click", () => {
     if (mainWindow?.isVisible() && mainWindow.isFocused()) mainWindow.hide();
     else showMainWindow();
   });
 }
 
+/** The tray menu; CONTRACT-V10-UPDATE §5 adds the update line (and the restart, outside a call). */
+function refreshTrayMenu(): void {
+  if (!tray) return;
+  const update = trayUpdate ? trayUpdateItem(trayUpdate) : null;
+  const items: MenuItemConstructorOptions[] = [{ label: versionLabel(app.getVersion()), enabled: false }];
+  if (update) {
+    items.push({
+      label: update.label,
+      enabled: update.enabled,
+      click: update.install ? () => void updates?.install() : undefined,
+    });
+  }
+  items.push(
+    { type: "separator" },
+    { label: "Trio'yu göster", click: () => showMainWindow() },
+    { label: "Oyun durumu…", click: () => showGameWindow() },
+    { type: "separator" },
+    { label: "Çıkış", click: () => quit() },
+  );
+  tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+function refreshTrayTooltip(): void {
+  const base = unread > 0 ? `Trio — ${unread} okunmamış` : "Trio";
+  const update = trayUpdate ? trayUpdateTooltip(trayUpdate) : null;
+  tray?.setToolTip(trayTooltip(trayVoice, update ? `${base} — ${update}` : base));
+}
+
 /** V6: draw (or clear) the mute/deafen mark on the tray icon. */
 function setTrayVoice(state: TrayVoiceState): void {
   if (state === trayVoice || !tray || !trayBase) return;
   trayVoice = state;
-  tray.setToolTip(trayTooltip(state, unread > 0 ? `Trio — ${unread} okunmamış` : "Trio"));
+  refreshTrayTooltip();
   if (state === "none") {
     tray.setImage(trayBase);
     return;
@@ -708,6 +743,9 @@ function installUpdates(): void {
     if (fromServerPage(event) && typeof on === "boolean") updates?.setAutoDownload(on);
   });
 
+  // Woken from sleep: the hourly checks did not run meanwhile.
+  powerMonitor.on("resume", () => updates?.wake());
+
   updates.start();
 }
 
@@ -715,6 +753,29 @@ function sendUpdateState(state: UpdateState): void {
   const wc = mainWindow?.webContents;
   if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
     wc.send("trio:update-changed", state);
+  }
+  showUpdateOutside(state);
+}
+
+/** CONTRACT-V10-UPDATE §5: the tray line and tooltip, and one notification when ready while hidden. */
+function showUpdateOutside(state: UpdateState): void {
+  const before = trayUpdate ? trayUpdateItem(trayUpdate) : null;
+  const tipBefore = trayUpdate ? trayUpdateTooltip(trayUpdate) : null;
+  trayUpdate = state;
+  const after = trayUpdateItem(state);
+  if (JSON.stringify(before) !== JSON.stringify(after)) refreshTrayMenu();
+  if (tipBefore !== trayUpdateTooltip(state)) refreshTrayTooltip();
+  const notice = readyNotification(state);
+  if (!notice || notifiedUpdate === state.version) return;
+  const hidden = !mainWindow || !mainWindow.isVisible() || mainWindow.isMinimized();
+  if (!hidden || !Notification.isSupported()) return;
+  notifiedUpdate = state.version;
+  try {
+    const notification = new Notification({ title: notice.title, body: notice.body, silent: true });
+    notification.on("click", () => showMainWindow());
+    notification.show();
+  } catch (error) {
+    console.warn("[trio] update notification not shown", error);
   }
 }
 

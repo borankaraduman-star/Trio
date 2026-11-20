@@ -2,11 +2,11 @@
  * CONTRACT-V10-UPDATE: the shell's own update cycle around electron-updater.
  *
  * electron-updater does the network, the sha512 check and the install; this
- * controller decides WHEN (a delay after start, then every few hours, never
- * an automatic check or download while the page says the user is in a voice
- * room, never a restart then), WHAT is acceptable (strictly newer than the
- * running version, metadata naming plain asset files of the pinned release)
- * and what the page is told. The updater is injected, so the tests drive a
+ * controller decides WHEN (shortly after start, then about hourly, on waking
+ * from sleep and on showing the window again, and whenever the page asks; a
+ * check and a download also run during a voice call, a restart never does),
+ * WHAT is acceptable (strictly newer than the running version, metadata naming
+ * plain asset files of the pinned release) and what the page is told. The updater is injected, so the tests drive a
  * fake one; `main.ts` passes electron-updater's platform updater.
  *
  * electron-updater's own `autoDownload` is always off: a found update is only
@@ -15,9 +15,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
-  AFTER_CALL_DELAY_MS,
   CHECK_INTERVAL_MS,
+  CHECK_JITTER_MS,
   FIRST_CHECK_DELAY_MS,
+  START_INSTALL_CHECK_DELAY_MS,
+  START_INSTALL_WINDOW_MS,
+  WAKE_MIN_GAP_MS,
   errorReason,
   isNewer,
   updateFilesAcceptable,
@@ -54,7 +57,18 @@ const realTimers: Timers = {
   now: () => Date.now(),
 };
 
-/** `<userData>/trio-update.json`: only the "download automatically" switch. */
+interface StoredSettings {
+  autoDownload: boolean;
+  /** A version downloaded and verified in this or an earlier run, not yet installed. */
+  readyVersion: string | null;
+  /** The version a start already tried to install (never twice: no restart loop). */
+  startInstallTried: string | null;
+}
+
+/**
+ * `<userData>/trio-update.json`: the "download automatically" switch, and which
+ * downloaded version is waiting to be installed (so the next start can do it).
+ */
 export class UpdateSettingsStore {
   private readonly file: string;
 
@@ -62,30 +76,63 @@ export class UpdateSettingsStore {
     this.file = path.join(directory, "trio-update.json");
   }
 
-  getAutoDownload(): boolean {
+  private read(): StoredSettings {
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, "utf8")) as { autoDownload?: unknown };
-      return raw.autoDownload !== false;
+      const raw = JSON.parse(fs.readFileSync(this.file, "utf8")) as Record<string, unknown>;
+      const text = (value: unknown) => (typeof value === "string" && value.length <= 64 ? value : null);
+      return {
+        autoDownload: raw.autoDownload !== false,
+        readyVersion: text(raw.readyVersion),
+        startInstallTried: text(raw.startInstallTried),
+      };
     } catch {
-      return true;
+      return { autoDownload: true, readyVersion: null, startInstallTried: null };
     }
   }
 
-  setAutoDownload(on: boolean): void {
+  private write(patch: Partial<StoredSettings>): void {
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const tmp = `${this.file}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ autoDownload: on }, null, 2), "utf8");
+      fs.writeFileSync(tmp, JSON.stringify({ ...this.read(), ...patch }, null, 2), "utf8");
       fs.renameSync(tmp, this.file);
     } catch (error) {
       console.warn("[trio] update settings not saved", error);
     }
+  }
+
+  getAutoDownload(): boolean {
+    return this.read().autoDownload;
+  }
+
+  setAutoDownload(on: boolean): void {
+    this.write({ autoDownload: on });
+  }
+
+  getReadyVersion(): string | null {
+    return this.read().readyVersion;
+  }
+
+  setReadyVersion(version: string | null): void {
+    if (this.read().readyVersion !== version) this.write({ readyVersion: version });
+  }
+
+  getStartInstallTried(): string | null {
+    return this.read().startInstallTried;
+  }
+
+  setStartInstallTried(version: string): void {
+    this.write({ startInstallTried: version });
   }
 }
 
 export interface SettingsLike {
   getAutoDownload(): boolean;
   setAutoDownload(on: boolean): void;
+  getReadyVersion(): string | null;
+  setReadyVersion(version: string | null): void;
+  getStartInstallTried(): string | null;
+  setStartInstallTried(version: string): void;
 }
 
 export type InstallAnswer = { ok: true } | { ok: false; reason: "not-ready" | "in-voice" | "manual" };
@@ -101,6 +148,8 @@ export interface UpdateControllerOptions {
   /** Called right before quitAndInstall: the shell marks itself as quitting. */
   beforeInstall: () => void;
   timers?: Timers;
+  /** 0 ≤ x < 1, for the jitter (Math.random). */
+  random?: () => number;
   log?: Pick<Console, "info" | "warn">;
 }
 
@@ -110,10 +159,13 @@ export class UpdateController {
   private updater: UpdaterLike | null = null;
   private state: UpdateState;
   private timer: unknown = null;
-  /** An automatic check or download came due during a call. */
-  private deferred: "check" | "download" | null = null;
   private started = false;
+  private startedAt = 0;
   private busy = false;
+  /** When the last check started (finished or not): wake-ups are measured from it. */
+  private lastCheckAt: number | null = null;
+  /** A version downloaded in an earlier run that this start may install (§4, "next start"). */
+  private installOnStart: string | null = null;
 
   constructor(private readonly options: UpdateControllerOptions) {
     this.timers = options.timers ?? realTimers;
@@ -156,18 +208,42 @@ export class UpdateController {
       this.set({ capability: "manual", reason: "no-config", status: "manual" });
       return;
     }
-    this.schedule(FIRST_CHECK_DELAY_MS);
+    this.startedAt = this.timers.now();
+    const waiting = this.options.settings.getReadyVersion();
+    if (waiting && !isNewer(waiting, this.state.currentVersion)) {
+      // Installed meanwhile (on quit, or by hand): nothing waits any more.
+      this.options.settings.setReadyVersion(null);
+    } else if (waiting && this.options.settings.getStartInstallTried() !== waiting) {
+      this.installOnStart = waiting;
+    }
+    this.schedule(this.installOnStart ? START_INSTALL_CHECK_DELAY_MS : FIRST_CHECK_DELAY_MS);
   }
 
   dispose(): void {
     this.clearTimer();
   }
 
-  /** The page's voice state (`setVoiceState`). Leaving a call runs what was deferred, a minute later. */
+  /**
+   * The page's voice state (`setVoiceState`). It only governs the restart:
+   * checks and downloads go on during a call (a download competes with the
+   * call's incoming media only on a saturated line, and Windows usually
+   * fetches only the changed blocks).
+   */
   setInVoice(inVoice: boolean): void {
     if (inVoice === this.state.inVoice) return;
     this.set({ inVoice });
-    if (!inVoice && this.deferred && this.updater) this.schedule(AFTER_CALL_DELAY_MS);
+  }
+
+  /**
+   * Woken from sleep, or the window shown again from the tray: check now when
+   * the last check is older than `WAKE_MIN_GAP_MS` (a laptop asleep all night
+   * has missed the hourly ones).
+   */
+  wake(): void {
+    if (!this.updater || this.busy) return;
+    const now = this.timers.now();
+    if (this.lastCheckAt !== null && now - this.lastCheckAt >= 0 && now - this.lastCheckAt < WAKE_MIN_GAP_MS) return;
+    this.schedule(0);
   }
 
   setAutoDownload(on: boolean): void {
@@ -177,7 +253,7 @@ export class UpdateController {
     if (on && this.state.status === "available") void this.automaticDownload();
   }
 
-  /** "Güncellemeleri denetle": always allowed, also during a call (the user asked). */
+  /** "Güncellemeleri denetle", and the page's "look now" (§4a): always allowed, also during a call. */
   async checkNow(): Promise<UpdateState> {
     await this.check(true);
     return this.snapshot;
@@ -220,13 +296,9 @@ export class UpdateController {
   }
 
   private async tick(): Promise<void> {
-    if (this.deferred === "download" && !this.state.inVoice && this.state.status === "available") {
-      this.deferred = null;
-      await this.automaticDownload();
-    } else {
-      await this.check(false);
-    }
-    this.schedule(CHECK_INTERVAL_MS);
+    await this.check(false);
+    const random = this.options.random ?? Math.random;
+    this.schedule(CHECK_INTERVAL_MS + Math.floor(Math.max(0, Math.min(0.999, random())) * CHECK_JITTER_MS));
   }
 
   private async check(manual: boolean): Promise<void> {
@@ -234,12 +306,8 @@ export class UpdateController {
     if (!updater || this.busy) return;
     const status = this.state.status;
     if (status === "downloading" || status === "ready" || status === "installing") return;
-    if (!manual && this.state.inVoice) {
-      this.deferred = "check";
-      return;
-    }
-    this.deferred = null;
     this.busy = true;
+    this.lastCheckAt = this.timers.now();
     this.set({ status: "checking", error: null, percent: null });
     try {
       const result = await updater.checkForUpdates();
@@ -263,17 +331,12 @@ export class UpdateController {
     } finally {
       this.busy = false;
     }
-    if (this.state.autoDownload) {
-      if (manual || !this.state.inVoice) await this.download();
-      else this.deferred = "download";
-    }
+    // Manual or automatic, in a call or not: a found update downloads (§4).
+    void manual;
+    if (this.state.autoDownload) await this.download();
   }
 
   private async automaticDownload(): Promise<void> {
-    if (this.state.inVoice) {
-      this.deferred = "download";
-      return;
-    }
     await this.download();
   }
 
@@ -288,11 +351,29 @@ export class UpdateController {
       // throws on a mismatch; nothing unverified becomes "ready".
       await updater.downloadUpdate();
       this.set({ status: "ready", percent: 100 });
+      this.options.settings.setReadyVersion(version);
+      this.maybeInstallOnStart(version);
     } catch (error) {
       this.set({ status: "error", percent: null, error: errorReason(error) });
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * An update downloaded in an earlier run (the app was never quit: Windows
+   * shut down, or it was killed) is installed by the next start, once: right
+   * after start, before the user is in a call. Tried once per version, so an
+   * installer that fails cannot loop the app.
+   */
+  private maybeInstallOnStart(version: string): void {
+    const wanted = this.installOnStart;
+    this.installOnStart = null;
+    if (!wanted || !(version === wanted || isNewer(version, wanted)) || this.state.inVoice) return;
+    if (this.timers.now() - this.startedAt > START_INSTALL_WINDOW_MS) return;
+    this.options.settings.setStartInstallTried(version);
+    this.log.info(`[trio] installing ${version}, downloaded in an earlier run`);
+    this.install();
   }
 
   private progress(percent: unknown): void {

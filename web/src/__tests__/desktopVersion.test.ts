@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ReleaseWatch,
+  bandText,
+  shouldAskShell,
+  HINT_RETRY_MS,
+  RELEASE_POLL_MS,
+  FORCE_GAP_MS,
   compareVersions,
   desktopLine,
   desktopNotice,
@@ -114,6 +120,7 @@ describe('inside an app that updates itself', () => {
       kind: 'downloading',
       version: '0.9.0',
       percent: 40,
+      inVoice: false,
     })
     expect(desktopNotice({ ...auto, shell: shell({ status: 'ready', version: '0.9.0' }) })).toEqual({
       kind: 'ready',
@@ -205,5 +212,143 @@ describe('texts', () => {
     saveDismissed('0.5.0', storage)
     expect(data.get(DISMISSED_KEY)).toBe('0.5.0')
     expect(loadDismissed(storage)).toBe('0.5.0')
+  })
+})
+
+describe('the band in the shell\'s own states (§5)', () => {
+  it('says available, downloading and ready in one line; in a call, "odadan çıkınca"', () => {
+    expect(bandText({ kind: 'available', version: '0.9.1', inVoice: false })).toBe(
+      'Masaüstü uygulamasının yeni sürümü var (0.9.1).',
+    )
+    expect(bandText({ kind: 'downloading', version: '0.9.1', percent: 40, inVoice: false })).toBe(
+      'Güncelleme indiriliyor: 0.9.1 (%40)',
+    )
+    expect(bandText({ kind: 'downloading', version: '0.9.1', percent: 40, inVoice: true })).toBe(
+      'Güncelleme indiriliyor: 0.9.1 (%40) — sesli odadan çıkınca kurulabilir',
+    )
+    expect(bandText({ kind: 'ready', version: '0.9.1', inVoice: false })).toBe('Güncelleme hazır: 0.9.1')
+    expect(bandText({ kind: 'ready', version: '0.9.1', inVoice: true })).toBe(
+      'Güncelleme hazır: 0.9.1 — sesli odadan çıkınca kurulabilir',
+    )
+  })
+})
+
+describe('"look now": the page asks the shell when it learns of a newer desktop release (§4a)', () => {
+  const ask = {
+    appVersion: '0.9.0',
+    hasUpdater: true,
+    shell: shell({ status: 'up-to-date', currentVersion: '0.9.0' }),
+    release: release('0.9.1'),
+    last: null,
+    now: 1_000_000,
+  }
+  it('asks when the release is newer and the shell idles', () => {
+    expect(shouldAskShell(ask)).toBe(true)
+    expect(shouldAskShell({ ...ask, shell: shell({ status: 'idle' }) })).toBe(true)
+    expect(shouldAskShell({ ...ask, shell: shell({ status: 'error', error: 'internet bağlantısı yok' }) })).toBe(true)
+  })
+  it('never for an old app without the updater, a manual shell, no newer release or a busy shell', () => {
+    expect(shouldAskShell({ ...ask, hasUpdater: false })).toBe(false)
+    expect(shouldAskShell({ ...ask, shell: null })).toBe(false)
+    expect(shouldAskShell({ ...ask, shell: shell({ capability: 'manual', status: 'manual', reason: 'unsigned-mac' }) })).toBe(false)
+    expect(shouldAskShell({ ...ask, release: release('0.9.0') })).toBe(false)
+    expect(shouldAskShell({ ...ask, release: null })).toBe(false)
+    for (const status of ['checking', 'downloading', 'ready', 'installing'] as const) {
+      expect(shouldAskShell({ ...ask, shell: shell({ status, version: '0.9.1' }) })).toBe(false)
+    }
+    // Automatic download off and the shell already knows this version: it waits for "İndir".
+    expect(shouldAskShell({ ...ask, shell: shell({ status: 'available', version: '0.9.1' }) })).toBe(false)
+    expect(shouldAskShell({ ...ask, shell: shell({ status: 'available', version: '0.9.0-rc.1' }) })).toBe(true)
+    // A download that failed is not retried from the page (a file failing its hash would be fetched again and again).
+    expect(shouldAskShell({ ...ask, shell: shell({ status: 'error', version: '0.9.1', error: 'indirilen dosya doğrulanamadı' }) })).toBe(false)
+  })
+  it('once per version per ten minutes; a newer version asks at once', () => {
+    const last = { version: '0.9.1', at: ask.now }
+    expect(shouldAskShell({ ...ask, last })).toBe(false)
+    expect(shouldAskShell({ ...ask, last, now: ask.now + HINT_RETRY_MS - 1 })).toBe(false)
+    expect(shouldAskShell({ ...ask, last, now: ask.now + HINT_RETRY_MS })).toBe(true)
+    expect(shouldAskShell({ ...ask, last, release: release('0.9.2') })).toBe(true)
+  })
+})
+
+describe('the release is kept fresh while the app is open (§4a)', () => {
+  function watch() {
+    let t = 0
+    let tick: (() => void) | null = null
+    let version = '0.9.0'
+    let asked = 0
+    let fail = false
+    const w = new ReleaseWatch({
+      fetchRelease: async () => {
+        asked++
+        if (fail) throw new Error('offline')
+        return release(version)
+      },
+      now: () => t,
+      setInterval: (cb) => {
+        tick = cb
+        return 1
+      },
+      clearInterval: () => {
+        tick = null
+      },
+    })
+    return {
+      w,
+      advance: (ms: number) => {
+        t += ms
+      },
+      fire: () => tick?.(),
+      get ticking() {
+        return tick !== null
+      },
+      publish: (v: string) => {
+        version = v
+      },
+      get asked() {
+        return asked
+      },
+      fail: (on: boolean) => {
+        fail = on
+      },
+    }
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+
+  it('asks on subscribe, then every poll interval; a new release reaches the listener', async () => {
+    const h = watch()
+    const seen: (string | null)[] = []
+    const off = h.w.subscribe((r) => seen.push(r?.version ?? null))
+    await settle()
+    expect(h.asked).toBe(1)
+    h.publish('0.9.1')
+    h.advance(RELEASE_POLL_MS)
+    h.fire()
+    await settle()
+    expect(h.asked).toBe(2)
+    expect(seen).toEqual(['0.9.0', '0.9.1'])
+    off()
+    expect(h.ticking).toBe(false)
+  })
+  it('a reconnect asks again (not more than once per half minute); a plain refresh respects the interval', async () => {
+    const h = watch()
+    h.w.subscribe(() => undefined)
+    await settle()
+    await h.w.refresh()
+    expect(h.asked).toBe(1)
+    await h.w.refresh(true)
+    expect(h.asked).toBe(1)
+    h.advance(FORCE_GAP_MS)
+    await h.w.refresh(true)
+    expect(h.asked).toBe(2)
+  })
+  it('a failed ask keeps the release it knew', async () => {
+    const h = watch()
+    h.w.subscribe(() => undefined)
+    await settle()
+    h.fail(true)
+    h.advance(RELEASE_POLL_MS)
+    await h.w.refresh()
+    expect(h.w.current?.version).toBe('0.9.0')
   })
 })
