@@ -12,9 +12,20 @@
  *   `onState` is simply never called. That is logged ONCE.
  */
 import { bindingForCode, type PttBinding } from "../shared/keymap";
+import {
+  matchesWatchKey,
+  parseWatchKey,
+  watchConflicts,
+  WATCH_ACTIONS,
+  type Modifiers,
+  type WatchAction,
+  type WatchKey,
+  type WatchRefusal,
+} from "../shared/watchHotkeys";
 
-interface HookKeyEvent { keycode: number }
-interface HookMouseEvent { button: unknown }
+/** uiohook-napi's events carry the modifier state (V12 watch chords read it). */
+interface HookKeyEvent { keycode: number; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }
+interface HookMouseEvent { button: unknown; ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }
 
 /** The part of uiohook-napi's `uIOhook` this file uses. */
 export interface KeyHook {
@@ -54,6 +65,12 @@ export class PttController {
   /** V6: hotkey bindings, and which are down (a held key fires once). */
   private hotkeys: Partial<Record<HotkeyAction, PttBinding>> = {};
   private hotkeyHeld = new Set<HotkeyAction>();
+  /** V12: the codes as set (conflicts are decided against the PTT/mute/deafen codes at use). */
+  private pttCode: string | null = null;
+  private hotkeyCodes: { mute: string | null; deafen: string | null } = { mute: null, deafen: null };
+  private watchCodes: Partial<Record<WatchAction, string | null>> = {};
+  private watchKeys: Partial<Record<WatchAction, WatchKey>> = {};
+  private watchHeld = new Set<WatchAction>();
 
   constructor(
     private readonly onState: (down: boolean) => void,
@@ -61,7 +78,67 @@ export class PttController {
     private readonly log: Logger = console,
     /** V6: a hotkey was pressed. */
     private readonly onHotkey: (action: HotkeyAction) => void = () => undefined,
+    /** V12: a watch key was pressed. */
+    private readonly onWatch: (action: WatchAction) => void = () => undefined,
   ) {}
+
+  /**
+   * CONTRACT-V12-MINI-DESKTOP §4: the global watching keys. Refused keys (see
+   * `watchConflicts`) are not registered; the refusals are returned (and
+   * logged) so the caller and the tests can see them. They are decided again
+   * whenever the PTT, mute or deafen key changes.
+   */
+  setWatchHotkeys(keys: Partial<Record<WatchAction, string | null>>): Partial<Record<WatchAction, WatchRefusal>> {
+    const next: Partial<Record<WatchAction, string | null>> = {};
+    for (const action of WATCH_ACTIONS) {
+      const code = keys[action];
+      if (typeof code === "string") next[action] = code;
+    }
+    this.watchCodes = next;
+    const refused = this.recomputeWatch();
+    for (const [action, why] of Object.entries(refused)) {
+      this.log.warn(`[hotkey] watch key for ${action} not registered: ${why}`);
+    }
+    this.syncHook();
+    return refused;
+  }
+
+  /** The watch actions that have a key in effect (for tests and logs). */
+  get activeWatchHotkeys(): WatchAction[] {
+    return WATCH_ACTIONS.filter((action) => this.watchKeys[action] !== undefined);
+  }
+
+  private recomputeWatch(): Partial<Record<WatchAction, WatchRefusal>> {
+    const refused = watchConflicts(this.watchCodes, {
+      ptt: this.binding ? this.pttCode : null,
+      mute: this.hotkeys.mute ? this.hotkeyCodes.mute : null,
+      deafen: this.hotkeys.deafen ? this.hotkeyCodes.deafen : null,
+    });
+    const keys: Partial<Record<WatchAction, WatchKey>> = {};
+    for (const action of WATCH_ACTIONS) {
+      if (refused[action]) continue;
+      const key = parseWatchKey(this.watchCodes[action]);
+      if (key) keys[action] = key;
+    }
+    this.watchKeys = keys;
+    this.watchHeld.clear();
+    return refused;
+  }
+
+  private handleWatch(binding: PttBinding, mods: Partial<Modifiers>, down: boolean): void {
+    if (!this.running) return;
+    for (const action of WATCH_ACTIONS) {
+      const key = this.watchKeys[action];
+      if (!key) continue;
+      if (!down) {
+        // Released: the physical key went up, whatever the modifiers are now.
+        if (sameBinding(key.binding, binding)) this.watchHeld.delete(action);
+      } else if (matchesWatchKey(key, binding, mods) && !this.watchHeld.has(action)) {
+        this.watchHeld.add(action);
+        this.onWatch(action);
+      }
+    }
+  }
 
   /**
    * V6: set the global mute/deafen keys (`KeyboardEvent.code`, null = none).
@@ -82,7 +159,12 @@ export class PttController {
     }
     if (next.mute && next.deafen && sameBinding(next.mute, next.deafen)) delete next.deafen;
     this.hotkeys = next;
+    this.hotkeyCodes = {
+      mute: typeof keys.mute === "string" ? keys.mute : null,
+      deafen: typeof keys.deafen === "string" ? keys.deafen : null,
+    };
     this.hotkeyHeld.clear();
+    this.recomputeWatch();
     this.syncHook();
   }
 
@@ -96,6 +178,8 @@ export class PttController {
     this.release();
     if (code === null) {
       this.binding = null;
+      this.pttCode = null;
+      this.recomputeWatch();
       this.syncHook();
       return;
     }
@@ -103,16 +187,20 @@ export class PttController {
     if (binding === null) {
       this.log.warn(`[ptt] unsupported key code ${JSON.stringify(code)}; PTT is off`);
       this.binding = null;
+      this.pttCode = null;
+      this.recomputeWatch();
       this.syncHook();
       return;
     }
     this.binding = binding;
+    this.pttCode = code;
+    this.recomputeWatch();
     this.startHook();
   }
 
   /** Run the hook exactly while something listens to it. */
   private syncHook(): void {
-    if (this.binding !== null || this.activeHotkeys.length > 0) this.startHook();
+    if (this.binding !== null || this.activeHotkeys.length > 0 || this.activeWatchHotkeys.length > 0) this.startHook();
     else this.stopHook();
   }
 
@@ -145,6 +233,9 @@ export class PttController {
 
   dispose(): void {
     this.hotkeys = {};
+    this.hotkeyCodes = { mute: null, deafen: null };
+    this.watchCodes = {};
+    this.watchKeys = {};
     this.setKey(null);
   }
 
@@ -160,10 +251,10 @@ export class PttController {
     if (this.unavailable) return null;
     try {
       const hook = this.loader();
-      hook.on("keydown", (e) => this.handleKey(e.keycode, true));
-      hook.on("keyup", (e) => this.handleKey(e.keycode, false));
-      hook.on("mousedown", (e) => this.handleMouse(e.button, true));
-      hook.on("mouseup", (e) => this.handleMouse(e.button, false));
+      hook.on("keydown", (e) => this.handleKey(e.keycode, true, modsOf(e)));
+      hook.on("keyup", (e) => this.handleKey(e.keycode, false, modsOf(e)));
+      hook.on("mousedown", (e) => this.handleMouse(e.button, true, modsOf(e)));
+      hook.on("mouseup", (e) => this.handleMouse(e.button, false, modsOf(e)));
       this.hook = hook;
       return hook;
     } catch (error) {
@@ -198,14 +289,17 @@ export class PttController {
     this.running = false;
   }
 
-  private handleKey(keycode: number, down: boolean): void {
+  private handleKey(keycode: number, down: boolean, mods: Partial<Modifiers> = {}): void {
+    this.handleWatch({ kind: "key", keycode }, mods, down);
     this.handleHotkey((h) => h.kind === "key" && h.keycode === keycode, down);
     const b = this.binding;
     if (b?.kind !== "key" || b.keycode !== keycode) return;
     this.transition(down);
   }
 
-  private handleMouse(button: unknown, down: boolean): void {
+  private handleMouse(button: unknown, down: boolean, mods: Partial<Modifiers> = {}): void {
+    const number = Number(button);
+    if (Number.isFinite(number)) this.handleWatch({ kind: "mouse", button: number }, mods, down);
     this.handleHotkey((h) => h.kind === "mouse" && h.button === Number(button), down);
     const b = this.binding;
     if (b?.kind !== "mouse" || Number(button) !== b.button) return;
@@ -217,6 +311,10 @@ export class PttController {
     this.held = down;
     this.onState(down);
   }
+}
+
+function modsOf(e: { ctrlKey?: boolean; altKey?: boolean; shiftKey?: boolean; metaKey?: boolean }): Partial<Modifiers> {
+  return { ctrl: e.ctrlKey === true, alt: e.altKey === true, shift: e.shiftKey === true, meta: e.metaKey === true };
 }
 
 function sameBinding(a: PttBinding, b: PttBinding): boolean {

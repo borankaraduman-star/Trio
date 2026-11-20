@@ -1,0 +1,126 @@
+/* CONTRACT-V11-ACTIVITY: what people play and listen to, wherever they are listed. */
+
+.activity-glyph,
+.listening-activity svg,
+.compact-activity svg {
+  flex: none;
+}
+
+.game-activity .activity-glyph {
+  opacity: 0.85;
+}
+
+/* Music under the game (game is order 10). The note is the V8 note's colour. */
+.member:has(.listening-activity),
+.voice-user:has(.listening-activity) {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+.game-activity.listening-activity {
+  order: 12;
+}
+
+.listening-activity svg {
+  color: var(--trio-online, #69b9aa);
+}
+
+/* In the member list the song may take two lines like the game; the note sits on the first. */
+.member .game-activity.listening-activity svg {
+  margin-top: 3px;
+}
+
+/* The drawer (phone, and no member column): under the name and the room. */
+.v7-presence-name .game-activity {
+  margin-top: 0;
+  padding-left: 0;
+  font-size: 12px;
+}
+
+/* Under a text channel: after the name, the game or the song, cut short. */
+.channel-viewer {
+  min-width: 0;
+}
+
+.channel-viewer-name {
+  flex: 0 1 auto;
+}
+
+.compact-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  flex: 0 10 auto;
+  max-width: 62%;
+  font-size: 11px;
+  color: var(--trio-muted, var(--text-muted, #a0a6b2));
+  opacity: 0.9;
+}
+
+.compact-activity[data-kind='music'] svg {
+  color: var(--trio-online, #69b9aa);
+}
+
+.compact-activity-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The stage people strip: small marks beside mute/deafen. */
+.stage-person-marks [data-testid^='stage-listening-'] svg {
+  color: var(--trio-online, #69b9aa);
+}
+
+/* Ayarlar › Hesap › Durum */
+.settings-subtitle {
+  margin: 12px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--trio-text, #f2f1ed);
+}
+
+.settings-toggle.settings-sub {
+  margin-left: 24px;
+}
+
+.listen-health {
+  margin-left: 24px;
+  color: var(--trio-coral, #ee997f);
+}
+
+/* The first-run notice: one line over the chat. */
+.listen-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+  background: rgb(105 185 170 / 12%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 13px;
+}
+
+.listen-notice svg {
+  flex: none;
+  color: var(--trio-online, #69b9aa);
+}
+
+.listen-notice-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.listen-notice button {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 12px;
+}
+
+@media (max-width: 680px) {
+  .listen-notice button {
+    min-height: 44px;
+  }
+}

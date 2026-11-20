@@ -13,6 +13,14 @@ ince bir kabuk: arayüzün kendisi sizin Trio sunucunuzdan gelir; uygulama ona
   Windows'un medya oturumundan okunur. Windows 10, macOS ve Linux'ta uygulama
   bunu yapmaz ve nedenini söyler (Chrome'da sekme paylaşımı önerir). Elle
   kontrol listesi: `docs/muzik-paylasimi-kontrol.md`.
+- **Mini oynatıcı (oyun oynarken izlemek):** bir arkadaşın ekran paylaşımı,
+  oyunun üstünde duran küçük, çerçevesiz bir pencerede oynar; odağı çalmadan
+  açılır, köşelere yapışır, yerini hatırlar, istenirse yarı saydam ve
+  "tıklamayı geçir" olur (tıklamalar oyuna gider; geri almak için kısayol ya
+  da tepsi menüsü). Oyundan çıkmadan kullanılan küresel izleme kısayolları
+  (Ctrl/Shift/Alt'lı kombinasyonlar dahil). Özel tam ekran (exclusive) oyunların
+  üstünde Windows buna izin vermez: oyunda "pencereli tam ekran" seç. Ayrıntı:
+  `CONTRACT-V12-MINI-DESKTOP.md`; elle deneme listesi: `docs/izleme-kontrol.md`.
 - **Tepsi simgesi:** pencereyi kapatınca uygulama tepside çalışmaya devam eder
   (sesli odadan düşmezsin). Tam çıkmak için tepsi menüsünden ya da
   `Trio → Çıkış` ile (Ctrl/Cmd+Q).
@@ -199,6 +207,10 @@ vermek gerekebilir.
 - Mikrofon, kamera, ekran paylaşımı, bildirim (ve tam ekran, ses çıkış aygıtı
   seçimi, panoya yazma) izinleri yalnızca o kökene verilir.
 - Ana süreç her IPC mesajında gönderen çerçevenin kökenini denetler.
+- Sayfanın açabildiği tek pencere mini oynatıcıdır: aynı köken, yalnızca
+  `/mini.html`, `trio-mini-<id>` adı, en fazla 4 tane; ekranın %60'ından büyük
+  olamaz, %40'tan daha saydam olamaz, başka yere gidemez, pencere açamaz, kendi
+  köprüsü yoktur.
 - Uygulamanın kendi sayfaları (`trio-app://local/…`) paketin içinden gelir,
   ağa erişmez.
 

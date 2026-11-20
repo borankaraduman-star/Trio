@@ -7,6 +7,30 @@ import { EyeIcon } from './icons'
 import { ShareMenu, ShareWatchers } from './ShareMenu'
 import { AudioOnlyCover, ReceiveLine, TileMenu } from '../watch/TileMenu'
 import { useWatch } from '../../watching/store'
+import { useSyncExternalStore } from 'react'
+import { activityStore, activitySummary } from '../../gameActivity'
+import { PadIcon, useActivityOf } from '../GameActivity'
+import { NoteIcon } from '../../music/MusicUi'
+
+/** V11: a pad and/or a note on a stage person's tile; the words are in the tile's tooltip. */
+function StageActivityMarks({ userId }: { userId: number }) {
+  const entry = useActivityOf(userId)
+  if (!entry) return null
+  return (
+    <>
+      {entry.activity.game !== null && (
+        <span data-testid={`stage-game-${userId}`} title={entry.activity.game}>
+          <PadIcon size={12} />
+        </span>
+      )}
+      {entry.activity.listening && (
+        <span data-testid={`stage-listening-${userId}`} title={entry.activity.listening.title}>
+          <NoteIcon size={11} />
+        </span>
+      )}
+    </>
+  )
+}
 
 /**
  * What V6 adds to the stage (CONTRACT-V6-VOICE §2, §6): on a remote screen
@@ -112,6 +136,12 @@ export function StagePeople({
   engine: VoiceEngine
   nameOf: (userId: number) => string
 }) {
+  const entries = useSyncExternalStore(activityStore.subscribe, activityStore.getSnapshot)
+  const activityTitle = (name: string, id: number): string | undefined => {
+    const entry = entries[id]
+    const summary = entry ? activitySummary(entry.activity) : ''
+    return summary ? `${name} — ${summary}` : undefined
+  }
   const speaking = new Set(voice.speaking)
   const cameras = new Set(voice.remoteCamera.map((media) => media.userId))
   if (voice.camera) cameras.add(me)
@@ -130,6 +160,7 @@ export function StagePeople({
         return (
           <figure
             key={id}
+            title={activityTitle(name, id)}
             className={`stage-person${afk ? ' afk' : ''}`}
             data-testid={`stage-person-${id}`}
             data-speaking={speaking.has(id)}
@@ -140,6 +171,7 @@ export function StagePeople({
             <Avatar id={id} name={users[id]?.name ?? name} size={40} speaking={speaking.has(id)} url={users[id]?.avatar_url} />
             <figcaption>{name}</figcaption>
             <span className="stage-person-marks">
+              <StageActivityMarks userId={id} />
               {afk && <span className="afk-mark" title="Klavye başında değil">AFK</span>}
               {muted && (
                 <span title="Sessizde">

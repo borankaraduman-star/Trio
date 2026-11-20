@@ -474,6 +474,8 @@ class Session:
             activity = parse_activity(frame, self.now())
         except ActivityError as exc:
             raise FrameError("INVALID_ACTIVITY", str(exc)) from None
+        if self.hub.activity.listening_too_soon(self.user["id"], activity):
+            raise FrameError("RATE_LIMITED", "a listening change at most every 4 seconds")
         self.hub.activity.set(self.user["id"], activity)
 
     async def on_activity_clear(self, frame: dict[str, Any]) -> None:

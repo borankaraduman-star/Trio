@@ -18,7 +18,7 @@ import { ServerMark } from './ServerMark'
 import { EmptyState } from './EmptyState'
 import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
 import { heldCameraTitle, RingButton, TurnHint, type RingButtonProps } from './VoiceExtras'
-import { GameActivityLine } from './GameActivity'
+import { PersonActivity } from './GameActivity'
 import { BackupDot } from './owner/BackupDot'
 import { ChannelAddButton } from './phone/ChannelAddButton'
 import { screenShareSupported } from '../lib/phone'
@@ -292,7 +292,11 @@ export function Sidebar(props: SidebarProps) {
                             speaking={speaking.has(participant.user_id)}
                           />
                           <span className="voice-user-name">{name}</span>
-                          <GameActivityLine userId={participant.user_id} testid={`voice-activity-${participant.user_id}`} />
+                          <PersonActivity
+                            userId={participant.user_id}
+                            prefix="voice"
+                            skipTitle={participant.music ? participant.music_title : null}
+                          />
                           {participant.music && (
                             <NowPlayingLine userId={participant.user_id} name={name} title={participant.music_title} />
                           )}

@@ -20,6 +20,7 @@ import './styles-v12-multishare.css'
 import './theme.css'
 import './styles-v9-join.css'
 import './styles-v10-groups.css'
+import './styles-v11-activity.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('missing #root')

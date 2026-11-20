@@ -1,6 +1,6 @@
 import type { Member } from '../types'
 import { Avatar } from './Avatar'
-import { GameActivityLine } from './GameActivity'
+import { PersonActivity } from './GameActivity'
 import { membersTitle } from '../lib/membersPanel'
 import { CloseIcon } from './icons2'
 
@@ -53,7 +53,7 @@ export function MemberList({
                 {member.name}
                 {member.id === me && <small className="member-me"> (sen)</small>}
               </span>
-              <GameActivityLine userId={member.id} testid={`member-activity-${member.id}`} />
+              <PersonActivity userId={member.id} prefix="member" />
             </li>
           ))}
         </ul>

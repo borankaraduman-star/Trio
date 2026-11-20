@@ -39,7 +39,7 @@ export function WatchingLayer({
   const nameRef = useRef(nameOf)
   nameRef.current = nameOf
   const activities = useSyncExternalStore(activityStore.subscribe, activityStore.getSnapshot)
-  const inGame = activities[me] !== undefined
+  const inGame = (activities[me]?.activity.game ?? null) !== null
 
   // The sizes go to the engine; the viewer's choices cap them.
   useEffect(() => {
