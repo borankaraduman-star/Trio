@@ -3,6 +3,17 @@
 # SHA256SUMS.txt and signing.json beside them (CONTRACT-V6-DOWNLOAD: the
 # download page /indir reads both).
 #
+# CONTRACT-V10-UPDATE: the release also carries what the apps' updater reads:
+# latest.yml (+ the .exe.blockmap), latest-linux.yml (the AppImage embeds its
+# block map) and latest-mac.yml with the macOS .zip files (+ blockmaps). The
+# installed apps fetch these from github.com/<repo>/releases/latest, i.e. a
+# pre-release never reaches an app running a release version. Every latest*.yml
+# is checked against the files beside it before anything is published.
+#
+# Dispatch it only when the desktop app changed (desktop/ since the last
+# release): every release makes every installed Windows/Linux app download
+# and install it, and every macOS app show the manual notice.
+#
 # Signing is optional and off until its secrets exist (docs/imzalama.md):
 #
 #   * macOS: CSC_LINK (base64 .p12 of a "Developer ID Application"
@@ -150,13 +161,23 @@ jobs:
         include:
           - os: windows-latest
             target: --win
-            files: desktop/release/*.exe
+            files: |
+              desktop/release/*.exe
+              desktop/release/*.exe.blockmap
+              desktop/release/latest.yml
           - os: macos-latest
             target: --mac
-            files: desktop/release/*.dmg
+            files: |
+              desktop/release/*.dmg
+              desktop/release/*.dmg.blockmap
+              desktop/release/*.zip
+              desktop/release/*.zip.blockmap
+              desktop/release/latest-mac.yml
           - os: ubuntu-latest
             target: --linux
-            files: desktop/release/*.AppImage
+            files: |
+              desktop/release/*.AppImage
+              desktop/release/latest-linux.yml
     defaults:
       run:
         working-directory: desktop
@@ -232,11 +253,16 @@ jobs:
             echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
           } >> "$GITHUB_ENV"
           # Drop the ad-hoc identity so the Developer ID one is used, and notarize.
+          # CONTRACT-V10-UPDATE: the built app is told it is signed
+          # (trioBuild.macSigned in its package.json), which turns its
+          # self-update on; the signature check below fails the job when the
+          # app is not really signed, so the flag cannot ship on an unsigned build.
           node -e '
             const fs = require("fs");
             const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
             delete pkg.build.mac.identity;
             pkg.build.mac.notarize = true;
+            pkg.build.extraMetadata = { ...(pkg.build.extraMetadata || {}), trioBuild: { macSigned: true } };
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
           '
 
@@ -362,7 +388,7 @@ jobs:
         working-directory: installers
         run: |
           set -euo pipefail
-          sha256sum -- *.exe *.dmg *.AppImage > SHA256SUMS.txt
+          sha256sum -- *.exe *.dmg *.zip *.AppImage > SHA256SUMS.txt
           cat SHA256SUMS.txt
           shopt -s nullglob
           parts=(signing-*.json)
@@ -374,6 +400,44 @@ jobs:
           cat signing.json
           echo "SIGNED_WINDOWS=$(jq -r .windows signing.json)" >> "$GITHUB_ENV"
           echo "SIGNED_MAC=$(jq -r .mac signing.json)" >> "$GITHUB_ENV"
+
+      # CONTRACT-V10-UPDATE: the apps install what latest*.yml names after
+      # checking its sha512. Refuse to publish metadata that names a file that
+      # is not here, a path instead of a plain name, or a hash that does not
+      # match the file (which every app would then refuse anyway).
+      - name: Check update metadata
+        working-directory: installers
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, os, re, sys
+          version = os.environ["VERSION"]
+          expected = {"latest.yml": 1, "latest-mac.yml": 2, "latest-linux.yml": 1}
+          ok = True
+          for name, minimum in expected.items():
+              if not os.path.exists(name):
+                  print(f"::error::{name} missing"); ok = False; continue
+              text = open(name, encoding="utf-8").read()
+              if not re.search(rf"^version: '?{re.escape(version)}'?$", text, re.M):
+                  print(f"::error::{name}: version is not {version}"); ok = False
+              entries = re.findall(r"^  - url: (\S+)\n    sha512: (\S+)$", text, re.M)
+              if len(entries) < minimum:
+                  print(f"::error::{name}: expected at least {minimum} files, found {len(entries)}"); ok = False
+              for url, sha in entries:
+                  if not re.fullmatch(r"Trio-[0-9A-Za-z._-]+\.(exe|zip|dmg|AppImage)", url) or not os.path.isfile(url):
+                      print(f"::error::{name}: {url} is not a file of this release"); ok = False; continue
+                  digest = hashlib.sha512()
+                  with open(url, "rb") as f:
+                      for chunk in iter(lambda: f.read(1 << 20), b""):
+                          digest.update(chunk)
+                  if base64.b64encode(digest.digest()).decode() != sha:
+                      print(f"::error::{name}: sha512 of {url} does not match"); ok = False
+                  else:
+                      print(f"{name}: {url} ok")
+          sys.exit(0 if ok else 1)
+          PY
 
       # The install note, true for what was actually signed.
       - name: Release notes
@@ -430,8 +494,15 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             installers/*.exe
+            installers/*.exe.blockmap
             installers/*.dmg
+            installers/*.dmg.blockmap
+            installers/*.zip
+            installers/*.zip.blockmap
             installers/*.AppImage
+            installers/latest.yml
+            installers/latest-mac.yml
+            installers/latest-linux.yml
             installers/SHA256SUMS.txt
             installers/signing.json
           # With generate_release_notes the action puts this text BEFORE the

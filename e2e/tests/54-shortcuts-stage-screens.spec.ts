@@ -12,7 +12,7 @@
  * - Screenshots (deviceScaleFactor 2) of the share menu, the volume sheet at
  *   390 px, the sensitivity setting and the strip.
  */
-import type { Page } from '@playwright/test'
+import type { BrowserContext, Page } from '@playwright/test'
 import { longPress } from '../lib/messages'
 import { baseUrl, freshServer } from '../lib/server'
 import { expect, expectScreensDecoding, joinVoice, personViaApi, test, threePeople } from '../lib/trio'
@@ -215,32 +215,61 @@ test('the volume sheet at 390 px opens on a long-press and fits', async ({ brows
   await ayse.page.screenshot({ path: `${SHOTS}/v6-voice-volume-sheet-390.png` })
 })
 
-/** A desktop bridge stand-in with (or without) `appVersion`. */
+/** A desktop bridge stand-in with (or without) `appVersion`: an app from before CONTRACT-V10-UPDATE (no update members). */
 function desktopWithVersion(version: string | null): string {
   return `window.trioDesktop = { isDesktop: true, setPttKey() {}, onPtt() { return () => {} }${
     version === null ? '' : `, appVersion: ${JSON.stringify(version)}`
   } }`
 }
 
-test('desktop version: an older app gets the update notice (dismissable per version), the same version none, an old build says so; never in a browser', async ({ browser, trio }) => {
+/** CONTRACT-V10-UPDATE §4: the notice follows the newest DESKTOP release (`/api/downloads`), here stubbed. */
+const DESKTOP_RELEASE = '9.0.0'
+async function withRelease(context: BrowserContext, version: string): Promise<void> {
+  await context.route('**/api/downloads', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        version,
+        published_at: '2026-11-20T00:00:00Z',
+        signed: { windows: false, mac: false },
+        files: ['windows', 'mac-arm64', 'mac-x64', 'linux'].map((platform) => ({
+          platform,
+          name: `Trio-${version}-${platform}`,
+          size: 1,
+          sha256: null,
+          url: `/indir/dosya/${platform}`,
+        })),
+      }),
+    }),
+  )
+}
+
+test('desktop version: an older app gets the notice for a newer desktop release with a direct download (dismissable per version); a web-only release none; an old build says so; never in a browser', async ({ browser, trio }) => {
   const health = (await (await fetch(`${baseUrl()}/api/health`)).json()) as { version: string }
   const serverVersion = health.version
   expect(serverVersion).toMatch(/^\d+\.\d+\.\d+/)
 
   const older = trio.add(
-    await personViaApi(browser, 'Ayşe', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion('0.0.1'))) }),
+    await personViaApi(browser, 'Ayşe', {
+      prepare: async (c) => {
+        await c.addInitScript(desktopWithVersion('0.0.1'))
+        await withRelease(c, DESKTOP_RELEASE)
+      },
+    }),
   )
   const band = older.page.getByTestId('desktop-update')
-  await expect(band).toContainText(`Masaüstü uygulamasının yeni sürümü var (${serverVersion}).`)
-  await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute(
-    'href',
-    '/indir',
+  await expect(band).toContainText(`Masaüstü uygulamasının yeni sürümü var (${DESKTOP_RELEASE}).`)
+  // Headless Chromium says Linux: the AppImage, and the one last manual install.
+  const download = older.page.getByTestId('desktop-update-download')
+  await expect(download).toHaveAttribute('href', '/indir/dosya/linux')
+  await expect(download).toHaveAttribute('target', '_blank')
+  await expect(older.page.getByTestId('desktop-update-last')).toHaveText(
+    'Bu son elle kurulum: bundan sonra uygulama kendini güncelleyecek.',
   )
-  await expect(older.page.getByTestId('desktop-update-download')).toHaveAttribute('target', '_blank')
   await older.page.getByTestId('btn-settings').click()
   await settingsTab(older.page, 'hakkinda')
   await expect(older.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması 0.0.1')
-  await expect(older.page.getByTestId('desktop-update-line')).toContainText(`(${serverVersion})`)
+  await expect(older.page.getByTestId('desktop-update-line')).toContainText(`(${DESKTOP_RELEASE})`)
   await older.page.getByTestId('settings-close').click()
   await older.page.getByTestId('desktop-update-dismiss').click()
   await expect(band).toHaveCount(0)
@@ -252,24 +281,35 @@ test('desktop version: an older app gets the update notice (dismissable per vers
   await settingsTab(older.page, 'hakkinda')
   await expect(older.page.getByTestId('desktop-update-line')).toBeVisible()
 
+  // The app is the newest desktop release; the server may be newer (a web-only release): no notice.
   const same = trio.add(
-    await personViaApi(browser, 'Mehmet', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion(serverVersion))) }),
+    await personViaApi(browser, 'Mehmet', {
+      prepare: async (c) => {
+        await c.addInitScript(desktopWithVersion('0.0.2'))
+        await withRelease(c, '0.0.2')
+      },
+    }),
   )
   await same.page.getByTestId('btn-settings').click()
   await settingsTab(same.page, 'hakkinda')
-  await expect(same.page.getByTestId('desktop-version')).toHaveText(`Masaüstü uygulaması ${serverVersion}`)
+  await expect(same.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması 0.0.2')
   await expect(same.page.getByTestId('desktop-update-line')).toHaveCount(0)
   await expect(same.page.getByTestId('desktop-update')).toHaveCount(0)
 
   const oldBuild = trio.add(
-    await personViaApi(browser, 'Zeynep', { prepare: async (c) => void (await c.addInitScript(desktopWithVersion(null))) }),
+    await personViaApi(browser, 'Zeynep', {
+      prepare: async (c) => {
+        await c.addInitScript(desktopWithVersion(null))
+        await withRelease(c, DESKTOP_RELEASE)
+      },
+    }),
   )
   await expect(oldBuild.page.getByTestId('desktop-update')).toBeVisible()
   await oldBuild.page.getByTestId('btn-settings').click()
   await settingsTab(oldBuild.page, 'hakkinda')
   await expect(oldBuild.page.getByTestId('desktop-version')).toHaveText('Masaüstü uygulaması (eski sürüm)')
 
-  const plain = trio.add(await personViaApi(browser, 'Ece'))
+  const plain = trio.add(await personViaApi(browser, 'Ece', { prepare: async (c) => withRelease(c, DESKTOP_RELEASE) }))
   await plain.page.getByTestId('btn-settings').click()
   await settingsTab(plain.page, 'hakkinda')
   await expect(plain.page.getByTestId('settings-versions')).toBeVisible()

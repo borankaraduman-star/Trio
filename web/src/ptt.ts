@@ -102,6 +102,13 @@ export interface TrioDesktopBridge {
   prepareMusicCapture?: DesktopMusicBridge['prepareMusicCapture']
   setNowPlayingWatch?: DesktopMusicBridge['setNowPlayingWatch']
   onNowPlaying?: DesktopMusicBridge['onNowPlaying']
+  /** CONTRACT-V10-UPDATE §3 (absent in older apps): the shell's own update cycle. */
+  getUpdateState?: () => Promise<unknown>
+  onUpdateState?: (callback: (state: unknown) => void) => () => void
+  checkForUpdates?: () => Promise<unknown>
+  downloadUpdate?: () => Promise<unknown>
+  installUpdate?: () => Promise<{ ok: boolean; reason?: string }>
+  setAutoUpdate?: (on: boolean) => void
 }
 
 export function desktopBridge(): TrioDesktopBridge | null {

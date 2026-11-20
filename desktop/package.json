@@ -20,6 +20,7 @@
   },
   "desktopName": "trio-desktop.desktop",
   "dependencies": {
+    "electron-updater": "6.8.11",
     "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {
@@ -46,7 +47,14 @@
       "node_modules/uiohook-napi/**"
     ],
     "npmRebuild": false,
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "borankaraduman-star",
+        "repo": "Trio",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": [
         {
@@ -67,6 +75,13 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64",
             "arm64"

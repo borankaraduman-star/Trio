@@ -137,3 +137,9 @@ and signs when secrets exist (docs/imzalama.md): macOS `CSC_LINK`,
 `CSC_KEY_PASSWORD`, `APPLE_API_KEY` (.p8 text), `APPLE_API_KEY_ID`,
 `APPLE_API_ISSUER`; Windows `WIN_CSC_LINK` + `WIN_CSC_KEY_PASSWORD`, or the
 seven `AZURE_*` secrets. Without them the builds are exactly as before.
+
+Since CONTRACT-V10-UPDATE the release also carries the updater's files
+(`latest.yml`, `latest-mac.yml`, `latest-linux.yml`, the macOS `.zip` files and
+the blockmaps); `SHA256SUMS.txt` lists the `.zip` files too. `/api/downloads`
+ignores them (they match no installer pattern). The desktop app's update
+notice reads `/api/downloads`' `version` and `files[].url`.

@@ -483,6 +483,36 @@
   font-weight: 600;
 }
 
+/* CONTRACT-V10-UPDATE: the band's buttons and the Hakkında state line. */
+.desktop-update-band > span:first-child {
+  min-width: 0;
+}
+
+.desktop-update-band a + a,
+.desktop-update-line a + a {
+  margin-left: 8px;
+}
+
+.desktop-update-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.desktop-update-band .desktop-update-actions button {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.desktop-update-status {
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-versions.desktop-version .desktop-update-actions {
+  margin: 4px 0;
+}
+
 .settings-versions.desktop-version {
   display: flex;
   flex-direction: column;

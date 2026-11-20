@@ -14,11 +14,16 @@
  * CONTRACT-V8-MUSIC §5: `musicCaptureSupport()`, `prepareMusicCapture()`,
  * `setNowPlayingWatch(on)` and `onNowPlaying(cb) → unsubscribe`.
  *
+ * CONTRACT-V10-UPDATE: `getUpdateState()`, `onUpdateState(cb) → unsubscribe`,
+ * `checkForUpdates()`, `downloadUpdate()`, `installUpdate()`,
+ * `setAutoUpdate(on)`.
+ *
  * On the app's own connect page it exposes `window.trioConnect` instead. The
  * main process checks the sender's origin on every message regardless.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { MusicSupport, NowPlaying, PrepareResult, TrioDesktopMusicBridge } from "../shared/bridge";
+import type { MusicSupport, NowPlaying, PrepareResult, TrioDesktopMusicBridge, TrioDesktopUpdateBridge } from "../shared/bridge";
+import type { UpdateState } from "../shared/update";
 
 const LOCAL_PROTOCOL = "trio-app:";
 
@@ -68,6 +73,34 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       };
     },
   };
+  // CONTRACT-V10-UPDATE: the shell's own update cycle; the page only asks and shows.
+  const update: TrioDesktopUpdateBridge = {
+    getUpdateState(): Promise<UpdateState | null> {
+      return ipcRenderer.invoke("trio:update-state") as Promise<UpdateState | null>;
+    },
+    onUpdateState(cb: (state: UpdateState) => void): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      const listener = (_event: IpcRendererEvent, state: unknown): void => {
+        if (state && typeof state === "object") cb(state as UpdateState);
+      };
+      ipcRenderer.on("trio:update-changed", listener);
+      return () => {
+        ipcRenderer.removeListener("trio:update-changed", listener);
+      };
+    },
+    checkForUpdates(): Promise<UpdateState | null> {
+      return ipcRenderer.invoke("trio:update-check") as Promise<UpdateState | null>;
+    },
+    downloadUpdate(): Promise<UpdateState | null> {
+      return ipcRenderer.invoke("trio:update-download") as Promise<UpdateState | null>;
+    },
+    installUpdate(): Promise<{ ok: boolean; reason?: string }> {
+      return ipcRenderer.invoke("trio:update-install") as Promise<{ ok: boolean; reason?: string }>;
+    },
+    setAutoUpdate(on: boolean): void {
+      ipcRenderer.send("trio:update-auto", on === true);
+    },
+  };
   contextBridge.exposeInMainWorld("trioDesktop", {
     isDesktop: true,
     // CONTRACT-V6-VOICE "Desktop version": absent (undefined) only if argv lacked it.
@@ -113,6 +146,7 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       return ipcRenderer.invoke("trio:system-idle") as Promise<number | null>;
     },
     ...music,
+    ...update,
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {
       if (typeof cb !== "function") return () => undefined;
