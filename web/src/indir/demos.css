@@ -154,7 +154,7 @@
 @container (max-width: 560px) {
   .dw-body {
     grid-template-columns: minmax(0, 1fr);
-    height: 430px;
+    height: 390px;
   }
 
   .dw-side {
