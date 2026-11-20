@@ -55,6 +55,8 @@ TYPING_LIMIT = 10
 TYPING_WINDOW_SECONDS = 10.0
 # CONTRACT-V10-GROUPS §2: the default people per voice room (TRIO_VOICE_ROOM_MAX).
 DEFAULT_VOICE_ROOM_MAX = 8
+# CONTRACT-V12-MULTISHARE §5.
+DEFAULT_SCREEN_SHARES_MAX = 4
 # CONTRACT-V10-GROUPS §2: right after a start (a deploy) the room lists are
 # empty and every call comes back with ``resume: true``; such resumes are not
 # refused for a full room for this long, so a restart never drops a member.
@@ -122,6 +124,9 @@ class VoiceMember:
     muted: bool = False
     deafened: bool = False
     screensharing: bool = False
+    # CONTRACT-V12-MULTISHARE §5: joined by a resume right after a start (a deploy):
+    # its share comes back even past the cap.
+    restart_resume: bool = False
     camera: bool = False
     # CONTRACT-V6-VOICE: the member is away (auto-AFK); missing on the wire = false.
     afk: bool = False
@@ -158,6 +163,7 @@ class Hub:
         self.grace_seconds = VOICE_GRACE_SECONDS
         # CONTRACT-V10-GROUPS §2: people per voice room (set from the settings).
         self.voice_room_max = DEFAULT_VOICE_ROOM_MAX
+        self.screen_shares_max = DEFAULT_SCREEN_SHARES_MAX
         self.typings = SlidingWindow(TYPING_LIMIT, TYPING_WINDOW_SECONDS, now)
         # user id -> the task that ends their grace (see voice_disconnected).
         self._grace_tasks: dict[int, asyncio.Task[None]] = {}
@@ -243,6 +249,8 @@ class Hub:
             "activity": self.activity.snapshot(),
             # CONTRACT-V10-GROUPS §2.
             "voice_room_max": self.voice_room_max,
+            # CONTRACT-V12-MULTISHARE §5.
+            "screen_shares_max": self.screen_shares_max,
             # CONTRACT-V10-GROUPS §4b.
             "viewers": self.viewers.snapshot(),
         }
@@ -477,6 +485,7 @@ class Hub:
             afk=afk,
             music=music,
             music_title=music_title if music else None,
+            restart_resume=resume and self.now() - self.started_at < RESTART_RESUME_SECONDS,
         )
         members[user_id] = member
         self.voice_of[user_id] = channel_id
@@ -507,6 +516,32 @@ class Hub:
         if resume and self.now() - self.started_at < RESTART_RESUME_SECONDS:
             return False
         return len(members) >= self.voice_room_max
+
+    def screen_sharers(self, channel_id: int, *, besides: int) -> list[int]:
+        """Who shares a screen in ``channel_id`` now, ``besides`` left out (sorted ids)."""
+        return sorted(
+            uid
+            for uid, member in self.voice.get(channel_id, {}).items()
+            if member.screensharing and uid != besides
+        )
+
+    def screen_shares_full(self, user_id: int, channel_id: int) -> bool:
+        """CONTRACT-V12-MULTISHARE §5: whether ``user_id`` starting a share is one too many.
+
+        Somebody already sharing is never refused (a repeated state), nor right
+        after a start (a deploy) somebody who came back with a resume: they
+        share again as before, even if the cap was lowered meanwhile.
+        """
+        member = self.voice.get(channel_id, {}).get(user_id)
+        if member is not None and member.screensharing:
+            return False
+        if (
+            member is not None
+            and member.restart_resume
+            and self.now() - self.started_at < RESTART_RESUME_SECONDS
+        ):
+            return False
+        return len(self.screen_sharers(channel_id, besides=user_id)) >= self.screen_shares_max
 
     def voice_ring(self, user_id: int, channel_id: int) -> None:
         """``voice.ring`` to every online user not listed in ``channel_id``."""

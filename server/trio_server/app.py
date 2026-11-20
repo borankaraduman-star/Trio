@@ -160,6 +160,7 @@ def create_app(
     # CONTRACT-V6-OPS: the hub that marks the owner in their ``ready.user``.
     hub: Hub = OwnerAwareHub(now, settings.owner)
     hub.voice_room_max = settings.voice_room_max
+    hub.screen_shares_max = settings.screen_shares_max
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,

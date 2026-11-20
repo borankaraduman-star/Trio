@@ -292,6 +292,7 @@ def test_the_server_profile(trio):
     assert trio.client.get("/api/server", headers=ali["auth"]).json() == {
         "server": {"name": "Trio", "icon_url": None},
         "voice_room_max": 8,  # CONTRACT-V10-GROUPS §2
+        "screen_shares_max": 4,  # CONTRACT-V12-MULTISHARE §5
     }
     assert trio.client.get("/api/server").status_code == 401
     with trio.ws(ali) as a, trio.ws(berk) as b:

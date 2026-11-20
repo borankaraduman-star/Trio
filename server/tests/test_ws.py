@@ -65,6 +65,7 @@ def test_ready_is_the_first_frame(trio, three):
             "voice",
             "activity",
             "voice_room_max",  # CONTRACT-V10-GROUPS §2
+            "screen_shares_max",  # CONTRACT-V12-MULTISHARE §5
             "viewers",  # CONTRACT-V10-GROUPS §4b
             "persistent",  # CONTRACT-V6-OPS §7
             "read_state",  # CONTRACT-V7-READING

@@ -14,9 +14,17 @@
  * candidate, a negotiate, a reset nor a meta).
  */
 
+import { isViewSize, type ViewSize } from './multishare'
+
 export interface WatchSignal {
   stream: string
   on: boolean
+  /**
+   * V12 (CONTRACT-V12-MULTISHARE §3): how large the viewer shows the share,
+   * with `on: true`. Absent from a viewer that predates it (= unchanged, and
+   * `full` for a new share); an unknown value is ignored as absent.
+   */
+  size?: ViewSize
 }
 
 export function parseWatch(data: unknown): WatchSignal | null {
@@ -26,7 +34,8 @@ export function parseWatch(data: unknown): WatchSignal | null {
   const { stream, on } = watch as { stream?: unknown; on?: unknown }
   if (typeof stream !== 'string' || stream.length === 0 || stream.length > 128) return null
   if (typeof on !== 'boolean') return null
-  return { stream, on }
+  const size = (watch as { size?: unknown }).size
+  return isViewSize(size) && on ? { stream, on, size } : { stream, on }
 }
 
 /** Whether a `watch` signal is about the share `current` (the sharer's screen stream id). */

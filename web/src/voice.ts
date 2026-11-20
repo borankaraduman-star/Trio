@@ -11,6 +11,8 @@ import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
 // CONTRACT-V6-VOICE: share profiles, "İzlemeyi bırak", AFK.
 import { profileSettings, trackConstraints, type ShareProfile, type ShareQuality } from './lib/shareProfiles'
 import { parseWatch, watchApplies, type WatchSignal } from './lib/watch'
+// CONTRACT-V12-MULTISHARE: several shares at once, sized by what each viewer shows.
+import { sharesFullMessage, sizedEncoding, type ViewSize } from './lib/multishare'
 // CONTRACT-V8-MUSIC: the sound playing on my computer, as a third outgoing stream.
 import { captureMusic, defaultCaptureEnv, type CaptureEnv } from './music/capture'
 import { cleanTitle } from './music/musicPrefs'
@@ -83,6 +85,10 @@ export interface VoiceSnapshot {
   screenWatchers: readonly number[]
   /** V6: remote screens I chose not to watch, by user id (the share's stream id). */
   hiddenScreens: Readonly<Record<number, string>>
+  /** V12: while I share, how large each watching viewer shows it (what they are sent). */
+  screenViewSizes: Readonly<Record<number, ViewSize>>
+  /** V12: a share was captured and waits for the server's yes (the room's share cap). */
+  screenStarting: boolean
   /** V6: I am away (auto-AFK), announced as `afk` on voice.state. */
   afk: boolean
   /** V6: the input gate after RNNoise, and whether it lets sound through now. */
@@ -124,6 +130,8 @@ export interface VoiceDeps {
   gate?: () => number | null
   /** V8: where music is captured from (tests may stub it). */
   captureEnv?: () => CaptureEnv
+  /** V12: a person's name, for the sentence of a refused share. */
+  nameOf?: (userId: number) => string
 }
 
 interface Peer {
@@ -195,6 +203,8 @@ interface Peer {
   shareParamsKey: string
   /** V6: `setParameters` writes, one at a time. */
   shareParamsChain: Promise<void>
+  /** V12: how large this viewer shows my screen (its `watch.size`); `full` until told. */
+  viewSize: ViewSize
   /** V8: senders of my music track, and the remote peer's music stream. */
   musicSenders: RTCRtpSender[]
   music: MediaStream | null
@@ -217,6 +227,9 @@ interface Monitor {
  * plain perfect negotiation.
  */
 const TURN_TIMEOUT_MS = 4000
+
+/** V12: how long a captured share waits for the server's yes before going ahead. */
+const SHARE_APPROVAL_TIMEOUT_MS = 4000
 
 /** The server's cap on one signal's `data` (CONTRACT-V3 §6); a bigger one is refused. */
 const SIGNAL_DATA_MAX_BYTES = 64 * 1024
@@ -495,6 +508,14 @@ export class VoiceEngine {
   private shareQuality: ShareQuality = 'mid'
   /** Remote screens I do not watch: user id -> the share's stream id. */
   private readonly hiddenScreens = new Map<number, string>()
+  /** V12, viewer side: how large I show each remote screen (only what is not `full`). */
+  private readonly viewSizes = new Map<number, ViewSize>()
+  /**
+   * V12: a captured share waiting for the server's answer to `screensharing:
+   * true` (the room's cap, `SCREEN_SHARES_FULL`). Nothing is sent to anybody
+   * until it is approved, so a refused share never starts a negotiation.
+   */
+  private screenApproval: { stream: MediaStream; resolve: (ok: boolean) => void } | null = null
   private afk = false
 
   // --- V8: music ----------------------------------------------------------------
@@ -559,6 +580,10 @@ export class VoiceEngine {
       shareQuality: this.shareQuality,
       screenWatchers: this.screenStream ? peers.filter((peer) => peer.watching).map((peer) => peer.id) : [],
       hiddenScreens: Object.fromEntries(this.hiddenScreens),
+      screenViewSizes: this.screenStream
+        ? Object.fromEntries(peers.filter((peer) => peer.watching).map((peer) => [peer.id, peer.viewSize]))
+        : {},
+      screenStarting: this.screenApproval !== null,
       afk: this.afk,
       gateState: this.pipeline?.gateState ?? 'off',
       gateOpen: this.pipeline?.gateOpen ?? true,
@@ -826,6 +851,8 @@ export class VoiceEngine {
     this.held.clear()
     this.heldCamera = null
     this.hiddenScreens.clear()
+    this.viewSizes.clear()
+    this.screenApproval?.resolve(false)
     this.afk = false
   }
 
@@ -878,7 +905,7 @@ export class VoiceEngine {
       type: 'voice.state',
       muted: this.muted,
       deafened: this.deafened,
-      screensharing: this.screenStream !== null,
+      screensharing: this.screenStream !== null || this.screenApproval !== null,
       camera: this.cameraStream !== null,
       ...(this.afk ? { afk: true } : {}),
       ...this.musicFields(),
@@ -898,7 +925,7 @@ export class VoiceEngine {
   }
 
   async startScreen(): Promise<void> {
-    if (this.status === 'idle' || this.screenStream) return
+    if (this.status === 'idle' || this.screenStream || this.screenApproval) return
     if (!navigator.mediaDevices?.getDisplayMedia) {
       this.error = 'Bu tarayıcı ekran paylaşımını desteklemiyor.'
       this.emit()
@@ -928,14 +955,22 @@ export class VoiceEngine {
 
     // V6: the profile shapes the capture before anybody gets it (no renegotiation).
     await this.applyShareTrack(stream)
-    if (generation !== this.generation || this.isIdle() || this.screenStream) {
+    if (generation !== this.generation || this.isIdle() || this.screenStream || this.screenApproval) {
       stopStream(stream)
       return
     }
+    // V12: ask the server first (the room's share cap); nothing is negotiated before its yes.
+    const approved = await this.askToShare(stream)
+    if (!approved || generation !== this.generation || this.isIdle() || this.screenStream) {
+      stopStream(stream)
+      this.emit()
+      return
+    }
     this.screenStream = stream
-    // A new share: everybody watches it until they say otherwise.
+    // A new share: everybody watches it, at full size, until they say otherwise.
     for (const peer of this.peers.values()) {
       peer.watching = true
+      peer.viewSize = 'full'
       peer.shareParamsKey = ''
     }
     for (const track of stream.getTracks()) {
@@ -953,6 +988,29 @@ export class VoiceEngine {
 
   private isIdle(): boolean {
     return this.status === 'idle'
+  }
+
+  /**
+   * V12: `voice.state {screensharing: true}` and wait for the server: its echo
+   * of my state is a yes, `error SCREEN_SHARES_FULL` a no. A server that
+   * predates the cap always echoes. While signalling is down (V4 A1) there is
+   * nobody to ask: the share goes ahead, and the state follows on the resume.
+   * A lost answer is waited for SHARE_APPROVAL_TIMEOUT_MS, then the share goes
+   * ahead (the server would refuse the next state, and the share then stops).
+   */
+  private askToShare(stream: MediaStream): Promise<boolean> {
+    if (this.signallingDown || this.resuming || !this.joinSent) return Promise.resolve(true)
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => finish(true), SHARE_APPROVAL_TIMEOUT_MS)
+      const finish = (ok: boolean) => {
+        clearTimeout(timer)
+        if (this.screenApproval?.stream === stream) this.screenApproval = null
+        resolve(ok)
+      }
+      this.screenApproval = { stream, resolve: finish }
+      this.sendState()
+      this.emit()
+    })
   }
 
   stopScreen(): void {
@@ -1401,7 +1459,7 @@ export class VoiceEngine {
    */
   private applyShareParams(peer: Peer): void {
     if (peer.screenSenders.length === 0) return
-    const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}`
+    const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}/${peer.viewSize}`
     if (peer.shareParamsKey === key) return
     peer.shareParamsKey = key
     peer.shareParamsChain = peer.shareParamsChain.then(() => this.writeShareParams(peer))
@@ -1411,7 +1469,10 @@ export class VoiceEngine {
     if (this.peers.get(peer.id) !== peer) return
     // The values as they are NOW: a later choice queued behind this one finds them too.
     const settings = profileSettings(this.shareProfile, this.shareQuality)
-    const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}`
+    const key = `${this.shareProfile}/${this.shareQuality}/${peer.watching}/${peer.viewSize}`
+    // V12: as large as this viewer shows it (scaled from the capture's own height).
+    const sourceHeight = this.screenStream?.getVideoTracks()[0]?.getSettings().height ?? 0
+    const sized = sizedEncoding(settings, peer.viewSize, sourceHeight)
     let complete = true
     for (const sender of [...peer.screenSenders]) {
       const video = sender.track?.kind === 'video'
@@ -1430,8 +1491,9 @@ export class VoiceEngine {
       for (const encoding of params.encodings) {
         encoding.active = peer.watching
         if (video) {
-          encoding.maxBitrate = settings.maxBitrate
-          encoding.maxFramerate = settings.maxFramerate
+          encoding.maxBitrate = sized.maxBitrate
+          encoding.maxFramerate = sized.maxFramerate
+          encoding.scaleResolutionDownBy = sized.scaleResolutionDownBy
         }
       }
       if (video) {
@@ -1462,12 +1524,30 @@ export class VoiceEngine {
     this.emit()
   }
 
+  /**
+   * V12, viewer side: how large I show `userId`'s screen (CONTRACT-V12 §3).
+   * Told to the sharer as `watch {on: true, size}`; only while I watch it
+   * (a hidden screen stays off). Callers debounce (VIEW_SIZE_SETTLE_MS).
+   */
+  setViewSize(userId: number, size: ViewSize): void {
+    const current = this.viewSizes.get(userId) ?? 'full'
+    if (current === size) return
+    if (size === 'full') this.viewSizes.delete(userId)
+    else this.viewSizes.set(userId, size)
+    if (this.hiddenScreens.has(userId)) return
+    const peer = this.peers.get(userId)
+    if (!peer || peer.meta.screen === null) return
+    this.signal(userId, { watch: { stream: peer.meta.screen, on: true, size } })
+  }
+
   /** Sharer side: a peer's `watch`, applied in its place in the peer's signal queue. */
   private applyWatch(peer: Peer, watch: WatchSignal): void {
     if (this.peers.get(peer.id) !== peer) return
     if (!watchApplies(watch, this.screenStream?.id ?? null)) return
-    if (peer.watching === watch.on) return
+    const size = watch.size ?? peer.viewSize
+    if (peer.watching === watch.on && peer.viewSize === size) return
     peer.watching = watch.on
+    peer.viewSize = size
     this.applyShareParams(peer)
     this.emit()
   }
@@ -1478,6 +1558,12 @@ export class VoiceEngine {
    */
   private syncHidden(peer: Peer): void {
     const hidden = this.hiddenScreens.get(peer.id)
+    // V12: a new share (or the same one on a fresh connection) starts at full
+    // size on the sharer's side: say again how large I show it.
+    const size = this.viewSizes.get(peer.id)
+    if (hidden === undefined && size !== undefined && peer.meta.screen !== null) {
+      this.signal(peer.id, { watch: { stream: peer.meta.screen, on: true, size } })
+    }
     if (hidden === undefined) return
     const current = peer.meta.screen
     if (current === null || (hidden !== 'screen' && hidden !== current)) {
@@ -1697,6 +1783,11 @@ export class VoiceEngine {
         // V4 A1: the server's grace starts with `reconnecting: true`; it ends
         // with a voice.joined (or voice.left), but a later state saying false
         // ends it as well.
+        // V12: my own state echoed while a share waits for its yes: approved.
+        if (event.user_id === this.deps.myId) {
+          if (this.screenApproval && event.screensharing === true) this.screenApproval.resolve(true)
+          return
+        }
         if (event.reconnecting === true) this.markReconnecting(event.user_id, true)
         else if (this.reconnectingIds.has(event.user_id)) this.markReconnecting(event.user_id, false)
         const peer = this.peers.get(event.user_id)
@@ -1759,6 +1850,24 @@ export class VoiceEngine {
       }
 
       case 'error':
+        // V12: the room already has as many screen shares as it allows.
+        if (event.code === 'SCREEN_SHARES_FULL') {
+          const approval = this.screenApproval
+          if (approval) {
+            this.screenApproval = null
+            approval.resolve(false)
+            const limit = typeof event.limit === 'number' ? event.limit : null
+            const names = (Array.isArray(event.sharers) ? event.sharers : []).map((id) => this.deps.nameOf?.(id) ?? 'Biri')
+            this.error = limit === null ? 'Bu odada şu an daha fazla ekran paylaşılamıyor.' : sharesFullMessage(limit, names)
+            // My state without the share (the refused frame changed nothing).
+            this.sendState()
+            this.emit()
+          } else if (this.screenStream) {
+            // A share the server no longer takes (it went ahead without an answer): stop it.
+            this.stopScreen()
+          }
+          return
+        }
         // V10: the room is full (CONTRACT-V10-GROUPS §2): nothing was joined.
         if (event.code === 'ROOM_FULL' && event.request !== 'voice.ring' && this.joinSent && (this.status === 'joining' || this.resuming)) {
           if (event.channel_id === undefined || event.channel_id === this.channelId) {
@@ -1831,6 +1940,7 @@ export class VoiceEngine {
       recoverWanted: false,
       awaitTimer: null,
       watching: true,
+      viewSize: 'full',
       shareParamsKey: '',
       shareParamsChain: Promise.resolve(),
       musicSenders: [],
