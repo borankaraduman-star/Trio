@@ -54,7 +54,7 @@ export function MovedScreen({
           </a>
         )}
         {(linkInvite || linkDeviceCode) && !shell && (
-          <p className="join-hint">Açtığın bağlantı yeni adreste de çalışır; seni oraya götürüyoruz.</p>
+          <p className="join-hint">Açtığın bağlantı da seninle yeni adrese gelir.</p>
         )}
         <button type="button" className="link address-moved-stay" data-testid="address-moved-stay" onClick={onStay}>
           Bu adreste devam et

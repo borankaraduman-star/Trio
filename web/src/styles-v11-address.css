@@ -127,7 +127,14 @@ html.trio-banded .join {
   margin: 16px auto 0;
 }
 
-.address-arrival .join-lead b {
+.address-arrival-who {
+  margin: 6px 0 10px;
+  font-size: 18px;
+  text-align: center;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.address-arrival-who b {
   color: var(--trio-text, #f2f1ed);
 }
 

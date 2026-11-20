@@ -74,7 +74,19 @@ function useBanded(on: boolean): void {
  * - on the canonical one with `#tasi=` while signed in: the same person's code is adopted;
  * - the owner who signed in with the recovery code: a band until the variable is gone.
  */
-export function AddressBand({ auth, moveCode, onMoveCodeUsed }: { auth: Auth; moveCode: string | null; onMoveCodeUsed: () => void }) {
+export function AddressBand({
+  auth,
+  ...rest
+}: {
+  auth: Auth | null
+  moveCode: string | null
+  onMoveCodeUsed: () => void
+}) {
+  // Keyed by token: a different account starts with a fresh band.
+  return auth ? <SignedInBand key={auth.token} auth={auth} {...rest} /> : null
+}
+
+function SignedInBand({ auth, moveCode, onMoveCodeUsed }: { auth: Auth; moveCode: string | null; onMoveCodeUsed: () => void }) {
   const address = useSyncExternalStore(addressStore.subscribe, addressStore.getSnapshot)
   const off = offCanonical(window.location.origin, address)
   const [busy, setBusy] = useState(false)

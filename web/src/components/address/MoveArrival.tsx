@@ -53,7 +53,7 @@ export function MoveArrival({
         <h1>Trio’nun yeni adresi</h1>
         {who ? (
           <>
-            <p className="join-lead" data-testid="move-arrival-who">
+            <p className="address-arrival-who" data-testid="move-arrival-who">
               Bu cihazda <b>{who.name}</b> olarak devam et
             </p>
             <p className="join-hint">

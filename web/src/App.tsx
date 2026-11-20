@@ -73,7 +73,7 @@ export function App() {
   return (
     <>
       <PersistenceBand />
-      {auth && <AddressBand key={auth.token} auth={auth} moveCode={moveCode} onMoveCodeUsed={moveCodeUsed} />}
+      <AddressBand auth={auth} moveCode={moveCode} onMoveCodeUsed={moveCodeUsed} />
       {auth ? (
         // Keyed by token: a different account never inherits the previous one's state.
         <Session key={auth.token} auth={auth} onSignedOut={onSignedOut} onSessionEnded={onSessionEnded} />
