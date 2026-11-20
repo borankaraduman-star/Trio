@@ -15,6 +15,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.9.0',
+    title: 'Gruplar için',
+    lines: [
+      'Kim hangi kanalda: metin kanallarının altında o an kimin baktığı görünür; “Ayarlar › Hesap › Hangi kanalda olduğumu göster” ile kapatabilirsin.',
+      'Başlıktaki “Üyeler” düğmesi her pencere boyutunda üye listesini açar; ekran ölçeklendirmesinde de kimin çevrimiçi olduğunu görürsün.',
+      'Trio artık 15 kişiye kadar gruplar için: ses odasında en çok 8 kişi; doluysa “Oda dolu (8/8)” yazar.',
+      'Mesajda @ yazınca kişiler listelenir; ok tuşlarıyla seçip Enter’la eklersin.',
+      'Kalabalık görüntülü sohbette kameralar daha hafif gönderilir; çok görüntü varsa “+N · Hepsini göster”.',
+    ],
+  },
+  {
     version: '0.8.1',
     lines: [
       'Trio artık her küçük grup için: site, giriş ekranı ve tüm metinler buna göre yenilendi; sitede “Kendi sunucunu kur” bölümü var.',
