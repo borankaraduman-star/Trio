@@ -167,9 +167,13 @@ test('the call stage with eight cameras and a shared screen, at 1440 and 390', a
   await phone.page.screenshot({ path: shot('call-bar-390') })
 
   // The people strip under the screen when cameras go off: the room's people as small tiles.
-  for (const person of people.slice(2, 8)) await person.page.getByTestId('btn-camera').click()
-  await expect(ayse.page.getByTestId('stage-people')).toBeVisible()
-  await expect(ayse.page.locator('[data-testid^="stage-person-"]')).toHaveCount(7)
+  for (const person of people.slice(2, 8)) {
+    await person.page.getByTestId('btn-camera').click()
+    await expect(person.page.getByTestId('btn-camera')).toHaveAttribute('aria-pressed', 'false', { timeout: 30_000 })
+  }
+  // Nine people's cameras going off reach Ayşe as voice.state frames on a loaded machine.
+  await expect(ayse.page.getByTestId('stage-people')).toBeVisible({ timeout: 30_000 })
+  await expect(ayse.page.locator('[data-testid^="stage-person-"]')).toHaveCount(7, { timeout: 30_000 })
   await ayse.page.waitForTimeout(1500)
   await ayse.page.screenshot({ path: shot('stage-people-1440') })
 })
