@@ -1,3 +1,4 @@
+import { viewersFromReady } from './lib/viewers'
 import type { Channel, Member, Message, ServerEvent, ServerProfile, User, VoiceParticipant } from './types'
 import { claimEchoes } from './lib/reconcile'
 import { DEFAULT_SERVER, normalizeUser, serverProfile } from './lib/identity'
@@ -78,6 +79,10 @@ export interface AppState {
    * channel or sending in it ends it).
    */
   divider: { channelId: number; after: number } | null
+  /** V10: `ready.voice_room_max`, or null from a server that predates it (no cap known). */
+  voiceRoomMax: number | null
+  /** V10 (§4b): user id → the text channel they are in now (absent: none). */
+  viewers: Record<number, number>
 }
 
 export type Action =
@@ -153,6 +158,8 @@ export function createInitialState(init: {
     readSync: false,
     serverRead: {},
     divider: null,
+    voiceRoomMax: null,
+    viewers: {},
   }
 }
 
@@ -417,6 +424,11 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         me: normalizeUser(event.user),
         server: serverProfile(event.server) ?? state.server,
         serverVersion: typeof event.server_version === 'string' ? event.server_version : null,
+        viewers: viewersFromReady(event.viewers),
+        voiceRoomMax:
+          typeof event.voice_room_max === 'number' && Number.isInteger(event.voice_room_max) && event.voice_room_max > 0
+            ? event.voice_room_max
+            : null,
         users,
         channels: event.channels,
         voice,
@@ -443,6 +455,13 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
           [event.user.id]: { ...normalizeUser(event.user), online: existing?.online ?? false },
         },
       }
+    }
+
+    case 'presence.viewing': {
+      const viewers = { ...state.viewers }
+      if (typeof event.channel_id === 'number') viewers[event.user_id] = event.channel_id
+      else delete viewers[event.user_id]
+      return { ...state, viewers }
     }
 
     case 'user.removed': {
@@ -696,6 +715,8 @@ export function reducer(state: AppState, action: Action): AppState {
         connection: state.ready ? 'reconnecting' : 'connecting',
         messages,
         typing: {},
+        // V10: who is where is not known while the connection is down.
+        viewers: {},
       }
     }
 

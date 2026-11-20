@@ -4,11 +4,13 @@
  * Pure helpers and one hook; no React state lives here.
  */
 import { useSyncExternalStore } from 'react'
+import { namesWithMore } from './groups'
 
 /** At or under this the sidebar is a drawer (styles.css): the call bar and the header presence show. */
 export const PHONE_QUERY = '(max-width: 680px)'
-/** At or under this the member list column is hidden (styles.css): presence moves into the sidebar. */
-export const NO_MEMBERS_QUERY = '(max-width: 960px)'
+/** At or under this the member list column is hidden (styles.css): presence moves into the sidebar, and "Üyeler" opens it over the chat. */
+// V10 (CONTRACT-V10-GROUPS §4a): 880, was 960, so a 1366×768 laptop at 150 % (911 CSS px) keeps the column.
+export const NO_MEMBERS_QUERY = '(max-width: 880px)'
 
 function subscribeTo(query: string) {
   return (onChange: () => void) => {
@@ -66,6 +68,9 @@ export function saveStageCollapsed(collapsed: boolean, storage: Pick<Storage, 's
 /** "Konuşuyor: Ayşe, Sen" / "3 kişi" — the call bar's second line. */
 export function talkingLine(speakingIds: readonly number[], me: number, participantCount: number, nameOf: (id: number) => string): string {
   const names = speakingIds.map((id) => (id === me ? 'Sen' : nameOf(id)))
+  // V10: a crowded room leads with the count (the line is short on a phone) and
+  // names two ("4 kişi konuşuyor: Ayşe, Sen +2"). Three or fewer read as before.
+  if (names.length > 3) return `${names.length} kişi konuşuyor: ${namesWithMore(names)}`
   if (names.length > 0) return `Konuşuyor: ${names.join(', ')}`
   return participantCount <= 1 ? 'Odada yalnızsın' : `${participantCount} kişi`
 }

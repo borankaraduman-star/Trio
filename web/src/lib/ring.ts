@@ -70,6 +70,8 @@ export function ringErrorMessage(code: string): string {
       return 'Çağırmak için ses odasında olmalısın.'
     case 'INVALID_CHANNEL':
       return 'Bu ses odası bulunamadı.'
+    case 'ROOM_FULL':
+      return 'Oda dolu: çağırdığın kimse katılamaz.'
     default:
       return 'Çağrı gönderilemedi.'
   }

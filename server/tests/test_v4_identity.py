@@ -290,7 +290,8 @@ def test_profile_changes_are_limited(trio):
 def test_the_server_profile(trio):
     ali, berk = trio.user("Ali"), trio.user("Berk")
     assert trio.client.get("/api/server", headers=ali["auth"]).json() == {
-        "server": {"name": "Trio", "icon_url": None}
+        "server": {"name": "Trio", "icon_url": None},
+        "voice_room_max": 8,  # CONTRACT-V10-GROUPS §2
     }
     assert trio.client.get("/api/server").status_code == 401
     with trio.ws(ali) as a, trio.ws(berk) as b:

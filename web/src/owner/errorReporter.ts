@@ -35,6 +35,15 @@ function report(thrown: unknown, fallback: string): void {
   }
 }
 
+/**
+ * CONTRACT-V10-GROUPS §4a: a breadcrumb for something that went wrong without
+ * throwing (a channel click that did not change the view). Same gate, same
+ * scrubbing, same endpoint as an error.
+ */
+export function reportBreadcrumb(message: string): void {
+  report(new Error(message), message)
+}
+
 function install(): void {
   if (typeof window === 'undefined') return
   const marker = window as unknown as { __trioErrorReporter?: boolean }

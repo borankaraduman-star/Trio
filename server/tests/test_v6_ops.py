@@ -160,7 +160,7 @@ def test_overview_reports_users_storage_server_turn(make_trio):
         "stun": ["stun:stun.l.google.com:19302"],
         "last_call": None,
     }
-    assert body["limits"]["max_users"] == 5
+    assert body["limits"]["max_users"] == 15
     assert body["backup"] == {"last": None, "in_progress": None}
     assert body["counts"] == {"messages": 0, "channels": 2, "attachments": 1}
     assert "secret" not in str(body)

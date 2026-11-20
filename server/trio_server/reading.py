@@ -227,6 +227,7 @@ def register_channel_routes(
             except StorageFullError:
                 raise storage_full() from None
             del hub.channels[channel_id]
+            hub.viewers.channel_gone(channel_id)
             notify = getattr(hub, "notify", None)
             if notify is not None:
                 notify.voice_announced.pop(channel_id, None)

@@ -16,6 +16,7 @@ import { opsApi, type ClientErrorRow, type OwnerUser } from '../../owner/opsApi'
 import { opsStore } from '../../owner/opsStore'
 import { ConfirmCodeDialog } from './ConfirmCodeDialog'
 import { UsageBar } from './StorageSection'
+import { OWNER_SEARCH_FROM, OWNER_SORTS, ownerRows, quotaLine, quotaShortfall, shortfallLine, type OwnerSort } from '../../lib/ownerGroup'
 
 type ActionKind = 'revoke' | 'remove' | 'link'
 
@@ -242,6 +243,9 @@ export function OwnerSection() {
     }
   }
 
+  const [peopleQuery, setPeopleQuery] = useState('')
+  const [peopleSort, setPeopleSort] = useState<OwnerSort>('joined')
+
   if (!overview) {
     return (
       <section className="settings-section ops-section" aria-labelledby="settings-owner" data-testid="owner-section">
@@ -254,6 +258,10 @@ export function OwnerSection() {
   const { storage, server, turn, backup } = overview
   const active = overview.users.filter((user) => !user.removed)
   const removed = overview.users.filter((user) => user.removed)
+  // V10: a list of fifteen is searched and sorted; the quotas are added up against the disk.
+  const listed = ownerRows(active, peopleQuery, peopleSort)
+  const searchable = active.length >= OWNER_SEARCH_FROM
+  const shortfall = quotaShortfall(active, storage)
   const progress = backup.in_progress
   const stale = backupStale(backup.last, now)
   const diskUsed = storage.disk_total_bytes - storage.disk_free_bytes
@@ -357,8 +365,33 @@ export function OwnerSection() {
               {active.length} / {overview.limits.max_users}
             </span>
           </div>
+          {searchable && (
+            <div className="ops-people-tools">
+              <input
+                type="search"
+                data-testid="owner-people-search"
+                aria-label="Kişilerde ara"
+                placeholder="Ara…"
+                value={peopleQuery}
+                onChange={(event) => setPeopleQuery(event.target.value)}
+              />
+              <select
+                data-testid="owner-people-sort"
+                aria-label="Sırala"
+                value={peopleSort}
+                onChange={(event) => setPeopleSort(event.target.value as OwnerSort)}
+              >
+                {OWNER_SORTS.map((sort) => (
+                  <option key={sort.id} value={sort.id}>
+                    {sort.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {listed.length === 0 && <p className="settings-hint">“{peopleQuery.trim()}” ile eşleşen kimse yok.</p>}
           <ul className="ops-people">
-            {active.map((user) => (
+            {listed.map((user) => (
               <PersonRow
                 key={user.id}
                 user={user}
@@ -371,7 +404,10 @@ export function OwnerSection() {
             ))}
           </ul>
           {removed.length > 0 && (
-            <p className="settings-hint">Çıkarılanlar: {removed.map((user) => user.name).join(', ')}</p>
+            <details className="ops-removed" data-testid="owner-removed">
+              <summary className="settings-hint">Çıkarılanlar ({removed.length})</summary>
+              <p className="settings-hint">{removed.map((user) => user.name).join(', ')}</p>
+            </details>
           )}
           {notice && (
             <p className="ops-ok" role="status" data-testid="owner-notice">
@@ -407,6 +443,14 @@ export function OwnerSection() {
             Kişi başı kota {formatSize(storage.user_quota_bytes)}, en büyük dosya {formatSize(storage.max_upload_bytes)},
             diskte ayrılan pay {formatSize(storage.disk_reserve_bytes)}.
           </p>
+          <p className="settings-hint" data-testid="owner-quota-total">
+            {quotaLine(active.length, storage)}.
+          </p>
+          {shortfall && (
+            <p className="ops-warn" data-testid="owner-quota-shortfall">
+              {shortfallLine(shortfall)}
+            </p>
+          )}
         </div>
 
         <div className="ops-card" data-testid="owner-server">

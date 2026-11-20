@@ -281,6 +281,8 @@ class Session:
 
     async def on_typing(self, frame: dict[str, Any]) -> None:
         channel_id = self._text_channel(frame)
+        if not self.hub.typings.allow(str(self.user["id"])):
+            return  # CONTRACT-V10-GROUPS §5: dropped silently, a typing line is advisory
         self.hub.broadcast(
             {"type": "typing", "channel_id": channel_id, "user_id": self.user["id"]},
             exclude_user=self.user["id"],
@@ -303,6 +305,15 @@ class Session:
             isinstance(session, str) and 1 <= len(session) <= VOICE_SESSION_MAX
         ):
             raise FrameError("BAD_REQUEST", "'session' must be a short string")
+        if self.hub.room_full(self.user["id"], channel_id, resume=resume):
+            limit = self.hub.voice_room_max
+            raise FrameError(
+                "ROOM_FULL",
+                f"the voice room is full ({limit} people)",
+                request="voice.join",
+                channel_id=channel_id,
+                limit=limit,
+            )
         self.hub.voice_join(
             self.conn,
             channel_id,
@@ -329,6 +340,16 @@ class Session:
                 "NOT_IN_VOICE",
                 "you can only ring from the voice channel you are in",
                 request="voice.ring",
+            )
+        # CONTRACT-V10-GROUPS §2: nobody could answer a call into a full room.
+        if len(self.hub.voice.get(channel_id, {})) >= self.hub.voice_room_max:
+            limit = self.hub.voice_room_max
+            raise FrameError(
+                "ROOM_FULL",
+                f"the voice room is full ({limit} people)",
+                request="voice.ring",
+                channel_id=channel_id,
+                limit=limit,
             )
         if not self.hub.rings.allow(str(self.user["id"])):
             raise FrameError(
@@ -386,8 +407,18 @@ class Session:
         channel_id = frame.get("channel_id")
         if channel_id is not None and not is_int(channel_id):
             raise FrameError("BAD_REQUEST", "'channel_id' must be a channel id or null")
+        # CONTRACT-V10-GROUPS §4b: "Hangi kanalda olduğumu göster" off = false.
+        show = _bool(frame, "show_channel", default=True)
+        if not self.hub.viewings.allow(str(self.user["id"])):
+            raise FrameError(
+                "RATE_LIMITED", "too many client.viewing frames", request="client.viewing"
+            )
         if self.hub.notify is not None:
+            # Push decisions keep the whole report, shared or not (CONTRACT-V6-PUSH §3).
             self.hub.notify.set_viewing(self.conn, viewing, channel_id)
+        channel = self.hub.channels.get(channel_id) if channel_id is not None else None
+        shared = channel_id if show and channel is not None and channel["kind"] == "text" else None
+        self.hub.viewers.report(self.user["id"], self.conn, viewing=viewing, channel_id=shared)
 
     # -- CONTRACT-V7-READING: how far I have read -----------------------------
 

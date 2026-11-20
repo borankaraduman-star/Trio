@@ -159,6 +159,7 @@ def create_app(
     db = Database(settings.db_path)
     # CONTRACT-V6-OPS: the hub that marks the owner in their ``ready.user``.
     hub: Hub = OwnerAwareHub(now, settings.owner)
+    hub.voice_room_max = settings.voice_room_max
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,
@@ -363,6 +364,7 @@ def create_app(
                 raise ApiError(409, "SERVER_FULL", "the server is full") from None
             await seed_new_user(db, user["id"])  # CONTRACT-V7-READING §1
             hub.add_user(user)
+        join_guard.succeeded(address)
         logger.info("user.joined id=%s", user["id"])
         return {"token": token, "user": user}
 
@@ -379,6 +381,7 @@ def create_app(
         if user is None:
             join_guard.failed(address)
             raise ApiError(403, "INVALID_LINK_CODE", "invalid or expired link code")
+        join_guard.succeeded(address)
         logger.info("user.linked id=%s", user["id"])
         return JSONResponse({"token": token, "user": user}, status_code=200)
 

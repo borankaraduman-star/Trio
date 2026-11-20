@@ -1,3 +1,4 @@
+import { cameraEncodingFor, cameraEncodingKey, roomFullMessage } from './lib/groups'
 import { ContextKeeper } from './audio/contextKeeper'
 import { analyserSizeFor, loudestBlockRms } from './audio/speaking'
 import { MicPipeline, type GateState, type NoiseState } from './audio/pipeline'
@@ -199,6 +200,8 @@ interface Peer {
   music: MediaStream | null
   /** V8: the music senders' bitrate has been applied (false: retried when stable). */
   musicParamsSet: boolean
+  /** V10: the camera encoding written for this room size (`cameraEncodingKey`; '' = not yet). */
+  cameraParamsKey: string
 }
 
 interface Monitor {
@@ -1272,6 +1275,63 @@ export class VoiceEngine {
         console.warn('trio: could not add camera track', error)
       }
     }
+    peer.cameraParamsKey = ''
+    this.applyCameraParams(peer)
+  }
+
+  // --- V10: the camera in a big room (CONTRACT-V10-GROUPS §3) -------------------
+  //
+  // In a mesh every viewer is its own encode and upload, so the camera is sent
+  // smaller as the room grows (`cameraEncodingFor`). Sender parameters only:
+  // nothing here renegotiates. Queued on the same per-peer chain as the share
+  // and music writes (two writes in flight on one sender are refused).
+
+  /** The room's people, me included, as the encodings count them. */
+  roomSize(): number {
+    return this.peers.size + 1
+  }
+
+  private applyCameraParamsAll(): void {
+    for (const peer of this.peers.values()) this.applyCameraParams(peer)
+  }
+
+  private applyCameraParams(peer: Peer): void {
+    if (peer.cameraSenders.length === 0) return
+    const key = cameraEncodingKey(cameraEncodingFor(this.roomSize()))
+    if (peer.cameraParamsKey === key) return
+    peer.cameraParamsKey = key
+    peer.shareParamsChain = peer.shareParamsChain.then(async () => {
+      if (this.peers.get(peer.id) !== peer) return
+      // The size as it is NOW: a later change queued behind this one finds it too.
+      const encoding = cameraEncodingFor(this.roomSize())
+      const now = cameraEncodingKey(encoding)
+      let complete = true
+      for (const sender of [...peer.cameraSenders]) {
+        try {
+          const params = sender.getParameters()
+          if (!params.encodings || params.encodings.length === 0) {
+            complete = false
+            continue
+          }
+          for (const entry of params.encodings) {
+            if (encoding === null) {
+              delete entry.maxBitrate
+              delete entry.maxFramerate
+              entry.scaleResolutionDownBy = 1
+            } else {
+              entry.maxBitrate = encoding.maxBitrate
+              entry.maxFramerate = encoding.maxFramerate
+              entry.scaleResolutionDownBy = encoding.scaleResolutionDownBy
+            }
+          }
+          await sender.setParameters(params)
+        } catch (error) {
+          console.warn('trio: could not apply the camera encoding', error)
+          complete = false
+        }
+      }
+      if (!complete && peer.cameraParamsKey === now) peer.cameraParamsKey = ''
+    })
   }
 
   // --- v2: stream identity -----------------------------------------------------
@@ -1699,6 +1759,18 @@ export class VoiceEngine {
       }
 
       case 'error':
+        // V10: the room is full (CONTRACT-V10-GROUPS §2): nothing was joined.
+        if (event.code === 'ROOM_FULL' && event.request !== 'voice.ring' && this.joinSent && (this.status === 'joining' || this.resuming)) {
+          if (event.channel_id === undefined || event.channel_id === this.channelId) {
+            this.joinSent = false
+            const limit = typeof event.limit === 'number' ? event.limit : null
+            this.generation += 1
+            this.reset()
+            this.error = limit === null ? 'Oda dolu.' : roomFullMessage(limit)
+            this.emit()
+          }
+          return
+        }
         if (event.code === 'INVALID_CHANNEL' && this.joinSent && (this.status === 'joining' || this.resuming)) {
           this.joinSent = false
           this.fail('Bu ses kanalına katılınamadı.')
@@ -1764,9 +1836,12 @@ export class VoiceEngine {
       musicSenders: [],
       music: null,
       musicParamsSet: false,
+      cameraParamsKey: '',
     }
     this.peers.set(peerId, peer)
     const alive = () => this.peers.get(peerId) === peer
+    // V10: one more person: every camera sender may need a smaller encoding.
+    this.applyCameraParamsAll()
 
     pc.onnegotiationneeded = () => {
       if (alive()) this.negotiationNeeded(peer)
@@ -2004,6 +2079,7 @@ export class VoiceEngine {
     // V6: a sender's encodings exist once negotiated; apply what could not be applied before.
     if (peer.screenSenders.length > 0 && peer.shareParamsKey === '') this.applyShareParams(peer)
     if (!peer.musicParamsSet) this.applyMusicParams(peer)
+    if (peer.cameraSenders.length > 0 && peer.cameraParamsKey === '') this.applyCameraParams(peer)
     this.stopIdleTransceivers(peer)
     if (peer.polite) {
       if (peer.offerWhenStable && !peer.makingOffer) {
@@ -2395,6 +2471,7 @@ export class VoiceEngine {
     if (!peer) return
     this.peers.delete(peerId)
     this.disposePeer(peer)
+    this.applyCameraParamsAll()
     this.emit()
   }
 

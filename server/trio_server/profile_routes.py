@@ -187,7 +187,8 @@ def register_profile_routes(
 
     @app.get("/api/server")
     async def get_server(user: User) -> Any:
-        return {"server": hub.server}
+        # CONTRACT-V10-GROUPS §2: the room cap beside the profile.
+        return {"server": hub.server, "voice_room_max": hub.voice_room_max}
 
     @app.patch("/api/server")
     async def patch_server(request: Request, user: User) -> Any:

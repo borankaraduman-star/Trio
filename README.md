@@ -52,7 +52,7 @@ Ne gerekir: Railway'de bir proje (planına göre ayda birkaç dolar) ya da Docke
 
 - `TRIO_INVITE_CODE` (zorunlu): grubuna vereceğin kod, ör. `openssl rand -hex 8`
 - `TRIO_CF_TURN_KEY_ID` ve `TRIO_CF_TURN_API_TOKEN`: Cloudflare TURN (aşağıya bak). Olmadan da çalışır, ama farklı ağlardaki kişiler birbirini duyamayabilir.
-- `TRIO_MAX_USERS`: **gerçek kişi sayısına ayarla** (ör. on iki kişilik bir grupsanız `12`). Davet kodu sızarsa yabancılar ancak boş kalan yerleri doldurabilir.
+- `TRIO_MAX_USERS`: **gerçek kişi sayısına ayarla** (ör. on iki kişilik bir grupsanız `12`). Varsayılan 15; davet kodu sızarsa yabancılar ancak boş kalan yerleri doldurabilir.
 - İsteğe bağlı: `TRIO_MAX_UPLOAD_MB`, `TRIO_USER_QUOTA_MB`, `TRIO_DISK_RESERVE_MB`, `TRIO_TRUSTED_PROXY_HOPS` (tablo aşağıda)
 
 `PORT`'u Railway kendisi verir, sunucu onu dinler; elle ayarlama.
@@ -81,7 +81,8 @@ Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar)
 | değişken | varsayılan | anlamı |
 |---|---|---|
 | `TRIO_INVITE_CODE` | (zorunlu) | ortak davet kodu; yoksa sunucu başlamaz |
-| `TRIO_MAX_USERS` | `5` | bu sayıdan sonra yeni katılım reddedilir; gerçek kişi sayısına ayarla. Kaldırılan kullanıcılar sayılmaz |
+| `TRIO_MAX_USERS` | `15` | bu sayıdan sonra yeni katılım reddedilir; gerçek kişi sayısına ayarla. Kaldırılan kullanıcılar sayılmaz |
+| `TRIO_VOICE_ROOM_MAX` | `8` | bir ses odasında aynı anda en çok kaç kişi olabilir (2–16); dolu odaya katılım `ROOM_FULL` ile reddedilir |
 | `TRIO_MAX_UPLOAD_MB` | `25` | dosya başına en büyük boyut (MB) |
 | `TRIO_USER_QUOTA_MB` | `1024` | bir kullanıcının toplam yükleyebileceği (mesajda olsun olmasın) MB |
 | `TRIO_DISK_RESERVE_MB` | `200` | diskte hep boş kalacak MB; bunun altına inecek yükleme `507` ile reddedilir |

@@ -22,6 +22,28 @@ import { BackupDot } from './owner/BackupDot'
 import { ChannelAddButton } from './phone/ChannelAddButton'
 import { screenShareSupported } from '../lib/phone'
 import { MusicMark, NowPlayingLine } from '../music/MusicUi'
+import { roomCount, roomFullMessage, roomIsFull } from '../lib/groups'
+import { viewersOf } from '../lib/viewers'
+import { ChannelViewerList } from './ChannelViewers'
+import { reportBreadcrumb } from '../owner/errorReporter'
+
+/**
+ * V10: a click on a text channel row that has not changed the open channel a
+ * second later is logged to the client error log with the layout it happened
+ * in (the owner reported "I can't switch between channels" and it could not
+ * be reproduced; this is what tells us next time).
+ */
+function watchChannelSwitch(channelId: number, name: string): void {
+  window.setTimeout(() => {
+    const shown = document.querySelector('.main-header h1')?.textContent ?? ''
+    if (shown === name) return
+    reportBreadcrumb(
+      `channel click did not switch: channel ${channelId}, header "${shown.slice(0, 32)}", ` +
+        `viewport ${window.innerWidth}x${window.innerHeight} dpr ${window.devicePixelRatio}, ` +
+        `desktop ${typeof (window as unknown as { trioDesktop?: unknown }).trioDesktop === 'object'}`,
+    )
+  }, 1000)
+}
 
 export interface SidebarProps {
   open: boolean
@@ -61,6 +83,10 @@ export interface SidebarProps {
   /** V8: the music button (in the user panel while in voice) and the panel while I share. */
   musicButton?: ReactNode
   musicPanel?: ReactNode
+  /** V10: people per voice room (`ready.voice_room_max`), null when the server does not say. */
+  voiceRoomMax?: number | null
+  /** V10 (§4b): user id → the text channel they are in now. */
+  viewers?: Record<number, number>
 }
 
 function AddChannelForm({
@@ -129,6 +155,8 @@ function AddChannelForm({
 export function Sidebar(props: SidebarProps) {
   const { me, users, channels, voice } = props
   const [adding, setAdding] = useState<ChannelKind | null>(null)
+  // V10: the full room whose explanation is shown (a tap on it; phones have no tooltip).
+  const [fullNote, setFullNote] = useState<number | null>(null)
 
   const textChannels = channels.filter((channel) => channel.kind === 'text')
   const voiceChannels = channels.filter((channel) => channel.kind === 'voice')
@@ -168,12 +196,16 @@ export function Sidebar(props: SidebarProps) {
                   data-testid={`channel-${channel.id}`}
                   data-unread={unread}
                   aria-current={active ? 'page' : undefined}
-                  onClick={() => props.onSelectChannel(channel.id)}
+                  onClick={() => {
+                    props.onSelectChannel(channel.id)
+                    watchChannelSwitch(channel.id, channel.name)
+                  }}
                 >
                   <HashIcon size={16} />
                   <span className="channel-name">{channel.name}</span>
                   {unread && <span className="unread-dot" title="Okunmamış mesaj" />}
                 </button>
+                <ChannelViewerList channelId={channel.id} people={viewersOf(props.viewers ?? {}, channel.id, users, me.id)} me={me.id} />
               </li>
             )
           })}
@@ -187,18 +219,47 @@ export function Sidebar(props: SidebarProps) {
           {voiceChannels.map((channel) => {
             const participants = props.voiceMembers[channel.id] ?? []
             const mine = voice.channelId === channel.id && inVoice
+            const max = props.voiceRoomMax ?? null
+            // V10: my own place (here, or listed while my join is on its way) never makes it full.
+            const listed = participants.some((participant) => participant.user_id === me.id)
+            const full = roomIsFull(participants.length, max, mine || listed)
+            const count = roomCount(participants.length, max)
             return (
               <li key={channel.id}>
                 <button
                   type="button"
-                  className={mine ? 'channel active' : 'channel'}
+                  className={`channel${mine ? ' active' : ''}${full ? ' full' : ''}`}
                   data-testid={`channel-${channel.id}`}
-                  title={mine ? 'Bu kanaldasın' : 'Odaya katıl'}
-                  onClick={() => props.onJoinVoice(channel.id)}
+                  data-room-count={participants.length}
+                  data-room-full={full}
+                  aria-disabled={full || undefined}
+                  title={mine ? 'Bu kanaldasın' : full && max !== null ? roomFullMessage(max) : 'Odaya katıl'}
+                  onClick={() => {
+                    if (full) {
+                      setFullNote(fullNote === channel.id ? null : channel.id)
+                      return
+                    }
+                    setFullNote(null)
+                    props.onJoinVoice(channel.id)
+                  }}
                 >
                   <SpeakerIcon size={16} />
                   <span className="channel-name">{channel.name}</span>
+                  {count !== null && (
+                    <span
+                      className={full ? 'room-count full' : 'room-count'}
+                      data-testid={`room-count-${channel.id}`}
+                      aria-label={full ? `Oda dolu: ${count}` : `${participants.length} kişi, en çok ${max}`}
+                    >
+                      {full ? `Oda dolu (${count})` : count}
+                    </span>
+                  )}
                 </button>
+                {full && fullNote === channel.id && max !== null && (
+                  <p className="room-full-note" role="status" data-testid={`room-full-note-${channel.id}`}>
+                    {roomFullMessage(max)}
+                  </p>
+                )}
                 {participants.length > 0 && (
                   <ul className="voice-users">
                     {participants.map((participant) => {

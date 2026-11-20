@@ -13,7 +13,8 @@ services:
     restart: unless-stopped
     environment:
       TRIO_INVITE_CODE: ${TRIO_INVITE_CODE:?set TRIO_INVITE_CODE in deploy/.env}
-      TRIO_MAX_USERS: ${TRIO_MAX_USERS:-5}
+      TRIO_MAX_USERS: ${TRIO_MAX_USERS:-15}
+      TRIO_VOICE_ROOM_MAX: ${TRIO_VOICE_ROOM_MAX:-8}
       # coturn runs on this same machine, so its public hostname is the domain.
       TRIO_TURN_HOST: ${TRIO_DOMAIN:?set TRIO_DOMAIN in deploy/.env}
       TRIO_TURN_SECRET: ${TRIO_TURN_SECRET:?set TRIO_TURN_SECRET in deploy/.env}

@@ -8,6 +8,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 DEFAULT_STUN_URLS = ("stun:stun.l.google.com:19302",)
+# CONTRACT-V10-GROUPS §2: the bounds of TRIO_VOICE_ROOM_MAX.
+VOICE_ROOM_MIN = 2
+VOICE_ROOM_CEILING = 16
 _TEST_PUSH_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
 # Set by Railway in every deployment: a test-only setting is refused there.
 PRODUCTION_MARKERS = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID")
@@ -21,9 +24,10 @@ class ConfigError(RuntimeError):
 class Settings:
     invite_code: str
     db_path: str = "./trio.db"
-    # Lowered from 10: set it to the real head count, so that a leaked invite
-    # code cannot create accounts beyond the people you actually know.
-    max_users: int = 5
+    # Set it to the real head count, so that a leaked invite code cannot
+    # create accounts beyond the people you actually know. CONTRACT-V10-GROUPS:
+    # Trio is for a small group (up to 10-15 people); the default is 15.
+    max_users: int = 15
     static_dir: str | None = None
     turn_host: str | None = None
     turn_secret: str | None = None
@@ -51,12 +55,19 @@ class Settings:
     # CONTRACT-V6-OPS §1: the owner's user name (matched like a join); None =
     # the active user with the lowest id.
     owner: str | None = None
+    # CONTRACT-V10-GROUPS §2: people in one voice room at once. Voice is a full
+    # mesh (everybody sends to everybody), so a room has an honest ceiling.
+    voice_room_max: int = 8
 
     def __post_init__(self) -> None:
         if not self.invite_code:
             raise ConfigError("TRIO_INVITE_CODE is required")
         if self.max_users < 1:
             raise ConfigError("TRIO_MAX_USERS must be at least 1")
+        if not VOICE_ROOM_MIN <= self.voice_room_max <= VOICE_ROOM_CEILING:
+            raise ConfigError(
+                f"TRIO_VOICE_ROOM_MAX must be between {VOICE_ROOM_MIN} and {VOICE_ROOM_CEILING}"
+            )
         if self.max_upload_mb < 1:
             raise ConfigError("TRIO_MAX_UPLOAD_MB must be at least 1")
         if self.user_quota_mb < 1:
@@ -100,6 +111,7 @@ class Settings:
             f"disk_reserve_mb={self.disk_reserve_mb}, "
             f"trusted_proxy_hops={self.trusted_proxy_hops}, "
             f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r}, "
+            f"voice_room_max={self.voice_room_max}, "
             f"test_push_service={self.test_push_service!r})"
         )
 
@@ -118,7 +130,7 @@ class Settings:
             except ValueError as exc:
                 raise ConfigError(f"{name} must be an integer") from exc
 
-        max_users = integer("TRIO_MAX_USERS", 5)
+        max_users = integer("TRIO_MAX_USERS", 15)
         max_upload_mb = integer("TRIO_MAX_UPLOAD_MB", 25)
 
         if "TRIO_STUN_URLS" in env:
@@ -148,4 +160,5 @@ class Settings:
             push_subject=optional("TRIO_PUSH_SUBJECT"),
             test_push_service=test_push,
             owner=optional("TRIO_OWNER"),
+            voice_room_max=integer("TRIO_VOICE_ROOM_MAX", 8),
         )

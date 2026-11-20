@@ -27,7 +27,7 @@ import { RemoteAudio } from './Media'
 import { CallStage } from './CallStage'
 import { SettingsDialog } from './SettingsDialog'
 import { BackupDot } from './owner/BackupDot'
-import { UploadIcon } from './icons2'
+import { UploadIcon, UsersIcon } from './icons2'
 import { settingsStore } from '../settings'
 import { desktopBridge } from '../ptt'
 import { usePtt } from '../usePtt'
@@ -36,6 +36,9 @@ import { useAttachments } from '../useAttachments'
 import { useFileDrop } from '../useFileDrop'
 import type { Attachment } from '../types'
 import { MemberList } from './MemberList'
+import { loadMembersHidden, saveMembersHidden } from '../lib/membersPanel'
+import { viewersOf } from '../lib/viewers'
+import { HereLine } from './ChannelViewers'
 import { MessageList } from './MessageList'
 import { SendTimers } from '../lib/sendTimers'
 import { isViewing, onViewingChange } from '../lib/viewing'
@@ -763,6 +766,20 @@ export function Session({
   const drop = useFileDrop(activeChannel ? addFiles : null)
   const phone = useMediaQuery(PHONE_QUERY)
   const noMemberColumn = useMediaQuery(NO_MEMBERS_QUERY)
+  // V10 (CONTRACT-V10-GROUPS §4a): "Üyeler" in the header, at every width above a phone.
+  const [membersHidden, setMembersHidden] = useState(loadMembersHidden)
+  const [membersOverlay, setMembersOverlay] = useState(false)
+  const membersShown = noMemberColumn ? membersOverlay : !membersHidden
+  const toggleMembers = () => {
+    if (noMemberColumn) {
+      setMembersOverlay((open) => !open)
+      return
+    }
+    const next = !membersHidden
+    setMembersHidden(next)
+    saveMembersHidden(next)
+  }
+  const onlineCount = Object.values(state.users).filter((user) => user.online).length
   const openPresence = () => {
     setDrawerOpen(true)
     requestAnimationFrame(() => document.getElementById(PRESENCE_ID)?.scrollIntoView({ block: 'start' }))
@@ -785,13 +802,15 @@ export function Session({
   )
 
   return (
-    <div className="app">
+    <div className={`app${!noMemberColumn && membersHidden ? ' members-hidden' : ''}`}>
       <Sidebar
         open={drawerOpen}
         me={state.me}
         users={state.users}
         channels={state.channels}
         voiceMembers={state.voice}
+        voiceRoomMax={state.voiceRoomMax}
+        viewers={state.viewers}
         activeChannelId={activeChannelId}
         unread={state.unread}
         connection={state.connection}
@@ -863,6 +882,27 @@ export function Session({
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
           {activeChannel && <MediaButton active={galleryOpen} onClick={() => setGalleryOpen(true)} />}
           {phone && <PresencePill users={state.users} onOpen={openPresence} />}
+          {!phone && activeChannel && <HereLine people={viewersOf(state.viewers, activeChannel.id, state.users, state.me.id)} me={state.me.id} />}
+          {!phone && (
+            <button
+              type="button"
+              className={membersShown ? 'members-toggle on' : 'members-toggle'}
+              data-testid="btn-members"
+              data-online={onlineCount}
+              aria-pressed={membersShown}
+              aria-controls="members-panel"
+              aria-label={`Üyeler: ${onlineCount} çevrimiçi. ${membersShown ? 'Gizle' : 'Göster'}`}
+              title={membersShown ? 'Üyeleri gizle' : 'Üyeleri göster'}
+              onClick={toggleMembers}
+            >
+              <UsersIcon />
+              <span>Üyeler</span>
+              <span className="members-count">
+                <span className="dot online" aria-hidden="true" />
+                {onlineCount}
+              </span>
+            </button>
+          )}
           {activeChannel && (
             <PinsButton
               family={family}
@@ -976,6 +1016,7 @@ export function Session({
               focusOnMount={takeComposerFocus(focusComposer, activeChannel.id)}
               onTextChange={(text) => drafts.setText(activeChannel.id, text)}
               voice={{ onRecorded: sendVoice, onError: setSendNotice }}
+              mentionPeople={Object.values(state.users).filter((user) => user.id !== state.me.id)}
               attachments={{
                 items: pendingHere,
                 files: attachments.files,
@@ -1004,7 +1045,16 @@ export function Session({
         )}
       </main>
 
-      <MemberList users={state.users} />
+      {noMemberColumn && membersOverlay && !phone && (
+        <div className="members-backdrop" data-testid="members-backdrop" onClick={() => setMembersOverlay(false)} />
+      )}
+      <MemberList
+        users={state.users}
+        me={state.me.id}
+        overlay={noMemberColumn && membersOverlay && !phone}
+        hidden={!noMemberColumn && membersHidden}
+        onClose={noMemberColumn && membersOverlay ? () => setMembersOverlay(false) : undefined}
+      />
 
       {galleryOpen && activeChannel && (
         <MediaGallery

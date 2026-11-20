@@ -139,8 +139,14 @@ export type ServerEvent =
       server?: ServerProfile
       /** V7-READING: per text channel; absent from an older server. */
       read_state?: Record<string, ReadStateEntry>
+      /** V10: people per voice room (CONTRACT-V10-GROUPS §2); absent from an older server. */
+      voice_room_max?: number
+      /** V10: who is in which text channel now (§4b): "<channel id>": [user ids]. */
+      viewers?: Record<string, number[]>
     }
   | { type: 'presence'; user_id: number; online: boolean }
+  /** V10 (§4b): the text channel somebody is in now, or null. */
+  | { type: 'presence.viewing'; user_id: number; channel_id: number | null }
   | { type: 'user.joined'; user: User }
   /** v3: the admin removed this account; drop it from the member list, keep its messages. */
   | { type: 'user.removed'; user_id: number }
@@ -178,7 +184,16 @@ export type ServerEvent =
   | { type: 'voice.ring'; channel_id: number; from: number }
   | { type: 'pong' }
   /** V6: `nonce` when it answers a `message.send` that carried one. */
-  | { type: 'error'; code: string; message: string; nonce?: string }
+  | {
+      type: 'error'
+      code: string
+      message: string
+      nonce?: string
+      /** V10: `ROOM_FULL` answers a `voice.join` with these. */
+      request?: string
+      channel_id?: number
+      limit?: number
+    }
 
 export type ClientEvent =
   | {

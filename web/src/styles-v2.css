@@ -419,7 +419,7 @@ button.attachment-image {
   font-size: 11px;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 880px) {
   .call-stage.grid {
     height: min(58vh, calc((100vw - var(--sidebar-width)) / var(--stage-columns, 1) * 9 / 16 * var(--stage-rows, 1) + 16px));
   }

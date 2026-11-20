@@ -99,3 +99,15 @@ export function UploadIcon({ size }: IconProps) {
     </Icon>
   )
 }
+
+/** V10: the member panel's toggle. */
+export function UsersIcon({ size }: IconProps) {
+  return (
+    <Icon size={size}>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8" />
+      <path d="M18 14.8c2 .6 3.2 2.4 3.5 5.2" />
+    </Icon>
+  )
+}

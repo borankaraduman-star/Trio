@@ -1,0 +1,374 @@
+/* CONTRACT-V10-GROUPS: a small group (up to 10-15 people), not three friends. */
+
+/* --- "@" suggestions above the composer ----------------------------------------- */
+
+.mention-list {
+  list-style: none;
+  margin: 0 16px 6px;
+  padding: 4px;
+  max-height: min(296px, 40vh);
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.mention-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mention-option.chosen {
+  background: var(--bg-active);
+  color: var(--text-strong);
+}
+
+.mention-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-option small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mention-everyone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  .mention-option {
+    min-height: 44px;
+  }
+}
+
+/* --- the voice room's count and "Oda dolu" ---------------------------------------- */
+
+.channel .room-count {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.channel .room-count.full {
+  background: rgb(228 119 127 / 16%);
+  color: #f0a3a9;
+}
+
+.channel.full {
+  cursor: not-allowed;
+}
+
+.channel.full .channel-name {
+  color: var(--text-muted);
+}
+
+.room-full-note {
+  margin: 2px 8px 6px 30px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* --- a crowded stage: "+N" and "Hepsini göster" ----------------------------------- */
+
+.call-tile.folded {
+  /* Mounted and playing (a folded screen's sound goes on), just not drawn. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.call-tile.stage-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  font: inherit;
+  cursor: pointer;
+}
+
+.call-tile.stage-more strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-tile.stage-more span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Every tile at once: rows keep 16:9 and the grid scrolls inside the stage's share of the screen. */
+.call-stage.grid.all {
+  height: auto;
+  max-height: 58vh;
+  grid-auto-rows: calc((100vw - var(--sidebar-width) - var(--members-width) - 16px) / var(--stage-columns, 1) * 9 / 16);
+  overflow-y: auto;
+}
+
+@media (max-width: 880px) {
+  .call-stage.grid.all {
+    grid-auto-rows: calc((100vw - var(--sidebar-width) - 16px) / var(--stage-columns, 1) * 9 / 16);
+  }
+}
+
+@media (max-width: 680px) {
+  .call-stage.grid.all {
+    max-height: 50vh;
+    grid-auto-rows: calc((100vw - 24px) / var(--stage-columns, 1) * 9 / 16);
+  }
+}
+
+/* --- Yönetim with many people ------------------------------------------------------ */
+
+.ops-people-tools {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.ops-people-tools input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ops-people-tools select {
+  flex: none;
+  max-width: 45%;
+}
+
+.ops-removed summary {
+  cursor: pointer;
+}
+
+/* --- "Üyeler" in the header, and the member panel at every width (§4a) ------------- */
+
+.members-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.members-toggle:hover,
+.members-toggle.on {
+  color: var(--text-strong);
+  background: var(--bg-hover);
+}
+
+.members-toggle + .pins-button {
+  margin-left: 0;
+}
+
+.members-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.members-count .dot {
+  position: static;
+  width: 8px;
+  height: 8px;
+  border: 0;
+}
+
+.members-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 0;
+}
+
+.members-title {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+
+.members-note {
+  margin: 4px 8px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.member-me {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Wide: the column can be hidden from "Üyeler" (remembered per device). */
+.app.members-hidden {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+
+.members.hidden {
+  display: none;
+}
+
+.app.members-hidden .call-stage.grid {
+  height: min(58vh, calc((100vw - var(--sidebar-width)) / var(--stage-columns, 1) * 9 / 16 * var(--stage-rows, 1) + 16px));
+}
+
+/* Narrower than the column: the same panel over the chat, from the right. */
+@media (max-width: 880px) {
+  .members.overlay {
+    display: block;
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    width: min(300px, 86vw);
+    box-shadow: -8px 0 32px rgb(0 0 0 / 50%);
+  }
+
+  .members-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: rgb(0 0 0 / 45%);
+  }
+}
+
+/* --- who is in which text channel (§4b) --------------------------------------------- */
+
+.channel-viewers {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0 0 0 30px;
+}
+
+.channel-viewer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.channel-viewer-name,
+.channel-viewer-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-viewers.stacked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.channel-viewer-faces {
+  display: inline-flex;
+  flex: none;
+}
+
+.channel-viewer-faces > span + span {
+  margin-left: -6px;
+}
+
+.channel-viewer-faces .avatar {
+  box-shadow: 0 0 0 2px var(--bg-side);
+}
+
+.channel-viewer-more {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-strong);
+  font-size: 11px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.here-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.here-line + .members-toggle {
+  margin-left: 4px;
+}
+
+.here-faces {
+  display: inline-flex;
+  flex: none;
+}
+
+.here-faces .avatar + .avatar {
+  margin-left: -5px;
+}
+
+.here-faces .avatar {
+  box-shadow: 0 0 0 2px var(--bg-main);
+}
+
+.here-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Narrow: the faces say it; the words are in the title (and under the row). */
+@media (max-width: 1100px) {
+  .here-text {
+    display: none;
+  }
+}
