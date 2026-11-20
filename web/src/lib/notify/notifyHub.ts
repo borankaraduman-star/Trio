@@ -9,6 +9,7 @@
  * tags and `data` the worker uses, so `notificationclick` in sw.js routes them
  * all. `new Notification` is only the fallback where no worker registered.
  */
+import { showChannel } from '../viewers'
 import { ApiError } from '../../api'
 import type { Channel, ClientEvent, Message } from '../../types'
 import { isViewing } from '../viewing'
@@ -455,9 +456,13 @@ class NotifyHub {
     if (!ctx) return
     const viewing = isViewing()
     const channelId = ctx.activeChannelId()
-    const key = `${viewing}:${channelId}`
+    // V10 (§4b): "Hangi kanalda olduğumu göster" off: the channel is still sent
+    // for the push decisions, marked as not to be shown to anybody.
+    const show = showChannel.getSnapshot()
+    const key = `${viewing}:${channelId}:${show}`
     if (!force && key === this.lastViewing) return
-    if (ctx.send({ type: 'client.viewing', viewing, channel_id: channelId } as unknown as ClientEvent)) this.lastViewing = key
+    const frame = { type: 'client.viewing', viewing, channel_id: channelId, ...(show ? {} : { show_channel: false }) }
+    if (ctx.send(frame as unknown as ClientEvent)) this.lastViewing = key
     if (viewing) void this.viewed()
   }
 
@@ -532,3 +537,6 @@ class NotifyHub {
 }
 
 export const notifyHub = new NotifyHub()
+
+// V10 (§4b): turning "Hangi kanalda olduğumu göster" on or off reports at once.
+showChannel.subscribe(() => notifyHub.reportViewing())

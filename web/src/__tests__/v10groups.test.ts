@@ -129,3 +129,27 @@ describe('the member panel toggle', async () => {
     expect(membersTitle(5)).toBe('Üyeler — 5 çevrimiçi')
   })
 })
+
+describe('who is in which text channel', async () => {
+  const { viewersFromReady, viewersOf, hereLine } = await import('../lib/viewers')
+  const { createInitialState, reducer } = await import('../store')
+  const users = Object.fromEntries(people.map((p) => [p.id, { ...p, online: true, avatar_url: null }]))
+  it('reads ready.viewers and lists me first, then by name', () => {
+    const viewers = viewersFromReady({ '1': [3, 1, 2], '7': [5], bad: [1], '9': 'x' })
+    expect(viewers).toEqual({ 1: 1, 2: 1, 3: 1, 5: 7 })
+    expect(viewersOf(viewers, 1, users, 3).map((p) => p.name)).toEqual(['Zeynep', 'Ayşe', 'Mehmet'])
+    expect(hereLine(viewersOf(viewers, 1, users, 3), 3)).toBe('Burada: Sen, Ayşe, Mehmet')
+    expect(hereLine([], 3)).toBeNull()
+  })
+  it('follows presence.viewing and forgets everything when the connection drops', () => {
+    let state = createInitialState({ me: { id: 1, name: 'Ayşe' } })
+    const server = (event: unknown) => (state = reducer(state, { type: 'server', event: event as never, now: 0, viewing: true }))
+    server({ type: 'presence.viewing', user_id: 2, channel_id: 1 })
+    server({ type: 'presence.viewing', user_id: 3, channel_id: 4 })
+    expect(state.viewers).toEqual({ 2: 1, 3: 4 })
+    server({ type: 'presence.viewing', user_id: 2, channel_id: null })
+    expect(state.viewers).toEqual({ 3: 4 })
+    state = reducer(state, { type: 'connection.down' })
+    expect(state.viewers).toEqual({})
+  })
+})

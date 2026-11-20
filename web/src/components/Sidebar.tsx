@@ -23,6 +23,8 @@ import { ChannelAddButton } from './phone/ChannelAddButton'
 import { screenShareSupported } from '../lib/phone'
 import { MusicMark, NowPlayingLine } from '../music/MusicUi'
 import { roomCount, roomFullMessage, roomIsFull } from '../lib/groups'
+import { viewersOf } from '../lib/viewers'
+import { ChannelViewerList } from './ChannelViewers'
 import { reportBreadcrumb } from '../owner/errorReporter'
 
 /**
@@ -83,6 +85,8 @@ export interface SidebarProps {
   musicPanel?: ReactNode
   /** V10: people per voice room (`ready.voice_room_max`), null when the server does not say. */
   voiceRoomMax?: number | null
+  /** V10 (§4b): user id → the text channel they are in now. */
+  viewers?: Record<number, number>
 }
 
 function AddChannelForm({
@@ -201,6 +205,7 @@ export function Sidebar(props: SidebarProps) {
                   <span className="channel-name">{channel.name}</span>
                   {unread && <span className="unread-dot" title="Okunmamış mesaj" />}
                 </button>
+                <ChannelViewerList channelId={channel.id} people={viewersOf(props.viewers ?? {}, channel.id, users, me.id)} me={me.id} />
               </li>
             )
           })}

@@ -12,6 +12,7 @@ import { ServerSection, type ServerSettingsProps } from './ServerSection'
 import { VersionFooter } from './VersionFooter'
 import { DownloadLink } from './DownloadLink'
 import { GameShareSetting } from './GameActivity'
+import { ShowChannelSetting } from './ChannelViewers'
 import { NotificationsSection } from './notify/NotificationsSection'
 import { InputSensitivitySection, ShortcutsSection } from './voice/VoiceEveningSettings'
 import { DesktopVersionFooter } from './voice/DesktopVersion'
@@ -360,6 +361,7 @@ export function SettingsDialog({
       <>
         {account && <AccountSection account={account} onSignOut={onSignOut ?? (() => undefined)} />}
         <GameShareSetting />
+        <ShowChannelSetting />
         {serverSettings && <ServerSection settings={serverSettings} />}
       </>
     ),

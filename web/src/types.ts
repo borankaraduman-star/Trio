@@ -141,8 +141,12 @@ export type ServerEvent =
       read_state?: Record<string, ReadStateEntry>
       /** V10: people per voice room (CONTRACT-V10-GROUPS §2); absent from an older server. */
       voice_room_max?: number
+      /** V10: who is in which text channel now (§4b): "<channel id>": [user ids]. */
+      viewers?: Record<string, number[]>
     }
   | { type: 'presence'; user_id: number; online: boolean }
+  /** V10 (§4b): the text channel somebody is in now, or null. */
+  | { type: 'presence.viewing'; user_id: number; channel_id: number | null }
   | { type: 'user.joined'; user: User }
   /** v3: the admin removed this account; drop it from the member list, keep its messages. */
   | { type: 'user.removed'; user_id: number }

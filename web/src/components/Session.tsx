@@ -37,6 +37,8 @@ import { useFileDrop } from '../useFileDrop'
 import type { Attachment } from '../types'
 import { MemberList } from './MemberList'
 import { loadMembersHidden, saveMembersHidden } from '../lib/membersPanel'
+import { viewersOf } from '../lib/viewers'
+import { HereLine } from './ChannelViewers'
 import { MessageList } from './MessageList'
 import { SendTimers } from '../lib/sendTimers'
 import { isViewing, onViewingChange } from '../lib/viewing'
@@ -808,6 +810,7 @@ export function Session({
         channels={state.channels}
         voiceMembers={state.voice}
         voiceRoomMax={state.voiceRoomMax}
+        viewers={state.viewers}
         activeChannelId={activeChannelId}
         unread={state.unread}
         connection={state.connection}
@@ -879,6 +882,7 @@ export function Session({
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
           {activeChannel && <MediaButton active={galleryOpen} onClick={() => setGalleryOpen(true)} />}
           {phone && <PresencePill users={state.users} onOpen={openPresence} />}
+          {!phone && activeChannel && <HereLine people={viewersOf(state.viewers, activeChannel.id, state.users, state.me.id)} me={state.me.id} />}
           {!phone && (
             <button
               type="button"

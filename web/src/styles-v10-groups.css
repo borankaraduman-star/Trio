@@ -273,3 +273,102 @@
     background: rgb(0 0 0 / 45%);
   }
 }
+
+/* --- who is in which text channel (§4b) --------------------------------------------- */
+
+.channel-viewers {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0 0 0 30px;
+}
+
+.channel-viewer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.channel-viewer-name,
+.channel-viewer-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-viewers.stacked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.channel-viewer-faces {
+  display: inline-flex;
+  flex: none;
+}
+
+.channel-viewer-faces > span + span {
+  margin-left: -6px;
+}
+
+.channel-viewer-faces .avatar {
+  box-shadow: 0 0 0 2px var(--bg-side);
+}
+
+.channel-viewer-more {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-strong);
+  font-size: 11px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.here-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.here-line + .members-toggle {
+  margin-left: 4px;
+}
+
+.here-faces {
+  display: inline-flex;
+  flex: none;
+}
+
+.here-faces .avatar + .avatar {
+  margin-left: -5px;
+}
+
+.here-faces .avatar {
+  box-shadow: 0 0 0 2px var(--bg-main);
+}
+
+.here-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Narrow: the faces say it; the words are in the title (and under the row). */
+@media (max-width: 1100px) {
+  .here-text {
+    display: none;
+  }
+}
