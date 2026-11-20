@@ -22,6 +22,9 @@
  * `checkForUpdates()`, `downloadUpdate()`, `installUpdate()`,
  * `setAutoUpdate(on)`.
  *
+ * CONTRACT-V12-MINI-DESKTOP: `mini: {supported, setOptions, show, hide, close,
+ * onState}`, `setWatchHotkeys(keys)`, `onWatchHotkey(cb)`, `onWindowState(cb)`.
+ *
  * On the app's own connect page it exposes `window.trioConnect` instead. The
  * main process checks the sender's origin on every message regardless.
  */
@@ -31,7 +34,9 @@ import type {
   MusicSupport,
   NowPlaying,
   PrepareResult,
+  MiniWindowState,
   TrioDesktopListeningBridge,
+  TrioDesktopMiniBridge,
   TrioDesktopMusicBridge,
   TrioDesktopUpdateBridge,
 } from "../shared/bridge";
@@ -136,6 +141,89 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       ipcRenderer.send("trio:update-auto", on === true);
     },
   };
+  // CONTRACT-V12-MINI-DESKTOP: watching a share from inside a game.
+  const WATCH = ["toggleMini", "nextShare", "clickThrough", "muteShare", "shareVolumeUp", "shareVolumeDown", "theatre"] as const;
+  type WatchName = (typeof WATCH)[number];
+  const isWatch = (value: unknown): value is WatchName => typeof value === "string" && (WATCH as readonly string[]).includes(value);
+  const miniId = (id: unknown): string | null => (typeof id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : null);
+  const watching: TrioDesktopMiniBridge = {
+    mini: {
+      supported: true,
+      setOptions(id: string, options: Record<string, unknown>): void {
+        const key = miniId(id);
+        const record = typeof options === "object" && options !== null ? options : {};
+        const out: Record<string, number | boolean> = {};
+        if (typeof record.opacity === "number") out.opacity = record.opacity;
+        if (typeof record.aspect === "number") out.aspect = record.aspect;
+        for (const flag of ["clickThrough", "alwaysOnTop", "contentProtection"]) {
+          if (typeof record[flag] === "boolean") out[flag] = record[flag] as boolean;
+        }
+        if (key) ipcRenderer.send("trio:mini-options", key, out);
+      },
+      show(id: string): void {
+        const key = miniId(id);
+        if (key) ipcRenderer.send("trio:mini-show", key);
+      },
+      hide(id: string): void {
+        const key = miniId(id);
+        if (key) ipcRenderer.send("trio:mini-hide", key);
+      },
+      close(id: string): void {
+        const key = miniId(id);
+        if (key) ipcRenderer.send("trio:mini-close", key);
+      },
+      onState(cb: (state: MiniWindowState) => void): () => void {
+        if (typeof cb !== "function") return () => undefined;
+        let active = true;
+        const listener = (_event: IpcRendererEvent, state: unknown): void => {
+          if (active && state && typeof state === "object") cb(state as MiniWindowState);
+        };
+        ipcRenderer.on("trio:mini-state", listener);
+        void (ipcRenderer.invoke("trio:mini-states") as Promise<MiniWindowState[] | null>).then((states) => {
+          if (active && Array.isArray(states)) for (const state of states) cb(state);
+        });
+        return () => {
+          active = false;
+          ipcRenderer.removeListener("trio:mini-state", listener);
+        };
+      },
+    },
+    setWatchHotkeys(keys: Partial<Record<WatchName, string | null>>): void {
+      const record = (typeof keys === "object" && keys !== null ? keys : {}) as Record<string, unknown>;
+      const out: Record<string, string | null> = {};
+      for (const action of WATCH) {
+        const value = record[action];
+        out[action] = typeof value === "string" ? value : null;
+      }
+      ipcRenderer.send("trio:set-watch-hotkeys", out);
+    },
+    onWatchHotkey(cb: (action: WatchName) => void): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      const listener = (_event: IpcRendererEvent, action: unknown): void => {
+        if (isWatch(action)) cb(action);
+      };
+      ipcRenderer.on("trio:watch-hotkey", listener);
+      return () => {
+        ipcRenderer.removeListener("trio:watch-hotkey", listener);
+      };
+    },
+    onWindowState(cb): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      let active = true;
+      const deliver = (state: unknown): void => {
+        if (!active || !state || typeof state !== "object") return;
+        const s = state as Record<string, unknown>;
+        cb({ focused: s.focused === true, minimized: s.minimized === true, hiddenToTray: s.hiddenToTray === true });
+      };
+      const listener = (_event: IpcRendererEvent, state: unknown): void => deliver(state);
+      ipcRenderer.on("trio:window-state", listener);
+      void (ipcRenderer.invoke("trio:window-state-get") as Promise<unknown>).then(deliver);
+      return () => {
+        active = false;
+        ipcRenderer.removeListener("trio:window-state", listener);
+      };
+    },
+  };
   contextBridge.exposeInMainWorld("trioDesktop", {
     isDesktop: true,
     // CONTRACT-V6-VOICE "Desktop version": absent (undefined) only if argv lacked it.
@@ -183,6 +271,7 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
     ...music,
     ...listening,
     ...update,
+    ...watching,
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {
       if (typeof cb !== "function") return () => undefined;

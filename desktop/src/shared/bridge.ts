@@ -43,3 +43,43 @@ export interface TrioDesktopUpdateBridge {
   installUpdate(): Promise<{ ok: boolean; reason?: string }>;
   setAutoUpdate(on: boolean): void;
 }
+
+/**
+ * CONTRACT-V12-MINI-DESKTOP §2: the mini player windows, the watching keys and
+ * the main window's state. Absent in apps built before it.
+ */
+export type WatchHotkeyAction =
+  | "toggleMini"
+  | "nextShare"
+  | "clickThrough"
+  | "muteShare"
+  | "shareVolumeUp"
+  | "shareVolumeDown"
+  | "theatre";
+
+export interface MiniWindowState {
+  id: string;
+  visible: boolean;
+  clickThrough: boolean;
+  bounds: { x: number; y: number; width: number; height: number };
+  /** Present (true) once, when the window has closed (addition to the seam). */
+  closed?: true;
+}
+
+export interface TrioDesktopMiniBridge {
+  mini: {
+    supported: true;
+    setOptions(
+      id: string,
+      options: { opacity?: number; clickThrough?: boolean; alwaysOnTop?: boolean; aspect?: number; contentProtection?: boolean },
+    ): void;
+    show(id: string): void;
+    hide(id: string): void;
+    close(id: string): void;
+    /** Called with every open window's state at once, then on each change. */
+    onState(cb: (state: MiniWindowState) => void): () => void;
+  };
+  setWatchHotkeys(keys: Partial<Record<WatchHotkeyAction, string | null>>): void;
+  onWatchHotkey(cb: (action: WatchHotkeyAction) => void): () => void;
+  onWindowState(cb: (state: { focused: boolean; minimized: boolean; hiddenToTray: boolean; fullscreenAppInFront?: boolean }) => void): () => void;
+}

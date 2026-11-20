@@ -7,6 +7,10 @@
  * navigation (only the configured origin), new windows (system browser),
  * permissions (only the configured origin, only what voice/video needs), IPC
  * (sender frame's origin), and screen capture (an in-app picker).
+ *
+ * CONTRACT-V12-MINI-DESKTOP: the one kind of window the page may open itself is
+ * a mini player (`/mini.html`, `trio-mini-<id>`, at most four), always on top,
+ * owned by `MiniWindowManager`.
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -29,6 +33,7 @@ import {
   shell,
   systemPreferences,
   Tray,
+  webContents as allWebContents,
   type DesktopCapturerSource,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -60,6 +65,10 @@ import {
   type UpdateState,
 } from "../shared/update";
 import { initialWindowSize } from "../shared/windowSize";
+import { MINI_PATH } from "../shared/mini";
+import { MiniWindowManager, type MiniWindowLike } from "./miniWindows";
+import { MiniBoundsStore } from "./miniBounds";
+import { WindowStateReporter, windowStateOf } from "./windowState";
 import {
   isExternalOpenable,
   isSameOrigin,
@@ -151,6 +160,18 @@ const ptt = new PttController(
       wc.send("trio:hotkey", action);
     }
   },
+  // CONTRACT-V12-MINI-DESKTOP §4: the watching keys, on the same hook.
+  (action) => {
+    if (action === "clickThrough") {
+      // A click-through window cannot be clicked, so this key is the rescue and is
+      // applied HERE, not by the page. Not while Trio itself is focused: that is
+      // where a key is being bound, and the page's own controls are at hand there.
+      if (mainWindow?.isFocused()) return;
+      if (miniWindows?.toggleClickThrough()) sendToServerPage("trio:watch-hotkey", action);
+      return;
+    }
+    sendToServerPage("trio:watch-hotkey", action);
+  },
 );
 /**
  * CONTRACT-V8-MUSIC §5 and CONTRACT-V11-ACTIVITY §5: one reader, running only
@@ -170,6 +191,16 @@ const nowPlaying = new MediaWatch(
 /** V6: the tray's own image, and the mute/deafen mark drawn on it. */
 let trayBase: Electron.NativeImage | null = null;
 let trayVoice: TrayVoiceState = "none";
+/** CONTRACT-V12-MINI-DESKTOP: created in onReady. */
+let miniWindows: MiniWindowManager | null = null;
+/** What the tray last showed about the mini windows (rebuilt only when it changes). */
+let trayMiniKey = "";
+/** The mini windows themselves (the screen picker leaves them out). */
+const miniBrowserWindows = new Set<BrowserWindow>();
+const windowState = new WindowStateReporter(
+  () => (mainWindow && !mainWindow.isDestroyed() ? windowStateOf(mainWindow) : null),
+  (state) => sendToServerPage("trio:window-state", state),
+);
 /** CONTRACT-V10-UPDATE: created in onReady. */
 let updates: UpdateController | null = null;
 /** The last update state the tray shows, and the version already notified (once each). */
@@ -200,6 +231,7 @@ function onReady(): void {
   installIpc();
   installGameStatus();
   installUpdates();
+  installMiniWindows();
   buildAppMenu();
   createTray();
   createMainWindow();
@@ -213,6 +245,7 @@ app.on("before-quit", () => {
 
 app.on("will-quit", () => {
   ptt.dispose();
+  miniWindows?.closeAll();
   gameService?.stop();
   nowPlaying.dispose();
   updates?.dispose();
@@ -227,8 +260,13 @@ app.on("window-all-closed", () => {
 app.on("web-contents-created", (_event, contents) => {
   contents.on("will-attach-webview", (event) => event.preventDefault());
 
-  contents.setWindowOpenHandler(({ url }) => {
-    if (isExternalOpenable(url)) void shell.openExternal(url);
+  contents.setWindowOpenHandler((details) => {
+    // CONTRACT-V12-MINI-DESKTOP: the server page's mini players; nobody else's.
+    if (contents === mainWindow?.webContents && looksLikeMini(details)) {
+      if (!miniWindows || !isSameOrigin(contents.getURL(), serverOrigin)) return { action: "deny" };
+      return miniWindows.openRequest(details, serverOrigin) as Electron.WindowOpenHandlerResponse;
+    }
+    if (isExternalOpenable(details.url)) void shell.openExternal(details.url);
     return { action: "deny" };
   });
 
@@ -246,6 +284,93 @@ app.on("web-contents-created", (_event, contents) => {
     event.preventDefault();
   });
 });
+
+/** Anything that names the mini route or a mini frame goes to the mini rules (and is denied unless exact). */
+function looksLikeMini(details: { url: string; frameName: string }): boolean {
+  if (details.frameName.startsWith("trio-mini-")) return true;
+  try {
+    return new URL(details.url).pathname === MINI_PATH && isSameOrigin(details.url, serverOrigin);
+  } catch {
+    return false;
+  }
+}
+
+/** CONTRACT-V12-MINI-DESKTOP: the manager, its IPC, and the display changes it follows. */
+function installMiniWindows(): void {
+  miniWindows = new MiniWindowManager({
+    screen: {
+      getAllDisplays: () => screen.getAllDisplays(),
+      getDisplayMatching: (rect) => screen.getDisplayMatching(rect),
+    },
+    store: new MiniBoundsStore(app.getPath("userData")),
+    preload: path.join(__dirname, "..", "preload", "mini-preload.js"),
+    platform: process.platform,
+    fallbackDisplay: () =>
+      mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : screen.getPrimaryDisplay(),
+    onState: (state) => sendToServerPage("trio:mini-state", state),
+    onChange: () => {
+      const key = miniWindows ? `${miniWindows.count}|${miniWindows.anyVisible}|${miniWindows.anyClickThrough}` : "";
+      if (key === trayMiniKey) return;
+      trayMiniKey = key;
+      refreshTrayMenu();
+    },
+  });
+  const reclamp = (): void => miniWindows?.reclampAll();
+  screen.on("display-removed", reclamp);
+  screen.on("display-added", reclamp);
+  screen.on("display-metrics-changed", reclamp);
+
+  ipcMain.on("trio:mini-options", (event, id: unknown, options: unknown) => {
+    if (fromServerPage(event)) miniWindows?.setOptions(id, options, serverOrigin);
+  });
+  ipcMain.on("trio:mini-show", (event, id: unknown) => {
+    if (fromServerPage(event)) miniWindows?.show(id, serverOrigin);
+  });
+  ipcMain.on("trio:mini-hide", (event, id: unknown) => {
+    if (fromServerPage(event)) miniWindows?.hide(id, serverOrigin);
+  });
+  ipcMain.on("trio:mini-close", (event, id: unknown) => {
+    if (fromServerPage(event)) miniWindows?.close(id, serverOrigin);
+  });
+  ipcMain.handle("trio:mini-states", (event) => (fromServerPage(event) ? miniWindows?.states(serverOrigin) ?? [] : null));
+  ipcMain.on("trio:set-watch-hotkeys", (event, keys: unknown) => {
+    if (!fromServerPage(event) || typeof keys !== "object" || keys === null) return;
+    const pick = (value: unknown): string | null =>
+      typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
+    const record = keys as Record<string, unknown>;
+    ptt.setWatchHotkeys({
+      toggleMini: pick(record.toggleMini),
+      nextShare: pick(record.nextShare),
+      clickThrough: pick(record.clickThrough),
+      muteShare: pick(record.muteShare),
+      shareVolumeUp: pick(record.shareVolumeUp),
+      shareVolumeDown: pick(record.shareVolumeDown),
+      theatre: pick(record.theatre),
+    });
+  });
+  ipcMain.handle("trio:window-state-get", (event) => (fromServerPage(event) ? windowState.current() : null));
+}
+
+/** `did-create-window` on the main window: a mini player the manager allowed (anything else is closed). */
+function adoptMiniWindow(child: BrowserWindow, frameName: string): void {
+  const opener = child.webContents.opener;
+  const fromTop =
+    mainWindow !== null &&
+    opener !== null &&
+    opener.parent === null &&
+    opener.processId === mainWindow.webContents.mainFrame.processId &&
+    opener.routingId === mainWindow.webContents.mainFrame.routingId &&
+    isSameOrigin(opener.url, serverOrigin);
+  if (!miniWindows || !fromTop) {
+    child.close();
+    return;
+  }
+  if (!miniWindows.adopt(child as unknown as MiniWindowLike, frameName, serverOrigin)) return;
+  // No further windows from the mini page, not even to the system browser.
+  child.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  miniBrowserWindows.add(child);
+  child.on("closed", () => miniBrowserWindows.delete(child));
+}
 
 function registerLocalProtocol(ses: Session): void {
   ses.protocol.handle(LOCAL_SCHEME, async (request) => {
@@ -349,8 +474,14 @@ function createMainWindow(): void {
   });
   mainWindow.on("closed", () => {
     mainWindow = null;
+    miniWindows?.closeAll();
   });
   mainWindow.on("focus", () => mainWindow?.flashFrame(false));
+  // CONTRACT-V12-MINI-DESKTOP §5: the page hears focus/minimize/tray, debounced.
+  for (const name of ["focus", "blur", "minimize", "restore", "show", "hide"] as const) {
+    mainWindow.on(name as "focus", () => windowState.poke());
+  }
+  wc.on("did-create-window", (child, details) => adoptMiniWindow(child, details.frameName));
 
   wc.on("did-start-navigation", (details) => {
     // A new document: the old page's PTT key is gone with it. The web client
@@ -366,6 +497,10 @@ function createMainWindow(): void {
       nowPlaying.stopAll();
       // CONTRACT-V10-UPDATE: nor in a voice room (the page says so again when it rejoins).
       updates?.setInVoice(false);
+      // CONTRACT-V12-MINI-DESKTOP: the mini players belonged to the old document.
+      miniWindows?.closeAll();
+      ptt.setWatchHotkeys({});
+      windowState.reset();
     }
   });
 
@@ -382,6 +517,7 @@ function createMainWindow(): void {
   wc.on("render-process-gone", (_event, details) => {
     console.warn(`[trio] renderer gone: ${details.reason}`);
     nowPlaying.stopAll();
+    miniWindows?.closeAll();
     if (details.reason !== "clean-exit") wc.reload();
   });
 
@@ -480,9 +616,19 @@ function refreshTrayMenu(): void {
     { type: "separator" },
     { label: "Trio'yu göster", click: () => showMainWindow() },
     { label: "Oyun durumu…", click: () => showGameWindow() },
-    { type: "separator" },
-    { label: "Çıkış", click: () => quit() },
   );
+  // CONTRACT-V12-MINI-DESKTOP §6: while a mini player exists.
+  if (miniWindows && miniWindows.count > 0) {
+    items.push({ type: "separator" });
+    items.push({
+      label: miniWindows.anyVisible ? "Mini oynatıcıyı gizle" : "Mini oynatıcıyı göster",
+      click: () => miniWindows?.toggleAllVisible(),
+    });
+    if (miniWindows.anyClickThrough) {
+      items.push({ label: "Mini oynatıcı: tıklamayı geri aç", click: () => miniWindows?.clearClickThrough() });
+    }
+  }
+  items.push({ type: "separator" }, { label: "Çıkış", click: () => quit() });
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
@@ -812,7 +958,10 @@ let pendingPick: PendingPick | null = null;
 function installDisplayMediaHandler(ses: Session): void {
   ses.setDisplayMediaRequestHandler((request, callback) => {
     const frameUrl = request.frame?.url ?? null;
+    // V12: a same-origin mini window is not the main page; only the main window may capture.
+    const requester = request.frame ? allWebContents.fromFrame(request.frame) : undefined;
     const fromServer =
+      (requester === undefined || requester === mainWindow?.webContents) &&
       mainWindow !== null &&
       serverOrigin !== null &&
       isSameOrigin(request.securityOrigin, serverOrigin) &&
@@ -892,7 +1041,7 @@ async function listSources(): Promise<unknown> {
     console.warn("[trio] desktopCapturer.getSources failed", error);
   }
   const ownIds = new Set(
-    [mainWindow, pickerWindow]
+    [mainWindow, pickerWindow, ...miniBrowserWindows]
       .filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
       .map((w) => w.getMediaSourceId()),
   );
