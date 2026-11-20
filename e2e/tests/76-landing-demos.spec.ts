@@ -101,9 +101,11 @@ test('the demos answer the visitor: chat, mute, volumes, phone view, share profi
   await expect(hero.getByTestId('hero-visitor-message')).toHaveCount(2, { timeout: 5000 })
   await expect(page.getByTestId('hero-composer')).toHaveValue('')
 
-  // Mute yourself; Ozan's volume to 150 %.
+  // Mute yourself; Ozan's volume to 150 %. Five people in the room, each a tile.
   const voice = page.locator('[data-demo="voice"]')
   await bringIntoView(page, voice)
+  await expect(voice.locator('.vr-tile')).toHaveCount(5)
+  await expect(voice.locator('.vr-count')).toHaveText('5 kişi')
   await voice.getByTestId('voice-mute').click()
   await expect(voice).toHaveAttribute('data-muted', 'true')
   await expect(voice.getByTestId('voice-mute')).toHaveAttribute('aria-pressed', 'true')
@@ -129,6 +131,7 @@ test('the demos answer the visitor: chat, mute, volumes, phone view, share profi
   await phone.getByTestId('phone-show-app').click()
   await expect(phone).toHaveAttribute('data-view', 'app')
   await expect(phone.getByTestId('phone-callbar')).toContainText('Konuşuyor:')
+  await expect(phone.locator('.ph-people')).toContainText('5')
   await phone.getByTestId('phone-show-lock').click()
   await expect(phone).toHaveAttribute('data-view', 'lock')
   await expect(phone.locator('.ph-note')).toHaveCount(3)
@@ -159,9 +162,12 @@ test('reduced motion: nothing moves, each demo shows its whole picture and steps
     await demo.getByRole('button', { name: /sonraki adım/ }).click()
     expect(await demoStep(demo)).toBe(last)
   }
-  // The hero's complete picture: every message, the photo, the reaction.
-  await expect(page.locator('[data-demo="hero"] .dw-msg')).toHaveCount(6)
+  // The hero's complete picture: every message, the photo, the reaction, five in the voice room.
+  await expect(page.locator('[data-demo="hero"] .dw-msg')).toHaveCount(7)
+  await expect(page.locator('[data-demo="hero"] .dw-photo')).toHaveCount(1)
   await expect(page.locator('[data-demo="hero"] .dw-reaction')).toBeVisible()
+  await expect(page.locator('[data-demo="hero"] .dw-reaction')).toContainText('3')
+  await expect(page.getByTestId('hero-voice-list').locator('li')).toHaveCount(5)
   await page.waitForTimeout(500)
   const running = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length)
   expect(running).toBe(0)

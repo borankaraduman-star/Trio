@@ -1,15 +1,17 @@
 /**
- * The voice room: three friends talking, the server restarting under them and
+ * The voice room: five people talking, the server restarting under them and
  * the call carrying on (CONTRACT-V4: "ses sürüyor"). The visitor is Deniz: the
  * microphone is theirs to mute, Ozan's volume theirs to set (0–200 %).
  */
 import { useState } from 'react'
-import { Avatar, DemoControls, DENIZ, demoAttributes, ECE, FRIENDS, Icon, OZAN, type Friend } from './parts'
+import { Avatar, BARIS, DemoControls, DENIZ, demoAttributes, ECE, Icon, OZAN, SELIN, type Friend } from './parts'
 import { useDemo } from './useDemo'
 
 export const VOICE_STEPS = [1500, 1500, 1100, 2600, 1500, 1600, 2200]
 
-const SPEAKING: Friend[][] = [[OZAN], [ECE], [OZAN, ECE], [OZAN], [ECE], [DENIZ], []]
+/** Who is in the room, in the order the tiles are drawn. */
+export const ROOM: Friend[] = [OZAN, ECE, SELIN, BARIS, DENIZ]
+const SPEAKING: Friend[][] = [[OZAN], [ECE], [OZAN, SELIN], [BARIS], [ECE], [DENIZ], []]
 const RESTARTING = 3
 
 export function VoiceDemo() {
@@ -26,13 +28,13 @@ export function VoiceDemo() {
           <span className="vr-room">
             <Icon name="speaker" size={16} /> Sohbet
           </span>
-          <span className="vr-count">3 kişi</span>
+          <span className="vr-count">{ROOM.length} kişi</span>
         </div>
         <p className={demo.step === RESTARTING ? 'vr-band is-on' : 'vr-band'} role="status" data-testid="voice-band">
           {demo.step === RESTARTING ? 'Sunucuya yeniden bağlanılıyor… ses sürüyor' : ''}
         </p>
         <ul className="vr-tiles">
-          {FRIENDS.map((friend) => {
+          {ROOM.map((friend) => {
             const talking = speaking.includes(friend) && !(friend === OZAN && deafenedOzan)
             const scale = friend === OZAN ? volume / 100 : 1
             return (
@@ -43,7 +45,7 @@ export function VoiceDemo() {
                 data-speaking={talking}
               >
                 <span className="vr-ring" style={{ ['--level' as string]: String(Math.min(2, scale)) }}>
-                  <Avatar friend={friend} size={64} speaking={talking} />
+                  <Avatar friend={friend} size={56} speaking={talking} />
                 </span>
                 <span className="vr-name">
                   {friend === DENIZ ? 'Deniz (sen)' : friend.name}

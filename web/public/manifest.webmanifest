@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Trio",
   "short_name": "Trio",
-  "description": "Arkadaşlarınla yazış, konuş, ekranını paylaş.",
+  "description": "Grubunun kendi sunucusunda yazış, sesli konuş, ekranını paylaş.",
   "lang": "tr",
   "dir": "ltr",
   "start_url": "/",

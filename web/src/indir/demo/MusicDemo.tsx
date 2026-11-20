@@ -5,7 +5,7 @@
  * themselves (0–100 %, 50 % to start, as in the app). The visitor's slider is that level.
  */
 import { useState } from 'react'
-import { Avatar, DemoControls, DENIZ, demoAttributes, ECE, Icon, OZAN } from './parts'
+import { Avatar, BARIS, DemoControls, DENIZ, demoAttributes, ECE, Icon, OZAN, SELIN } from './parts'
 import { useDemo } from './useDemo'
 
 export const MUSIC_STEPS = [1300, 1500, 1700, 1900, 1700, 2600]
@@ -59,6 +59,14 @@ export function MusicDemo() {
               <b>Ozan</b>
             </span>
           </li>
+          {[SELIN, BARIS].map((friend) => (
+            <li className="mu-row" key={friend.name}>
+              <Avatar friend={friend} size={34} speaking={friend === SELIN && step === 4} />
+              <span className="mu-who">
+                <b>{friend.name}</b>
+              </span>
+            </li>
+          ))}
           <li className="mu-row">
             <Avatar friend={DENIZ} size={34} />
             <span className="mu-who">

@@ -17,7 +17,7 @@
 
 ## Marka ve üretim
 
-Uygulama ikonu için A konsepti seçildi: üç arkadaş için üç mercan nokta. B ve C alternatifleri seçim için saklandı. İkon zemini opaktır; platformun yuvarlatılmış kare maskesine uygundur. Tepsi varyantları aynı üç noktalı motifin tek renkli sürümüdür; macOS template pikselleri saf siyahtır ve yalnız alfa kanalı kenar yumuşatması taşır.
+Uygulama ikonu için A konsepti seçildi: üç mercan nokta (yalnızca logo; Trio bir grubun uygulamasıdır, kişi sayısını anlatmaz). B ve C alternatifleri seçim için saklandı. İkon zemini opaktır; platformun yuvarlatılmış kare maskesine uygundur. Tepsi varyantları aynı üç noktalı motifin tek renkli sürümüdür; macOS template pikselleri saf siyahtır ve yalnız alfa kanalı kenar yumuşatması taşır.
 
 Görseller yerleşik image_gen ile üretildi. Küçük manifest, favicon ve tepsi boyutları büyük kaynaklardan Pillow Lanczos ile küçültüldü. Üretim aracının döndürdüğü join ve masaüstü mockup kaynakları hedef boyuttan küçük olduğundan bu iki dosya hedefe Lanczos ile büyütüldü; mobil mockup hedef oranına yeniden örneklendi. Mockup ve illüstrasyonlardaki yumuşak geçişler bu HEX değerlerinin tonlarını içerir.
 

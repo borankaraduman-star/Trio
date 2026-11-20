@@ -118,7 +118,10 @@ test('link previews: meta tags with absolute addresses, the 1200×630 image serv
   expect(html).toContain(`<meta property="og:image" content="${origin}/og/trio-og.png"`)
   expect(html).toContain(`<meta property="og:url" content="${origin}/indir"`)
   expect(html).toContain('<meta name="twitter:card" content="summary_large_image"')
-  expect(html).toContain('<meta name="robots" content="noindex, nofollow"')
+  // V10: the site is for search engines (CONTRACT-V6-DOWNLOAD, "Search engines"); 77 has the rest.
+  expect(html).toContain('<meta name="robots" content="index, follow"')
+  expect(html).not.toContain('noindex')
+  expect(html).toContain(`<link rel="canonical" href="${origin}/indir"`)
   expect(html).toMatch(/<meta property="og:title" content="[^"]+"/)
   expect(html).toMatch(/<meta name="description" content="[^"]{60,}"/)
   const image = await request.get(`${origin}/og/trio-og.png`)

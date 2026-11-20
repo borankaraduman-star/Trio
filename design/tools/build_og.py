@@ -2,9 +2,11 @@
 
 Re-runnable: `python3 design/tools/build_og.py` from the repository root.
 Needs Pillow and a bold sans font with Turkish letters (Inter, else DejaVu
-Sans). The picture on the right is a REAL screenshot of the client, rendered
-by the e2e suite (e2e/screenshots/11-reactions-reply.png: three friends planning
-a weekend in #genel, with reactions and a reply), framed as a window; the left is the mark and the line.
+Sans). The picture on the right is a REAL screenshot rendered by the e2e suite
+(e2e/screenshots/v10-site-hero-window.png, from 77-site-general: the /indir
+hero's main screen in its last picture, at 2x: a group's evening in #genel,
+five people in the voice room, a reaction and a photo); the left is the mark
+and the line.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[2]
-SHOT = ROOT / "e2e" / "screenshots" / "11-reactions-reply.png"
+SHOT = ROOT / "e2e" / "screenshots" / "v10-site-hero-window.png"
 OUT = ROOT / "web" / "public" / "og" / "trio-og.png"
 
 W, H = 1200, 630
@@ -63,21 +65,13 @@ def main() -> None:
     glow = glow.filter(ImageFilter.GaussianBlur(120 * S))
     canvas.paste(Image.new("RGB", canvas.size, CORAL), (0, 0), glow)
 
-    # The window: the real screenshot, its right edge running off the card.
+    # The window: the real screenshot (it carries its own title bar), its right edge running off the card.
     shot = Image.open(SHOT).convert("RGB")
-    win_w = 760 * S
+    win_w = 700 * S
     scale = win_w / shot.width
-    shot = shot.resize((win_w, round(shot.height * scale)), Image.Resampling.LANCZOS)
-    bar = 30 * S
-    window = Image.new("RGB", (win_w, shot.height + bar), SIDE)
-    window.paste(shot, (0, bar))
-    draw = ImageDraw.Draw(window)
-    for i in range(3):
-        cx = (18 + i * 16) * S
-        draw.ellipse((cx - 5 * S, bar // 2 - 5 * S, cx + 5 * S, bar // 2 + 5 * S), fill=(0x3A, 0x40, 0x4C))
-    draw.line((0, bar - 1, win_w, bar - 1), fill=BORDER, width=S)
+    window = shot.resize((win_w, round(shot.height * scale)), Image.Resampling.LANCZOS)
     window = rounded(window, 18 * S)
-    x, y = 520 * S, 92 * S
+    x, y = 540 * S, 66 * S
     shadow = Image.new("L", canvas.size, 0)
     ImageDraw.Draw(shadow).rounded_rectangle(
         (x, y + 30 * S, x + win_w, y + window.height + 30 * S), 18 * S, fill=200
@@ -96,14 +90,15 @@ def main() -> None:
         d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=CORAL)
     d.text((mx + 62 * S, my - 6 * S), "Trio", font=font(FONTS_BOLD, 46 * S), fill=TEXT, anchor="lt")
 
-    title = font(FONTS_BOLD, 64 * S)
-    d.text((70 * S, 230 * S), "Üç kişiyiz,", font=title, fill=TEXT, anchor="ls")
-    d.text((70 * S, 304 * S), "bir odamız", font=title, fill=CORAL, anchor="ls")
-    d.text((70 * S, 378 * S), "var.", font=title, fill=CORAL, anchor="ls")
+    title = font(FONTS_BOLD, 58 * S)
+    d.text((70 * S, 212 * S), "Grubunun", font=title, fill=TEXT, anchor="ls")
+    d.text((70 * S, 278 * S), "sohbeti,", font=title, fill=TEXT, anchor="ls")
+    d.text((70 * S, 344 * S), "kendi", font=title, fill=CORAL, anchor="ls")
+    d.text((70 * S, 410 * S), "sunucunda.", font=title, fill=CORAL, anchor="ls")
 
-    small = font(FONTS_REGULAR, 25 * S)
-    d.text((72 * S, 452 * S), "Yazış, konuş, ekranını aç,", font=small, fill=MUTED, anchor="ls")
-    d.text((72 * S, 488 * S), "şarkını çal. Kendi sunucunda.", font=small, fill=MUTED, anchor="ls")
+    small = font(FONTS_REGULAR, 24 * S)
+    d.text((72 * S, 470 * S), "Yazı, sesli oda, ekran ve müzik.", font=small, fill=MUTED, anchor="ls")
+    d.text((72 * S, 504 * S), "Davet koduyla, küçük gruplar için.", font=small, fill=MUTED, anchor="ls")
     for i, colour in enumerate((CORAL, TEAL, AMBER)):
         cx = (78 + i * 18) * S
         d.ellipse((cx - 5 * S, 548 * S - 5 * S, cx + 5 * S, 548 * S + 5 * S), fill=colour)

@@ -369,6 +369,60 @@ def test_page_link_preview_urls_become_absolute(make_app, tmp_path) -> None:
     assert int(head.headers["content-length"]) == len(client.get("/indir", headers=plain).content)
 
 
+def test_page_canonical_and_structured_data_become_absolute(make_app, tmp_path) -> None:
+    client, _ = make_app(static=True)
+    (tmp_path / "dist" / "indir.html").write_text(
+        '<head><link rel="canonical" href="/indir" />'
+        '<link rel="icon" href="/favicon.svg" />'
+        '<script type="application/ld+json">{"url": "/indir", "image": "/og/trio-og.png",'
+        ' "sameAs": "https://github.com/x/y", "name": "/not-a-url-key"}</script>'
+        '<script>{"url": "/outside"}</script></head>'
+    )
+    page = client.get("/indir", headers={"host": "trio.example", "x-forwarded-proto": "https"})
+    assert '<link rel="canonical" href="https://trio.example/indir" />' in page.text
+    assert '"url": "https://trio.example/indir"' in page.text
+    assert '"image": "https://trio.example/og/trio-og.png"' in page.text
+    # Only url/image inside the JSON-LD block; other keys, other scripts and links stay.
+    assert '"name": "/not-a-url-key"' in page.text
+    assert '{"url": "/outside"}' in page.text
+    assert 'href="/favicon.svg"' in page.text
+    odd = client.get("/indir", headers={"host": "x/y", "x-forwarded-proto": "https"})
+    assert '<link rel="canonical" href="/indir" />' in odd.text
+
+
+def test_robots_and_sitemap(make_app) -> None:
+    client, _ = make_app(static=True)
+    host = {"host": "trio.example:8443", "x-forwarded-proto": "https"}
+    robots = client.get("/robots.txt", headers=host)
+    assert robots.status_code == 200
+    assert robots.headers["content-type"].startswith("text/plain")
+    lines = robots.text.splitlines()
+    assert lines[0] == "User-agent: *"
+    for rule in ("Allow: /indir", "Disallow: /api/", "Disallow: /ws", "Disallow: /indir/dosya/"):
+        assert rule in lines
+    # The app shell is not disallowed: it says noindex itself, and a crawler must read that.
+    assert "Disallow: /" not in lines
+    assert "Sitemap: https://trio.example:8443/sitemap.xml" in lines
+    sitemap = client.get("/sitemap.xml", headers=host)
+    assert sitemap.status_code == 200
+    assert sitemap.headers["content-type"].startswith("application/xml")
+    assert "<loc>https://trio.example:8443/indir</loc>" in sitemap.text
+    assert sitemap.text.count("<loc>") == 1
+    # Without a trustworthy host: no Sitemap line, and no sitemap.
+    odd = {"host": 'x" y'}
+    assert "Sitemap" not in client.get("/robots.txt", headers=odd).text
+    assert client.get("/sitemap.xml", headers=odd).status_code == 404
+    assert client.head("/robots.txt", headers=host).status_code == 200
+
+
+def test_app_shell_is_noindex_and_the_site_is_not(make_app) -> None:
+    client, _ = make_app(static=True)
+    assert client.get("/").headers["x-robots-tag"] == "noindex"
+    assert client.get("/index.html").headers["x-robots-tag"] == "noindex"
+    assert client.get("/kanal/3").headers["x-robots-tag"] == "noindex"
+    assert "x-robots-tag" not in client.get("/indir").headers
+
+
 def test_page_without_static_dir_is_404(make_app) -> None:
     client, _ = make_app()
     assert client.get("/indir").status_code == 404

@@ -117,7 +117,7 @@ export function JoinScreen({
           <span />
         </div>
         <h1>Trio</h1>
-        <p className="join-lead">Arkadaşlarınla yazış, konuş, ekranını paylaş.</p>
+        <p className="join-lead">Grubunla yazış, sesli konuş, ekranını paylaş.</p>
 
         {notice && (
           <p className="join-notice" role="status" data-testid="join-notice">
@@ -185,7 +185,7 @@ export function JoinScreen({
                   }}
                   type="password"
                   autoComplete="off"
-                  placeholder="Arkadaşından aldığın kod"
+                  placeholder="Seni davet edenin verdiği kod"
                 />
               </>
             )}
@@ -233,6 +233,11 @@ export function JoinScreen({
           {busy ? (mode === 'invite' ? 'Katılınıyor…' : 'Giriliyor…') : mode === 'invite' ? 'Katıl' : 'Giriş yap'}
         </button>
         <DownloadLink />
+        {!desktop && (
+          <a href="/indir" className="join-about" data-testid="join-about">
+            Trio nedir?
+          </a>
+        )}
       </form>
     </main>
   )

@@ -130,33 +130,49 @@ export function ShareProfilesVignette() {
   )
 }
 
+/** The devices around the one small server: a laptop or a phone each, with its owner's colour. */
+const DEVICES: { kind: 'laptop' | 'phone'; x: number; y: number; colour: string; link: string }[] = [
+  { kind: 'laptop', x: 18, y: 16, colour: '#ee997f', link: 'M62 32 C112 32 116 72 150 76' },
+  { kind: 'phone', x: 34, y: 70, colour: '#69b9aa', link: 'M58 87 H 150' },
+  { kind: 'laptop', x: 18, y: 124, colour: '#ddb174', link: 'M62 140 C112 140 116 100 150 96' },
+  { kind: 'laptop', x: 256, y: 22, colour: '#9fb0dc', link: 'M256 38 C214 38 216 72 210 76' },
+  { kind: 'phone', x: 270, y: 106, colour: '#c79ad1', link: 'M270 124 C232 124 224 98 210 96' },
+]
+
 export function ServerVignette() {
   const { ref, live, reduced } = useLive<HTMLDivElement>()
   return (
     <div className="vg vg-server" ref={ref} data-live={live} data-reduced={reduced} data-testid="vignette-server">
-      <svg viewBox="0 0 320 170" role="img" aria-label="Üç arkadaşın cihazı tek bir küçük sunucuya bağlı">
+      <svg viewBox="0 0 320 170" role="img" aria-label="Grubun bilgisayarları ve telefonları tek bir küçük sunucuya bağlı">
         <g className="vg-links" fill="none" stroke="#2b303a" strokeWidth="2">
-          <path d="M60 46 C110 46 120 85 160 85" />
-          <path d="M60 128 C110 128 120 85 160 85" />
-          <path d="M260 85 H 200" />
+          {DEVICES.map((d) => (
+            <path key={d.link} d={d.link} />
+          ))}
         </g>
         <g className="vg-pulses" fill="none" strokeWidth="2.5" strokeLinecap="round">
-          <path d="M60 46 C110 46 120 85 160 85" stroke="#ee997f" pathLength="100" />
-          <path d="M60 128 C110 128 120 85 160 85" stroke="#69b9aa" pathLength="100" />
-          <path d="M260 85 H 200" stroke="#ddb174" pathLength="100" />
+          {DEVICES.map((d) => (
+            <path key={d.link} d={d.link} stroke={d.colour} pathLength="100" />
+          ))}
         </g>
-        <rect x="150" y="55" width="60" height="60" rx="12" fill="#232730" stroke="#3a404c" />
+        <rect x="150" y="56" width="60" height="60" rx="12" fill="#232730" stroke="#3a404c" />
         <g fill="#ee997f" className="vg-server-dots">
-          <circle cx="180" cy="74" r="7" />
-          <circle cx="172" cy="88" r="7" />
-          <circle cx="188" cy="88" r="7" />
+          <circle cx="180" cy="75" r="7" />
+          <circle cx="172" cy="89" r="7" />
+          <circle cx="188" cy="89" r="7" />
         </g>
-        <rect x="24" y="30" width="44" height="32" rx="5" fill="#1a1d24" stroke="#3a404c" />
-        <circle cx="46" cy="46" r="7" fill="#ee997f" />
-        <rect x="32" y="108" width="24" height="40" rx="5" fill="#1a1d24" stroke="#3a404c" />
-        <circle cx="44" cy="128" r="6" fill="#69b9aa" />
-        <rect x="256" y="66" width="48" height="36" rx="5" fill="#1a1d24" stroke="#3a404c" />
-        <circle cx="280" cy="84" r="7" fill="#ddb174" />
+        {DEVICES.map((d) =>
+          d.kind === 'laptop' ? (
+            <g key={d.link} data-device="laptop">
+              <rect x={d.x} y={d.y} width="44" height="30" rx="5" fill="#1a1d24" stroke="#3a404c" />
+              <circle cx={d.x + 22} cy={d.y + 15} r="6.5" fill={d.colour} />
+            </g>
+          ) : (
+            <g key={d.link} data-device="phone">
+              <rect x={d.x} y={d.y} width="24" height="36" rx="5" fill="#1a1d24" stroke="#3a404c" />
+              <circle cx={d.x + 12} cy={d.y + 17} r="5.5" fill={d.colour} />
+            </g>
+          ),
+        )}
       </svg>
     </div>
   )

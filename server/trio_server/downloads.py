@@ -4,6 +4,8 @@
     GET /indir/dosya/<platform>  302 to that installer
     GET /indir                   the page itself (web/indir.html, built by Vite)
     GET /download, /indir/       302 to /indir
+    GET /robots.txt              what search engines may read (the site, not the app)
+    GET /sitemap.xml             the one public page, with this server's own address
 
 The installers live on GitHub, as assets of the newest non-prerelease release
 of ``TRIO_RELEASES_REPO``; ``releases/latest`` is exactly that (GitHub never
@@ -53,6 +55,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
+    PlainTextResponse,
     RedirectResponse,
     Response,
     StreamingResponse,
@@ -451,7 +454,58 @@ def register_download_routes(
 
     for path in ("/download", "/download/", "/indir/", "/indir.html"):
         app.add_api_route(path, to_page, methods=["GET", "HEAD"])
+
+    async def robots(request: Request) -> Response:
+        return PlainTextResponse(
+            robots_txt(page_origin(request)), headers={"Cache-Control": "public, max-age=3600"}
+        )
+
+    async def sitemap(request: Request) -> Response:
+        origin = page_origin(request)
+        if origin is None:
+            # A sitemap's <loc> must be absolute; without a trustworthy host there is none.
+            return error_response(404, "NOT_FOUND", "not found")
+        return Response(
+            sitemap_xml(origin),
+            media_type="application/xml",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    app.add_api_route("/robots.txt", robots, methods=["GET", "HEAD"])
+    app.add_api_route("/sitemap.xml", sitemap, methods=["GET", "HEAD"])
     return catalog
+
+
+# Search engines (V10): /indir is the public site and may be indexed; the app
+# shell (/) is a sign-in screen and says noindex itself (index.html and an
+# X-Robots-Tag header), so it is NOT disallowed here: a crawler that may not
+# fetch it would never read that noindex. Everything under /api/ (uploaded
+# files, avatars, the REST API), the websocket and the installer redirects are
+# off limits.
+_ROBOTS_RULES = (
+    "User-agent: *",
+    "Allow: /indir",
+    "Disallow: /api/",
+    "Disallow: /ws",
+    "Disallow: /indir/dosya/",
+)
+
+
+def robots_txt(origin: str | None) -> str:
+    lines = list(_ROBOTS_RULES)
+    if origin is not None:
+        lines += ["", f"Sitemap: {origin}/sitemap.xml"]
+    return "\n".join(lines) + "\n"
+
+
+def sitemap_xml(origin: str) -> str:
+    # origin is scheme://host[:port] from page_origin: no character that needs escaping in XML.
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"  <url><loc>{origin}/indir</loc></url>\n"
+        "</urlset>\n"
+    )
 
 
 # Link previews (WhatsApp, Telegram, Discord…) want absolute og:image/og:url.
@@ -464,6 +518,9 @@ _PLAIN_HOST = re.compile(
     r"^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$"
 )
 _META_PATH = re.compile(r'(<meta\s[^>]*?content=")(/[^"/][^"]*|/)(")')
+_CANONICAL_PATH = re.compile(r'(<link\s[^>]*?rel="canonical"[^>]*?href=")(/[^"/][^"]*|/)(")')
+_LD_BLOCK = re.compile(r'(<script type="application/ld\+json">)(.*?)(</script>)', re.DOTALL)
+_LD_PATH = re.compile(r'("(?:url|image)":\s*")(/[^"/][^"]*)(")')
 
 
 def page_origin(request: Request) -> str | None:
@@ -478,9 +535,18 @@ def page_origin(request: Request) -> str | None:
 
 
 def absolute_preview_urls(html: str, origin: str | None) -> str:
+    """og:/twitter: meta, the canonical link and the JSON-LD url/image, made absolute."""
     if origin is None:
         return html
-    return _META_PATH.sub(lambda m: f"{m.group(1)}{origin}{m.group(2)}{m.group(3)}", html)
+
+    def absolute(m: re.Match[str]) -> str:
+        return f"{m.group(1)}{origin}{m.group(2)}{m.group(3)}"
+
+    html = _META_PATH.sub(absolute, html)
+    html = _CANONICAL_PATH.sub(absolute, html)
+    return _LD_BLOCK.sub(
+        lambda m: f"{m.group(1)}{_LD_PATH.sub(absolute, m.group(2))}{m.group(3)}", html
+    )
 
 
 async def _signed_redirect(catalog: DownloadCatalog, entry: FileEntry) -> Response:

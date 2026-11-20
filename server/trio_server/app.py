@@ -729,6 +729,11 @@ _UNHASHED_PROMPT: dict[str, dict[str, str]] = {
 }
 
 
+def _app_shell_headers(request: Request) -> dict[str, str]:
+    """The app shell is a sign-in screen: search engines keep out (the site is /indir)."""
+    return {**shell_headers(request.headers.get("host", "")), "X-Robots-Tag": "noindex"}
+
+
 def _mount_static(app: FastAPI, directory: Path) -> None:
     """Serve the built client, falling back to index.html for client-side routes."""
     # python:3.12-slim has no /etc/mime.types and Python 3.12's own table lacks
@@ -746,9 +751,7 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
             candidate = (root / path).resolve()
             # resolve() follows ".." and symlinks; anything outside the root is not ours.
             if candidate == root / "index.html":
-                return FileResponse(
-                    candidate, headers=shell_headers(request.headers.get("host", ""))
-                )
+                return FileResponse(candidate, headers=_app_shell_headers(request))
             if candidate.is_relative_to(root) and candidate.is_file():
                 headers = {"X-Content-Type-Options": "nosniff"}
                 if path.startswith("assets/"):
@@ -763,4 +766,4 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
         index = root / "index.html"
         if path.startswith("assets/") or "." in last or not index.is_file():
             return error_response(404, "NOT_FOUND", "not found")
-        return FileResponse(index, headers=shell_headers(request.headers.get("host", "")))
+        return FileResponse(index, headers=_app_shell_headers(request))

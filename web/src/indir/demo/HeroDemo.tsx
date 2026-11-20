@@ -1,16 +1,30 @@
 /**
- * The hero: Trio's main screen, redrawn, playing an ordinary evening. Friends
- * drop into the voice room one by one, three messages arrive, a reaction lands,
- * a photo comes in, and they talk. The visitor can write into the chat.
+ * The hero: Trio's main screen, redrawn, playing an ordinary evening on a
+ * group's server. People drop into the voice room one by one, messages
+ * arrive, a reaction lands, a photo comes in, and they talk. The visitor can
+ * write into the chat.
  */
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
 import { BrandMark } from '../../components/BrandMark'
-import { Avatar, DemoControls, DENIZ, demoAttributes, ECE, Icon, OZAN, SEN, type Friend } from './parts'
+import {
+  Avatar,
+  BARIS,
+  DemoControls,
+  DENIZ,
+  demoAttributes,
+  ECE,
+  Icon,
+  MELIS,
+  OZAN,
+  SELIN,
+  SEN,
+  type Friend,
+} from './parts'
 import { upTo } from './player'
 import { useDemo } from './useDemo'
 
 /** How long each step is held (ms). Index = step. */
-export const HERO_STEPS = [700, 900, 1100, 1500, 1000, 1500, 900, 1300, 1300, 900, 1700, 1300, 1400, 3600]
+export const HERO_STEPS = [700, 900, 1100, 1500, 1000, 1500, 900, 1300, 1300, 900, 1500, 900, 1500, 1000, 1300, 1400, 3600]
 
 interface Line {
   at: number
@@ -20,25 +34,28 @@ interface Line {
 }
 
 const LINES: Line[] = [
-  { at: 0, who: ECE, text: 'Akşam ne yapıyoruz? Ben işten 9 gibi çıkıyorum.' },
-  { at: 0, who: DENIZ, text: 'Ben evdeyim, ne derseniz.' },
-  { at: 3, who: OZAN, text: "Bu akşam 22.00'de baskın var. Geç kalan kahve ısmarlıyor." },
+  { at: 0, who: SELIN, text: "Cumartesi için halı sahayı ayırttım. On kişi lazım, şu an yediyiz." },
+  { at: 0, who: BARIS, text: 'Ben varım. Kaleye kimse geçmezse yine ben geçerim, söylene söylene.' },
+  { at: 3, who: OZAN, text: "22.00'de oyun var, odaya gelin. Geç kalan kahve ısmarlıyor." },
   { at: 5, who: ECE, text: 'Ben 22.15 derim, makarna daha ocakta.' },
   { at: 7, who: DENIZ, text: "O zaman kahveler Ece'den." },
-  { at: 10, who: ECE, photo: true },
+  { at: 10, who: MELIS, text: "Yarınki toplantının notlarını #planlar'a koydum. Okuyan bir emoji bıraksın." },
+  { at: 12, who: ECE, photo: true },
 ]
 
 /** Who is typing at a step. */
-const TYPING: Record<number, Friend> = { 2: OZAN, 4: ECE, 6: DENIZ, 9: ECE }
+const TYPING: Record<number, Friend> = { 2: OZAN, 4: ECE, 6: DENIZ, 9: MELIS, 11: ECE }
 
-/** When each friend joins the voice room. */
+/** When each person joins the voice room. */
 const JOINS: { at: number; who: Friend }[] = [
   { at: 1, who: OZAN },
   { at: 4, who: ECE },
-  { at: 11, who: DENIZ },
+  { at: 6, who: BARIS },
+  { at: 13, who: SELIN },
+  { at: 14, who: DENIZ },
 ]
 
-const SPEAKING: Record<number, Friend[]> = { 11: [OZAN], 12: [ECE], 13: [OZAN, DENIZ] }
+const SPEAKING: Record<number, Friend[]> = { 14: [OZAN], 15: [ECE, BARIS], 16: [OZAN, SELIN] }
 
 const REPLIES = [
   'Hoş geldin. Kahve sırası sende o zaman.',
@@ -46,7 +63,7 @@ const REPLIES = [
   "Tamam, 22.00'de odadayız.",
 ]
 
-const TIMES = ['20:18', '20:26', '21:42', '21:43', '21:43', '21:45']
+const TIMES = ['20:12', '20:20', '21:42', '21:43', '21:43', '21:44', '21:45']
 /** Where the "Yeni mesajlar" line sits (CONTRACT-V7-READING): before the first message that arrives live. */
 const FIRST_NEW = 2
 
@@ -114,13 +131,13 @@ export function HeroDemo() {
               <Icon name="hash" size={14} /> genel
             </p>
             <p className="dw-channel">
-              <Icon name="hash" size={14} /> oyun
+              <Icon name="hash" size={14} /> planlar
             </p>
             <p className="dw-section">Ses kanalları</p>
             <p className="dw-channel dw-voice">
               <Icon name="speaker" size={14} /> Sohbet
             </p>
-            <ul className="dw-voice-list">
+            <ul className="dw-voice-list" data-testid="hero-voice-list">
               {voice.map((who) => (
                 <li key={who.name} className="dw-join">
                   <Avatar friend={who} size={20} speaking={speaking.includes(who)} />
@@ -161,8 +178,8 @@ export function HeroDemo() {
                       {line.text && <p className="dw-msg-text">{line.text}</p>}
                       {line.photo && <PastaPhoto />}
                       {line.who === DENIZ && line.at > 0 && reacted && (
-                        <span className="dw-reaction" title="Ozan ve Ece">
-                          😂 <b>2</b>
+                        <span className="dw-reaction" title="Ozan, Ece ve Selin">
+                          😂 <b>3</b>
                         </span>
                       )}
                     </div>

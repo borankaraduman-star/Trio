@@ -6,18 +6,22 @@ and sizes listed, and change no source code.
 
 ## What Trio is
 
-A private voice and text chat app for three friends (a tiny self-hosted
-Discord alternative): text channels, voice rooms, screen sharing, camera.
+A private voice and text chat app for a small group (a friend group, a small
+team or a small community, up to about 10–15 people) on a server the group
+runs itself: text channels, voice rooms, screen sharing, camera.
 Web app plus an Electron desktop app. The UI is dark, calm and compact; UI
 text is Turkish.
 
 ## Direction
 
-- Mood: a small private room for close friends, not a gaming brand. Warm,
+- Mood: a small private room for people who know each other, not a gaming
+  brand and not a corporate tool. Warm,
   quiet, a little playful. No neon, no "gamer" aesthetics, no mascots with
   faces.
-- Motif: the number three — three dots, three overlapping circles or three
-  sound waves meeting. One simple idea, readable at 16 px.
+- Motif (the mark, chosen when this brief was first written): three dots,
+  three overlapping circles or three sound waves meeting. It is the logo
+  only; the product is not about the number three, so no picture should
+  read as "three people". One simple idea, readable at 16 px.
 - Palette: deep neutral background (#111318 to #1a1d24), one warm accent
   (propose one; amber/coral family) and one cool secondary for "online/speaking"
   (teal/green family). State the final hex values in `design/palette.md`.

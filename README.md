@@ -1,6 +1,12 @@
 # Trio
 
-Üç beş arkadaş için kendi barındırdığın küçük bir Discord alternatifi: yazı kanalları, dosya paylaşımı, sesli odalar, kamera ve ekran paylaşımı. Tarayıcıdan ya da masaüstü uygulamasından kullanılır. Önerilen kurulum **Railway** (tek servis, tek volume); kendi VPS'inde çalıştırmak isteyenler için Docker Compose + coturn seçeneği de var.
+Bir grubun kendi sohbeti, kendi sunucusunda: yazı kanalları, sesli odalar, ekran ve müzik paylaşımı, kamera, dosyalar. Bir arkadaş grubu, küçük bir ekip ya da küçük bir topluluk Trio'yu kendi sunucusuna kurar; içeri davet koduyla girilir, mesajlar ve dosyalar o sunucuda kalır. Tarayıcıdan, telefondan ya da masaüstü uygulamasından (Windows, macOS, Linux) kullanılır. Arayüz Türkçe.
+
+![Trio: #genel kanalında bir grup akşamı planlıyor, beş kişi sesli odada](web/public/og/trio-og.png)
+
+**Kimin için, ne kadar büyük.** Trio küçük gruplar için yapıldı: bir sunucuda 10–15 kişiye kadar. Sesli odada herkes herkese doğrudan bağlanır (sunucu sesi taşımaz), bu yüzden bir sesli odaya en çok 8 kişi girer (sunucu sahibi `TRIO_VOICE_ROOM_MAX` ile 16'ya kadar açabilir); kamera ve ekran açıkken daha az kişiyle daha rahattır. Yüzlerce kişilik bir topluluk için uygun değil. Merkezî bir Trio hizmeti de yok: her grup kendi sunucusunu çalıştırır.
+
+**Kurulum.** Gruptan bir kişi sunucuyu kurar. Önerilen yol **Railway** (tek servis, tek volume, komut satırı gerekmez, yaklaşık yarım saat); isteyen kendi VPS'inde Docker Compose + coturn ile çalıştırır. Adımlar: [Kendi sunucunu kur](#kendi-sunucunu-kur). Her sunucunun `/indir` sayfası Trio'yu tanıtır ve masaüstü uygulamasını indirtir.
 
 ## Özellikler
 
@@ -23,14 +29,20 @@ tarayıcı <──── WebRTC (ses / kamera / ekran), doğrudan ya da Cloudfla
 
 - **app**: tek konteyner (kökteki `Dockerfile`). `/api/*` (REST), `/ws` (mesajlar, çevrimiçi durumu, WebRTC sinyalleşmesi) ve derlenmiş web istemcisini sunar. Veri: tek bir SQLite dosyası + yüklenen dosyalar, ikisi de `/data` volume'unda.
 - **TURN**: iki kişi birbirine doğrudan ulaşamadığında (simetrik NAT, mobil şebeke) medyayı aktarır. Railway'de UDP olmadığı için TURN, Cloudflare'in ücretsiz TURN hizmetinden gelir; sunucu kısa ömürlü kimlik bilgilerini Cloudflare'den alıp istemciye verir.
-- Sesli oda **tam ağ (mesh)**: herkes herkese doğrudan bağlanır, sunucu medyaya dokunmaz. 3 kişi için idealdir; seste 5–6 kişiye kadar rahat, kamera/ekran açıkken sınır daha erken gelir.
+- Sesli oda **tam ağ (mesh)**: herkes herkese doğrudan bağlanır, sunucu medyaya dokunmaz. Bir ses odasına varsayılan olarak en çok 8 kişi girer (`TRIO_VOICE_ROOM_MAX`, 2–16); kamera/ekran açıkken sınır daha erken gelir. Kalabalık bir grup birden fazla sesli oda kullanır.
 - Uygulama **tek süreç** çalışır (durum bellekte). Birden fazla worker ya da replika çalıştırma.
 
 Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md), [`CONTRACT-V3.md`](CONTRACT-V3.md) (güvenlik sertleştirmesi, cihaz bağlama, yönetim aracı).
 
-## Railway'e kurulum (önerilen)
+## Kendi sunucunu kur
 
-**1. Proje.** Bu depoyu GitHub'a koy. Railway'de **New Project → Deploy from GitHub repo** ile depoyu seç. Railway kökteki `Dockerfile`'ı kendisi bulur ve imajı (web + sunucu) derler. `railway.json` yok ve gerekmiyor; ayarların hepsi panelden yapılır.
+Trio'yu gruptan bir kişi kurar; ilk giren hesap sunucunun **sahibi** olur (Ayarlar › Yönetim: kim bağlı, kim ne kadar yer kullanıyor, oturum kapatma, kişi çıkarma, yedek indirme). İki yol var: **Railway** (önerilen, her şey panelden) ya da [kendi VPS'in](#kendi-vpsinde-docker-compose).
+
+Ne gerekir: Railway'de bir proje (planına göre ayda birkaç dolar) ya da Docker kurulu küçük bir Linux sunucu (1 vCPU / 1 GB yeter), verinin durduğu bir disk ve isteğe bağlı, ücretsiz bir Cloudflare TURN anahtarı.
+
+### Railway'de (önerilen)
+
+**1. Proje.** Bu depoyu GitHub'da kendi hesabına çatalla (**Fork**). Railway'de **New Project → Deploy from GitHub repo** ile depoyu seç. Railway kökteki `Dockerfile`'ı kendisi bulur ve imajı (web + sunucu) derler. `railway.json` yok ve gerekmiyor; ayarların hepsi panelden yapılır.
 
 **2. Volume.** Servisin üzerinde sağ tık (ya da `Ctrl/⌘+K` → *Add Volume*) → **Volume ekle**, bağlama yolu (mount path) **`/data`**. Veritabanı `/data/trio.db`, yüklenen dosyalar `/data/uploads` altında durur; imaj bu yolları zaten varsayılan olarak kullanır. Volume olmazsa her deploy'da tüm veri silinir.
 
@@ -38,9 +50,9 @@ Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md),
 
 **3. Değişkenler.** Servis → **Variables**:
 
-- `TRIO_INVITE_CODE` (zorunlu): arkadaşlarına vereceğin kod, ör. `openssl rand -hex 8`
+- `TRIO_INVITE_CODE` (zorunlu): grubuna vereceğin kod, ör. `openssl rand -hex 8`
 - `TRIO_CF_TURN_KEY_ID` ve `TRIO_CF_TURN_API_TOKEN`: Cloudflare TURN (aşağıya bak). Olmadan da çalışır, ama farklı ağlardaki kişiler birbirini duyamayabilir.
-- `TRIO_MAX_USERS`: **gerçek kişi sayısına ayarla** (ör. üç arkadaşsanız `3`). Varsayılan 5; davet kodu sızarsa yabancılar ancak boş kalan yerleri doldurabilir.
+- `TRIO_MAX_USERS`: **gerçek kişi sayısına ayarla** (ör. on iki kişilik bir grupsanız `12`). Davet kodu sızarsa yabancılar ancak boş kalan yerleri doldurabilir.
 - İsteğe bağlı: `TRIO_MAX_UPLOAD_MB`, `TRIO_USER_QUOTA_MB`, `TRIO_DISK_RESERVE_MB`, `TRIO_TRUSTED_PROXY_HOPS` (tablo aşağıda)
 
 `PORT`'u Railway kendisi verir, sunucu onu dinler; elle ayarlama.
@@ -51,11 +63,11 @@ Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md),
 
 **5. Alan adı.** Servis → **Settings → Networking → Generate Domain**. `https://<ad>.up.railway.app` gibi bir adres çıkar (port sorulursa: Railway'in verdiği `PORT`, yani panelin önerdiği değer). İstersen burada kendi alan adını da bağlayabilirsin. HTTPS'i Railway sağlar.
 
-**6. Dene.** Adresi aç, ad + davet kodu ile gir. Mikrofon izni ver, sesli odaya katıl.
+**6. Dene.** Adresi aç, ad + davet kodu ile gir: ilk giren sensin, sunucunun sahibi de sen olursun. Mikrofon izni ver, sesli odaya katıl. Sonra adresi ve kodu grubuna gönder; davet bağlantısı (`https://<ad>.up.railway.app/#davet=<kod>`) kodu kendiliğinden doldurur.
 
-**Güncelleme:** GitHub'a push et; Railway yeniden derler ve deploy eder. Veriler volume'da kalır. Deploy sırasında birkaç saniyelik kesinti olur (volume'lu servis tek kopya çalışır); istemciler kendiliğinden yeniden bağlanır, sesli odadakiler odaya geri girer.
+**Güncelleme:** çatalını GitHub'da güncelle (**Sync fork**) ya da kendi deponda push et; Railway yeniden derler ve deploy eder. Veriler volume'da kalır. Deploy sırasında birkaç saniyelik kesinti olur (volume'lu servis tek kopya çalışır); istemciler kendiliğinden yeniden bağlanır, sesli odadakiler odaya geri girer.
 
-## Arkadaşlar nasıl katılır
+## Grubun nasıl katılır
 
 - **Tarayıcı:** Railway adresini açarlar, bir **ad** ve **davet kodunu** yazarlar. Oturum tarayıcıda saklanır. Telefonda da çalışır.
 - **Masaüstü uygulaması:** `desktop/` içindeki uygulamayı kurarlar (GitHub Releases'teki Windows/macOS/Linux paketleri). İlk açılışta sunucu adresi sorulur: `https://<ad>.up.railway.app`. Sonra aynı giriş ekranı gelir. En kolayı sunucunun **`/indir`** sayfası (`https://<ad>.up.railway.app/indir`, girişsiz açılır): sistemi tanır, doğru dosyayı, SHA-256'sını ve uyarı çıkarsa ne yapılacağını gösterir. Paketler imzasız olduğu için Windows SmartScreen ve macOS Gatekeeper uyarı verir; imzalamak için `docs/imzalama.md`.
@@ -137,9 +149,9 @@ Her şey volume'da: `/data/trio.db` (SQLite) ve `/data/uploads/` (dosyalar, adla
 
 Geri yüklemede `trio.db` ile `uploads/` birlikte geri konmalı; birinin eski diğerinin yeni olması, mesajlarda kırık eklere yol açar.
 
-## Alternatif: kendi VPS'in (Docker Compose + coturn)
+## Kendi VPS'inde: Docker Compose
 
-Railway yerine tek bir Linux sunucuda (1 vCPU / 1 GB yeter) çalıştırmak için `deploy/` klasörü: Caddy (otomatik HTTPS), app (aynı kök `Dockerfile`) ve coturn (kendi TURN sunucun).
+Kendi sunucunu kurmanın ikinci yolu (yukarıdaki "Yönetim" ve "Yedekleme" burada da geçerli). Railway yerine tek bir Linux sunucuda (1 vCPU / 1 GB yeter) çalıştırmak için `deploy/` klasörü: Caddy (otomatik HTTPS), app (aynı kök `Dockerfile`) ve coturn (kendi TURN sunucun).
 
 1. Alan adı için sunucunun IPv4'üne bir **A kaydı** aç.
 2. Docker kur: `curl -fsSL https://get.docker.com | sudo sh`
@@ -202,7 +214,7 @@ cd web && npm install && npm run dev      # http://localhost:5173, /api ve /ws :
 
 ## Bilinen sınırlar
 
-- Mesh nedeniyle sesli odada pratik sınır 5–6 kişi; kamera ve ekran paylaşımı açıkken daha az.
+- Küçük gruplar için: bir sunucu 10–15 kişiye göre düşünüldü. Mesh nedeniyle bir sesli odaya en çok 8 kişi (`TRIO_VOICE_ROOM_MAX` ile 16'ya kadar); kamera ve ekran paylaşımı açıkken daha az kişiyle daha rahat.
 - Tek süreç, tek kopya; yatay ölçekleme yok. Deploy ya da yeniden başlatmada herkes kısa süre düşer ve yeniden bağlanır.
 - Roller, moderasyon, mesaj düzenleme/silme, özel mesaj yok. Davet kodunu bilen herkes eşit üyedir.
 - Oturum belirteçlerinin süresi dolmaz. Uzaktan çıkış yaptırma ve kullanıcı kaldırma yalnızca yönetim aracıyla (komut satırı) yapılır; web arayüzünde henüz yok.

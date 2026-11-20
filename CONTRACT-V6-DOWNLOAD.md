@@ -24,7 +24,12 @@ token; nothing here writes.
                                  root-relative <meta content="/…"> (og:image, og:url, twitter:image) made absolute
                                  from the request: X-Forwarded-Proto (http|https) or the request's scheme, and the
                                  Host only when it is a plain host[:port] (else the page is served as built)
+                                 — and also the <link rel="canonical"> href and the "url"/"image" strings inside
+                                 the page's one <script type="application/ld+json"> block (V10)
     GET  /download, /download/, /indir/, /indir.html → 302 /indir
+    GET  /robots.txt           → 200 text/plain (V10, below)
+    GET  /sitemap.xml          → 200 application/xml: one <url>, <origin>/indir
+                                 404 NOT_FOUND when no origin can be built (same rule as above)
 
 `File` = `{platform: "windows" | "mac-arm64" | "mac-x64" | "linux", name, size, sha256: <64 hex> | null, url: "/indir/dosya/<platform>"}`,
 in that platform order, each platform at most once. `version` is the tag
@@ -118,14 +123,50 @@ and answers, and a footer with the version and the public repository.
   is visible, has a pause button, and under `prefers-reduced-motion` never
   plays: it shows its last step and offers "Önceki / Sonraki adım". The roots
   carry `data-demo`, `data-step`, `data-last`, `data-playing`, `data-reduced`.
-- Names in the demos are made up (Ece, Ozan, Deniz). Every claim on the page
-  is one the contracts and the changelog back.
+- Names in the demos are made up: one group of six (Ece, Ozan, Deniz, Selin,
+  Barış, Melis), five of them in the voice room. Every claim on the page is one
+  the contracts and the changelog back.
 - No inline script, no external origin, no web font, and no image files besides the favicon: the
   demos are DOM and inline SVG. The link-preview image is
   `/og/trio-og.png` (1200×630, `design/tools/build_og.py`, from a real e2e
   screenshot).
-- `robots: noindex, nofollow`: a friends' server is not for search engines;
-  link previews still work.
+- V10: the page is for search engines too (below).
+
+### Who the page is for (V10)
+
+Trio is for any group that runs its own server (a friend group, a small team,
+a small community), built for up to about 10–15 people per server; a voice
+room takes at most 8 by default, 16 if the owner raises it (CONTRACT-V10-GROUPS,
+full mesh). The page says so and never promises more. It serves two readers:
+
+- **Invited**: the hero's primary action (download for this system, or the
+  phone card) and "Kurmadan kullan: tarayıcıda aç", under the label "Davet
+  edildiysen"; the steps section (`#baslangic`) explains address → invite
+  code → room.
+- **Wants Trio for their group**: the hero's secondary link "Kendi sunucunu
+  kur" (`#sunucu`), a section with what it takes (cost, effort, size), the
+  Railway path in five steps, a link to the README's "Kendi sunucunu kur"
+  section on GitHub, and what the owner gets (CONTRACT-V6-OPS).
+
+The number three is the logo's, never a headline or a claim about the group.
+
+### Search engines (V10)
+
+- `/indir`: `<title>Trio — grubunun sohbeti, kendi sunucunda</title>`,
+  `robots: index, follow`, a meta description, `<link rel="canonical">` and
+  the Open Graph tags made absolute as above, `lang="tr"`, one `h1`, and a
+  JSON-LD `SoftwareApplication` (name, description, category, operating
+  systems, language, `isAccessibleForFree`, url, image, the repository as
+  `sameAs`; no ratings, no price). JSON-LD is a data block: the shell CSP's
+  `script-src` does not apply to it and nothing executes it.
+- The app shell (`/`, every client route, `index.html`): `<meta name="robots"
+  content="noindex">` and `X-Robots-Tag: noindex`. The join screen links
+  "Trio nedir?" → `/indir` (not inside the desktop app).
+- `/robots.txt`: `User-agent: *`, `Allow: /indir`, `Disallow: /api/`
+  (uploaded files and avatars live there), `Disallow: /ws`,
+  `Disallow: /indir/dosya/`, and `Sitemap: <origin>/sitemap.xml` when an
+  origin can be built. `/` is deliberately not disallowed: a crawler must be
+  able to read its noindex.
 
 ## Links to the page
 
