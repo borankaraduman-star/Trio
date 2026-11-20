@@ -127,12 +127,18 @@ export function wow(zone: string, level = 37) {
 export const SONG = { title: 'Bir Derdim Var', artist: 'mor ve ötesi', app: 'Spotify' }
 
 /** A socket of `token`'s own that sets an activity and stays open (the account is online). */
-export async function activitySocket(token: string, frame: Record<string, unknown>): Promise<() => void> {
+export async function activitySocket(
+  token: string,
+  frame: Record<string, unknown>,
+  viewing: number | null = null,
+): Promise<{ send: (frame: Record<string, unknown>) => void; close: () => void }> {
   const ws = new WebSocket(`${baseUrl().replace('http', 'ws')}/ws?token=${encodeURIComponent(token)}`)
   await new Promise<void>((resolve, reject) => {
     ws.addEventListener('message', () => resolve(), { once: true })
     ws.addEventListener('error', () => reject(new Error('socket')), { once: true })
   })
-  ws.send(JSON.stringify({ type: 'activity.set', ...frame }))
-  return () => ws.close()
+  const send = (f: Record<string, unknown>) => ws.send(JSON.stringify(f))
+  send({ type: 'activity.set', ...frame })
+  if (viewing !== null) send({ type: 'client.viewing', viewing: true, channel_id: viewing })
+  return { send: (f) => send({ type: 'activity.set', ...f }), close: () => ws.close() }
 }

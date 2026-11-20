@@ -153,14 +153,18 @@ window-title fallback (V8 §5) counts as Spotify.
   - member panel (`member-activity-<id>` game, `member-listening-<id>` music),
     the phone drawer (`drawer-activity-<id>`, `drawer-listening-<id>`; also
     for people in a voice room, under the room's name), voice rows
-    (`voice-activity-<id>`, `voice-listening-<id>`): game on the first line,
-    music on the second, "Spotify · Şarkı — Sanatçı";
+    (`voice-activity-<id>`, `voice-listening-<id>`): game on the first line
+    (a pad glyph, or WoW's class dot), music on the second (a note glyph,
+    "Sanatçı — Şarkı"; the app, "Spotify ile dinliyor", in the tooltip — the
+    member column is 220 px and the song is the part worth the room);
   - the rows under a text channel (`viewer-activity-<channel>-<id>`): one
     short line after the name (the game's name, else the song); with stacked
     faces ("+n") it goes into the row's label and tooltip;
   - "Burada" in the channel header: the tooltip lists each person with their
     activity;
-  - the people strip under a stage: a glyph and the tooltip.
+  - the people strip under a stage: a pad and/or note mark and the tooltip.
+  - Measured (e2e 87): 12 people changing their game every second for 5 s
+    caused 0 DOM mutations in the message list.
 - A V8 sharer's room row keeps its note mark and "Şu an çalıyor" line; the
   status line under it is not repeated when it says the same title.
 - One person's change re-renders that person's lines only (a per-user
@@ -176,8 +180,10 @@ Paused vs. closing their session, the "no console window" promise. The owner's
 ## Test ids and errors
 
 `member-listening-<id>`, `drawer-listening-<id>`, `voice-listening-<id>`,
-`viewer-activity-<channel>-<id>`, `settings-listen-share`,
-`settings-listen-browsers`, `settings-listen-health`, `listen-notice`,
+`viewer-activity-<channel>-<id>`, `stage-game-<id>`, `stage-listening-<id>`,
+`settings-listen-share`, `settings-listen-browsers`, `settings-listen-health`,
+`settings-listen-last-app`, `listen-notice`,
 `listen-notice-ok`, `listen-notice-off`. Errors: `INVALID_ACTIVITY`,
 `RATE_LIMITED` as V5. e2e 85 (listening everywhere, three people), 86 (setting,
-notice, browser default, old shell), 87 (fifteen people, layouts).
+notice, browser default, old shell), 87 (fifteen people, layouts). The
+owner's manual check on Windows: `docs/durum-kontrol.md`.
