@@ -22,6 +22,7 @@ from typing import Any
 
 from starlette.websockets import WebSocket
 
+from trio_server.activity import PARTS as ACTIVITY_PARTS
 from trio_server.activity import ActivityBoard
 from trio_server.nonces import NonceCache
 from trio_server.ratelimit import SlidingWindow
@@ -241,6 +242,8 @@ class Hub:
                 if channel["kind"] == "voice"
             },
             "activity": self.activity.snapshot(),
+            # CONTRACT-V11-ACTIVITY §1: the parts an activity may carry.
+            "activity_parts": list(ACTIVITY_PARTS),
             # CONTRACT-V10-GROUPS §2.
             "voice_room_max": self.voice_room_max,
             # CONTRACT-V10-GROUPS §4b.

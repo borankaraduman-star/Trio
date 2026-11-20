@@ -64,6 +64,7 @@ def test_ready_is_the_first_frame(trio, three):
             "channels",
             "voice",
             "activity",
+            "activity_parts",  # CONTRACT-V11-ACTIVITY §1
             "voice_room_max",  # CONTRACT-V10-GROUPS §2
             "viewers",  # CONTRACT-V10-GROUPS §4b
             "persistent",  # CONTRACT-V6-OPS §7

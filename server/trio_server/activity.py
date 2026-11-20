@@ -53,7 +53,16 @@ CHARACTER_MAX = 48
 REALM_MAX = 64
 ZONE_MAX = 96
 CLASS_MAX = 24
-KEYS = {"type", "game", "since", "detail"}
+KEYS = {"type", "game", "since", "detail", "listening"}
+# CONTRACT-V11-ACTIVITY §1: what somebody is listening to.
+LISTENING_KEYS = {"title", "artist", "app"}
+LISTENING_TITLE_MAX = 120
+LISTENING_ARTIST_MAX = 120
+LISTENING_APP_MAX = 40
+# A frame whose listening differs from the stored one sooner than this after
+# the stored one changed is refused (the client waits 5 s).
+LISTENING_GAP_SECONDS = 4.0
+PARTS = ["game", "listening"]
 DETAIL_KEYS = {"character", "realm", "level", "class", "zone", "subzone", "source"}
 
 
@@ -109,20 +118,72 @@ def _detail(value: Any) -> dict[str, Any] | None:
     }
 
 
+def _cleaned(value: str, maximum: int) -> str:
+    """Like a V8 music title: cleaned, not refused (it comes from a player)."""
+    text = unicodedata.normalize("NFC", value)
+    kept = "".join(
+        " " if ch.isspace() else ch
+        for ch in text
+        if ch.isspace() or unicodedata.category(ch) not in ("Cc", "Cf", "Cs", "Co", "Cn")
+    )
+    return " ".join(kept.split())[:maximum].rstrip()
+
+
+def _listening(value: Any) -> dict[str, str] | None:
+    """CONTRACT-V11-ACTIVITY §1: ``{title, artist, app}``, cleaned and capped."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ActivityError("'listening' must be an object or null")
+    unknown = set(value) - LISTENING_KEYS
+    if unknown:
+        raise ActivityError("unknown listening field " + repr(sorted(unknown)[0]))
+    out: dict[str, str] = {}
+    for key, maximum in (
+        ("title", LISTENING_TITLE_MAX),
+        ("artist", LISTENING_ARTIST_MAX),
+        ("app", LISTENING_APP_MAX),
+    ):
+        raw = value.get(key, "")
+        if raw is None:
+            raw = ""
+        if not isinstance(raw, str):
+            raise ActivityError(f"'listening.{key}' must be a string")
+        out[key] = _cleaned(raw, maximum)
+    if not out["title"]:
+        raise ActivityError("'listening.title' is required")
+    return out
+
+
 def parse_activity(frame: dict[str, Any], now: float) -> dict[str, Any]:
-    """The validated activity of an ``activity.set`` frame, or ActivityError."""
+    """The validated activity of an ``activity.set`` frame, or ActivityError.
+
+    A game part (V5) and/or a listening part (V11); at least one. The result
+    always carries ``game``/``since``/``detail`` (null without a game) and
+    ``listening`` only when there is one, so a V5 frame is unchanged.
+    """
     unknown = set(frame) - KEYS
     if unknown:
         raise ActivityError("unknown field " + repr(sorted(unknown)[0]))
-    game = _text(frame, "game", GAME_MAX, required=True)
-    since = frame.get("since")
-    if (
-        not isinstance(since, int)
-        or isinstance(since, bool)
-        or not SINCE_MIN <= since <= now + SINCE_SKEW_SECONDS
-    ):
-        raise ActivityError("'since' must be a unix time in seconds, not in the future")
-    return {"game": game, "since": since, "detail": _detail(frame.get("detail"))}
+    listening = _listening(frame.get("listening"))
+    out: dict[str, Any]
+    if frame.get("game") is None and listening is not None:
+        if frame.get("since") is not None or frame.get("detail") is not None:
+            raise ActivityError("'since' and 'detail' need a 'game'")
+        out = {"game": None, "since": None, "detail": None}
+    else:
+        game = _text(frame, "game", GAME_MAX, required=True)
+        since = frame.get("since")
+        if (
+            not isinstance(since, int)
+            or isinstance(since, bool)
+            or not SINCE_MIN <= since <= now + SINCE_SKEW_SECONDS
+        ):
+            raise ActivityError("'since' must be a unix time in seconds, not in the future")
+        out = {"game": game, "since": since, "detail": _detail(frame.get("detail"))}
+    if listening is not None:
+        out["listening"] = listening
+    return out
 
 
 @dataclass
@@ -131,6 +192,8 @@ class Entry:
     updated_at: float
     # App-clock time the user's last socket closed; None while online.
     offline_since: float | None = None
+    # When the listening part last changed (V11 rate rule).
+    listening_changed_at: float = float("-inf")
 
     def public(self) -> dict[str, Any]:
         return {"activity": self.activity, "updated_at": iso(self.updated_at)}
@@ -173,10 +236,28 @@ class ActivityBoard:
     def allow(self, user_id: int) -> bool:
         return self.limit.allow(str(user_id))
 
+    def listening_too_soon(self, user_id: int, activity: dict[str, Any]) -> bool:
+        """V11: a changed listening part within LISTENING_GAP_SECONDS of the last change."""
+        entry = self.entries.get(user_id)
+        if entry is None or not self._live(entry):
+            return False
+        if entry.activity.get("listening") == activity.get("listening"):
+            return False
+        return self.now() - entry.listening_changed_at < LISTENING_GAP_SECONDS
+
     def set(self, user_id: int, activity: dict[str, Any]) -> None:
         self.expire()
         now = self.now()
-        self.entries[user_id] = Entry(activity=activity, updated_at=now)
+        before = self.entries.get(user_id)
+        changed_at = float("-inf")
+        if activity.get("listening") is not None:
+            same = before is not None and before.activity.get("listening") == activity.get(
+                "listening"
+            )
+            changed_at = before.listening_changed_at if same and before is not None else now
+        self.entries[user_id] = Entry(
+            activity=activity, updated_at=now, listening_changed_at=changed_at
+        )
         self._broadcast(
             {"type": "activity", "user_id": user_id, "activity": activity, "updated_at": iso(now)}
         )

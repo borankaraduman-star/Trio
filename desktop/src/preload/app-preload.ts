@@ -14,6 +14,10 @@
  * CONTRACT-V8-MUSIC §5: `musicCaptureSupport()`, `prepareMusicCapture()`,
  * `setNowPlayingWatch(on)` and `onNowPlaying(cb) → unsubscribe`.
  *
+ * CONTRACT-V11-ACTIVITY §5: `listeningStatus: {supported}`,
+ * `setListeningStatus({on, browsers})` and `onListening(cb) → unsubscribe`
+ * (the current state at once, then each change).
+ *
  * CONTRACT-V10-UPDATE: `getUpdateState()`, `onUpdateState(cb) → unsubscribe`,
  * `checkForUpdates()`, `downloadUpdate()`, `installUpdate()`,
  * `setAutoUpdate(on)`.
@@ -22,7 +26,15 @@
  * main process checks the sender's origin on every message regardless.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
-import type { MusicSupport, NowPlaying, PrepareResult, TrioDesktopMusicBridge, TrioDesktopUpdateBridge } from "../shared/bridge";
+import type {
+  ListeningState,
+  MusicSupport,
+  NowPlaying,
+  PrepareResult,
+  TrioDesktopListeningBridge,
+  TrioDesktopMusicBridge,
+  TrioDesktopUpdateBridge,
+} from "../shared/bridge";
 import type { UpdateState } from "../shared/update";
 
 const LOCAL_PROTOCOL = "trio-app:";
@@ -70,6 +82,29 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       ipcRenderer.on("trio:now-playing", listener);
       return () => {
         ipcRenderer.removeListener("trio:now-playing", listener);
+      };
+    },
+  };
+  // CONTRACT-V11-ACTIVITY §5: "ne dinliyor" as a status (Windows only).
+  const listening: TrioDesktopListeningBridge = {
+    listeningStatus: { supported: process.platform === "win32" },
+    setListeningStatus(opts: { on: boolean; browsers: boolean }): void {
+      const record = typeof opts === "object" && opts !== null ? opts : { on: false, browsers: false };
+      ipcRenderer.send("trio:listening-status", { on: record.on === true, browsers: record.browsers === true });
+    },
+    onListening(cb: (state: ListeningState) => void): () => void {
+      if (typeof cb !== "function") return () => undefined;
+      let active = true;
+      const listener = (_event: IpcRendererEvent, state: unknown): void => {
+        if (active && state && typeof state === "object") cb(state as ListeningState);
+      };
+      ipcRenderer.on("trio:listening", listener);
+      void (ipcRenderer.invoke("trio:listening-state") as Promise<ListeningState | null>).then((state) => {
+        if (active && state && typeof state === "object") cb(state);
+      });
+      return () => {
+        active = false;
+        ipcRenderer.removeListener("trio:listening", listener);
       };
     },
   };
@@ -146,6 +181,7 @@ if (window.location.protocol === LOCAL_PROTOCOL) {
       return ipcRenderer.invoke("trio:system-idle") as Promise<number | null>;
     },
     ...music,
+    ...listening,
     ...update,
     gameStatus: { supported: true },
     onGameStatus(cb: (status: unknown) => void): () => void {

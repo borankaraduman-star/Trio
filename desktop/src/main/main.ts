@@ -46,7 +46,7 @@ import { listProcesses } from "./processList";
 import { autodetect, flavoursIn, type Flavour } from "./wowFolder";
 import { badgeText, parseUnread } from "../shared/title";
 import { MusicCaptureArm, musicCaptureSupport } from "../shared/musicCapture";
-import { NowPlayingWatcher, defaultSource } from "./nowPlaying";
+import { MediaWatch, defaultSource } from "./nowPlaying";
 import { answerDisplayMedia } from "./displayMedia";
 import { UpdateController, UpdateSettingsStore, type UpdaterLike } from "./updater";
 import {
@@ -152,13 +152,21 @@ const ptt = new PttController(
     }
   },
 );
-/** CONTRACT-V8-MUSIC §5: runs only while the page has the watch on. */
-const nowPlaying = new NowPlayingWatcher(defaultSource(), (info) => {
+/**
+ * CONTRACT-V8-MUSIC §5 and CONTRACT-V11-ACTIVITY §5: one reader, running only
+ * while the page has the share watch or the listening status on.
+ */
+function sendToServerPage(channel: string, payload: unknown): void {
   const wc = mainWindow?.webContents;
   if (wc && !wc.isDestroyed() && isSameOrigin(wc.getURL(), serverOrigin)) {
-    wc.send("trio:now-playing", info);
+    wc.send(channel, payload);
   }
-});
+}
+const nowPlaying = new MediaWatch(
+  defaultSource(),
+  (info) => sendToServerPage("trio:now-playing", info),
+  (state) => sendToServerPage("trio:listening", state),
+);
 /** V6: the tray's own image, and the mute/deafen mark drawn on it. */
 let trayBase: Electron.NativeImage | null = null;
 let trayVoice: TrayVoiceState = "none";
@@ -354,8 +362,8 @@ function createMainWindow(): void {
       // The page subscribes again when it loads (CONTRACT-V5 §5).
       pageWantsGame = false;
       updateGameRunning();
-      // CONTRACT-V8-MUSIC: a new document is not sharing music yet.
-      nowPlaying.setWatch(false);
+      // CONTRACT-V8-MUSIC / V11: a new document is not sharing music, nor asking for the status yet.
+      nowPlaying.stopAll();
       // CONTRACT-V10-UPDATE: nor in a voice room (the page says so again when it rejoins).
       updates?.setInVoice(false);
     }
@@ -373,7 +381,7 @@ function createMainWindow(): void {
 
   wc.on("render-process-gone", (_event, details) => {
     console.warn(`[trio] renderer gone: ${details.reason}`);
-    nowPlaying.setWatch(false);
+    nowPlaying.stopAll();
     if (details.reason !== "clean-exit") wc.reload();
   });
 
@@ -642,8 +650,15 @@ function installIpc(): void {
   ipcMain.handle("trio:music-support", (event) => (fromServerPage(event) ? MUSIC_SUPPORT : null));
   ipcMain.on("trio:now-playing-watch", (event, on: unknown) => {
     if (!fromServerPage(event)) return;
-    nowPlaying.setWatch(on === true);
+    nowPlaying.setShare(on === true);
   });
+  // CONTRACT-V11-ACTIVITY §5: "ne dinliyor" as a status.
+  ipcMain.on("trio:listening-status", (event, wish: unknown) => {
+    if (!fromServerPage(event) || typeof wish !== "object" || wish === null) return;
+    const record = wish as Record<string, unknown>;
+    nowPlaying.setStatus({ on: record.on === true, browsers: record.browsers === true });
+  });
+  ipcMain.handle("trio:listening-state", (event) => (fromServerPage(event) ? nowPlaying.statusState : null));
   ipcMain.handle("trio:music-prepare", (event) => musicArm.prepare(fromServerPage(event), pendingPick !== null));
   ipcMain.handle("trio:system-idle", (event) => (fromServerPage(event) ? powerMonitor.getSystemIdleTime() : null));
 

@@ -262,7 +262,7 @@ test("PowerShell source: one hidden process per watch, records forwarded, killed
   assert.equal(spawns.length, 1);
   assert.equal(spawns[0]!.file, "powershell.exe");
   assert.equal(spawns[0]!.options.windowsHide, true);
-  assert.deepEqual(spawns[0]!.options.stdio, ["ignore", "pipe", "ignore"]);
+  assert.deepEqual(spawns[0]!.options.stdio, ["ignore", "pipe", "pipe"]); // stderr: the reason when it fails (V11)
   children[0]!.stdout.write('{"source":"session","title":"A"}\n');
   await tick();
   assert.deepEqual(got, [{ source: "session", title: "A" }]);
