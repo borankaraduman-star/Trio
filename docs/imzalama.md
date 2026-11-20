@@ -177,3 +177,18 @@ AppImage için imza yaygın değil ve masaüstleri uyarı göstermez; yalnız
   `mac.notarize`, `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`
 - macOS Sequoia: Control+tık ile açma kaldırıldı, "Yine de Aç" Gizlilik ve
   Güvenlik'te (9to5Mac, iDownloadBlog, Michael Tsai, Ağustos 2024 — ikinci elden)
+
+---
+
+## İmza ve kendini güncelleme (CONTRACT-V10-UPDATE)
+
+- **Windows** imzasızken de kendini günceller; imza eklenince güncelleyici yeni
+  kurulumun **aynı yayımcı** tarafından imzalandığını da denetler (ek bir
+  güvence: GitHub hesabı ele geçse bile imzasız ya da başka imzalı bir dosya
+  kurulmaz).
+- **macOS** ancak Developer ID ile imzalı ve onaylı (notarize) bir uygulamada
+  kendini güncelleyebilir. Sırlar eklenince iş akışı uygulamaya bunu söyler
+  (`trioBuild.macSigned`); **ilk imzalı sürüm Mac'te bir kez elle kurulur**,
+  sonrakiler kendiliğinden gelir.
+- electron-builder 27'ye geçerken imzasız Windows yapısı için
+  `win.verifyUpdateCodeSignature: false` açıkça yazılmalı (CONTRACT-V10-UPDATE §8).
