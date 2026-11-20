@@ -3,6 +3,7 @@ import { api, ApiError, loadInviteCode, type Auth, type LinkCode } from '../api'
 import { newerBuildIsLive } from '../lib/buildCheck'
 import { messageFamilyBusy, reloadBlocker } from '../lib/reloadGuard'
 import { inviteLinkUrl } from '../lib/inviteLink'
+import { linkOrigin } from '../lib/address'
 import { sendErrorMessage } from '../lib/attachments'
 import { typingLabel } from '../lib/grouping'
 import { TrioSocket } from '../socket'
@@ -1136,7 +1137,7 @@ export function Session({
             name: state.me.name,
             createLinkCode,
             createAtOnce: settingsCode,
-            inviteLink: invite === null ? null : inviteLinkUrl(window.location.origin, invite),
+            inviteLink: invite === null ? null : inviteLinkUrl(linkOrigin(), invite),
             profile: identity.profile,
           }}
           serverSettings={identity.serverSettings}

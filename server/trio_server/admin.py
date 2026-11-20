@@ -125,6 +125,8 @@ def list_users(conn: sqlite3.Connection, out: TextIO) -> None:
 def _sign_out_everywhere(conn: sqlite3.Connection, user_id: int) -> int:
     count = conn.execute("DELETE FROM tokens WHERE user_id = ?", (user_id,)).rowcount
     conn.execute("DELETE FROM link_codes WHERE user_id = ?", (user_id,))
+    # V11: a move code is dead without its session anyway; do not keep it around.
+    conn.execute("DELETE FROM move_codes WHERE user_id = ?", (user_id,))
     return count
 
 
@@ -182,7 +184,7 @@ def do_new_link_code(
         user = find_user(conn, who)
         conn.execute("DELETE FROM link_codes WHERE expires_ts <= ?", (now,))
         (live,) = conn.execute(
-            "SELECT count(*) FROM link_codes WHERE user_id = ?", (user["id"],)
+            "SELECT count(*) FROM link_codes WHERE user_id = ? AND bulk = 0", (user["id"],)
         ).fetchone()
         if live >= linkcodes.MAX_LIVE_PER_USER:
             raise TooManyCodesError(

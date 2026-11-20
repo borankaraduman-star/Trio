@@ -1,3 +1,4 @@
+import { finishRedeemedMove } from './lib/address'
 import { localExpiry } from './lib/linkCode'
 import { parseRetryAfter } from './lib/retryAfter'
 import type { Channel, ChannelKind, Message, User } from './types'
@@ -90,8 +91,14 @@ export const api = {
     return request('/api/join', { method: 'POST', body: { invite_code: inviteCode, name } })
   },
   /** Another device of an existing account (CONTRACT-V3 §2): 200, a new token for the same user. */
-  joinWithLinkCode(linkCode: string): Promise<JoinResult> {
-    return request('/api/join', { method: 'POST', body: { link_code: linkCode } })
+  async joinWithLinkCode(linkCode: string): Promise<JoinResult> {
+    const result = await request<JoinResult & { move?: unknown }>('/api/join', {
+      method: 'POST',
+      body: { link_code: linkCode },
+    })
+    // CONTRACT-V11-ADDRESS §3: a move code typed here brings its preferences and ends the old session.
+    if (result.move) finishRedeemedMove(result.token, result.move)
+    return result
   },
   /** Signs THIS token out; its sockets close with 4401. */
   logout(token: string): Promise<void> {
@@ -139,6 +146,10 @@ const JOIN_ERRORS: Record<string, string> = {
   NAME_TAKEN: 'Bu isim alınmış, başka bir isim dene.',
   SERVER_FULL: 'Sunucu dolu, yeni üye alınamıyor.',
   INVALID_NAME: 'İsim 1–32 karakter olmalı.',
+  NOT_CANONICAL: 'Bu kod sunucunun yeni adresinde girilmeli.',
+  INVALID_RECOVERY_CODE: 'Kurtarma kodu yanlış (ya da bu sunucuda TRIO_RECOVERY_CODE ayarlı değil).',
+  RECOVERY_LIMIT: 'Kurtarma kodu bu açılışta çok kullanıldı. Sunucuyu yeniden başlatıp tekrar dene.',
+  NO_OWNER: 'Bu sunucunun sahibi yok: TRIO_OWNER kimsenin adı değil.',
   INVALID_LINK_CODE:
     'Bu kod geçersiz: süresi dolmuş, daha önce kullanılmış ya da yanlış yazılmış olabilir. Diğer cihazdan yeni bir kod al.',
   RATE_LIMITED: 'Çok fazla deneme yapıldı. Biraz sonra tekrar dene.',

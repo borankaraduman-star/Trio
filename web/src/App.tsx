@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import { clearAuth, clearInviteCode, loadAuth, saveAuth, saveInviteCode, saveLastName, type Auth } from './api'
 import { takeInviteFromLocation } from './lib/inviteLink'
 import { takeDeviceCodeFromLocation } from './lib/deviceLink'
@@ -8,6 +8,10 @@ import { clearStoredState } from './store'
 import { PersistenceBand } from './components/owner/PersistenceBand'
 import { sessionEndedNotice } from './lib/persistence'
 import { fetchHealth, loadKnownDataSince } from './owner/healthStore'
+import { addressStore, offCanonical, takeMoveCodeFromLocation } from './lib/address'
+import { AddressBand } from './components/address/AddressBand'
+import { MovedScreen } from './components/address/MovedScreen'
+import { MoveArrival } from './components/address/MoveArrival'
 
 /** Shown on the join screen when the server ended this device's session (CONTRACT-V3 §2, §3). */
 export const SESSION_ENDED_NOTICE =
@@ -20,6 +24,11 @@ export function App() {
   const [linkInvite, setLinkInvite] = useState(takeInviteFromLocation)
   // V7-READING §7: a device code's link (`#cihaz=`), the same way.
   const [linkDeviceCode, setLinkDeviceCode] = useState(takeDeviceCodeFromLocation)
+  // CONTRACT-V11-ADDRESS: a move link's code (`#tasi=`), and where the server lives.
+  const [moveCode, setMoveCode] = useState(takeMoveCodeFromLocation)
+  const address = useSyncExternalStore(addressStore.subscribe, addressStore.getSnapshot)
+  const [stayHere, setStayHere] = useState(false)
+  const moveCodeUsed = useCallback(() => setMoveCode(null), [])
 
   const onJoined = useCallback((next: Auth, inviteCode: string | null) => {
     saveAuth(next)
@@ -30,6 +39,7 @@ export function App() {
     // Used once: a later sign-out does not bring the link's code back.
     setLinkInvite(null)
     setLinkDeviceCode(null)
+    setMoveCode(null)
     setAuth(next)
   }, [])
 
@@ -63,9 +73,19 @@ export function App() {
   return (
     <>
       <PersistenceBand />
+      <AddressBand auth={auth} moveCode={moveCode} onMoveCodeUsed={moveCodeUsed} />
       {auth ? (
         // Keyed by token: a different account never inherits the previous one's state.
         <Session key={auth.token} auth={auth} onSignedOut={onSignedOut} onSessionEnded={onSessionEnded} />
+      ) : moveCode && !offCanonical(window.location.origin, address) ? (
+        <MoveArrival code={moveCode} onJoined={(next) => onJoined(next, null)} onCancel={moveCodeUsed} />
+      ) : offCanonical(window.location.origin, address) && !stayHere && address.publicUrl ? (
+        <MovedScreen
+          publicUrl={address.publicUrl}
+          linkInvite={linkInvite}
+          linkDeviceCode={linkDeviceCode}
+          onStay={() => setStayHere(true)}
+        />
       ) : (
         <JoinScreen key={notice ?? ''} onJoined={onJoined} notice={notice} linkInvite={linkInvite} linkDeviceCode={linkDeviceCode} />
       )}
