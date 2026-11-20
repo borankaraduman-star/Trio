@@ -143,3 +143,25 @@
     grid-auto-rows: calc((100vw - 24px) / var(--stage-columns, 1) * 9 / 16);
   }
 }
+
+/* --- Yönetim with many people ------------------------------------------------------ */
+
+.ops-people-tools {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.ops-people-tools input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ops-people-tools select {
+  flex: none;
+  max-width: 45%;
+}
+
+.ops-removed summary {
+  cursor: pointer;
+}
