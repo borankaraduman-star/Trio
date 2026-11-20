@@ -20,7 +20,10 @@ token; nothing here writes.
          404 NOT_FOUND (platform not one of the four, or not in the release)
          429 RATE_LIMITED + Retry-After (20 per 10 min per client address)
          502 DOWNLOAD_UNAVAILABLE (private repo: GitHub refused the asset)
-    GET  /indir                → the page (web/indir.html), with the app shell's headers (CSP, frame-ancestors none)
+    GET  /indir                → the page (web/indir.html), with the app shell's headers (CSP, frame-ancestors none);
+                                 root-relative <meta content="/…"> (og:image, og:url, twitter:image) made absolute
+                                 from the request: X-Forwarded-Proto (http|https) or the request's scheme, and the
+                                 Host only when it is a plain host[:port] (else the page is served as built)
     GET  /download, /download/, /indir/, /indir.html → 302 /indir
 
 `File` = `{platform: "windows" | "mac-arm64" | "mac-x64" | "linux", name, size, sha256: <64 hex> | null, url: "/indir/dosya/<platform>"}`,
@@ -93,6 +96,34 @@ A second Vite entry; no inline script (the shell CSP applies). Turkish.
   by one line (Windows still mentions SmartScreen reputation, which signing
   alone does not grant).
 - Unavailable: "İndirmeler şu an kullanılamıyor…" and the browser path.
+
+### The site around the download (V9)
+
+The page is also Trio's one public site. Above and below the download it
+shows what Trio does with live, scripted demos built from the client's own
+look (no screenshots, no video): the main screen (friends joining the voice
+room, messages, a reaction, a photo; the visitor may write into it and gets a
+canned answer — nothing is sent anywhere), a voice room that keeps talking
+through a server restart (mute and a 0–200 % volume are the visitor's), music
+sharing (the music level, 0–100 %, is the visitor's), the phone (lock-screen
+notifications and the call bar; the visitor switches views), and small live
+vignettes (voice message, photo location removed, share profiles, own
+server). Then three steps, the files and help (unchanged), five questions
+and answers, and a footer with the version and the public repository.
+
+- Every demo is a list of steps (`web/src/indir/demo/player.ts`) rendered from
+  the step index. It plays only while a quarter of it is on screen and the tab
+  is visible, has a pause button, and under `prefers-reduced-motion` never
+  plays: it shows its last step and offers "Önceki / Sonraki adım". The roots
+  carry `data-demo`, `data-step`, `data-last`, `data-playing`, `data-reduced`.
+- Names in the demos are made up (Ece, Ozan, Deniz). Every claim on the page
+  is one the contracts and the changelog back.
+- No inline script, no external origin, no web font, and no image files besides the favicon: the
+  demos are DOM and inline SVG. The link-preview image is
+  `/og/trio-og.png` (1200×630, `design/tools/build_og.py`, from a real e2e
+  screenshot).
+- `robots: noindex, nofollow`: a friends' server is not for search engines;
+  link previews still work.
 
 ## Links to the page
 
