@@ -129,8 +129,9 @@ test('two shares: Sen de paylaş, Yan yana and Odak, each viewer sent the size i
   await zeynep.page.locator('.v12-main figure.call-tile').dblclick()
   await expect.poll(() => zeynep.page.evaluate(() => document.fullscreenElement?.getAttribute('data-user-id') ?? null)).toBe(String(mehmet.user.id))
   await towards(mehmet, zeynep, (s) => s.maxBitrate === 3_000_000 && (s.scale ?? 1) === 1, 'fullscreen is full size')
-  await zeynep.page.keyboard.press('Escape')
-  await expect.poll(() => zeynep.page.evaluate(() => document.fullscreenElement)).toBeNull()
+  // (A real Esc is the browser's; a test page leaves fullscreen itself.)
+  await zeynep.page.evaluate(() => document.exitFullscreen())
+  await expect.poll(() => zeynep.page.evaluate(() => document.fullscreenElement === null)).toBe(true)
 
   // Hafif izleme on the large one: a thumbnail even while large.
   await zeynep.page.getByTestId(`tile-menu-${mehmet.user.id}`).click()

@@ -41,7 +41,7 @@ export function StageToolbar({
 
   return (
     <div className="v12-toolbar" data-testid="stage-toolbar">
-      <span className="v12-sharing-line" data-testid="stage-sharing-line" data-count={sharers.length}>
+      <span className="v12-sharing-line" data-testid="stage-sharing-line" data-count={sharers.length} title={line ?? undefined}>
         {line}
       </span>
       {screens >= 2 && (

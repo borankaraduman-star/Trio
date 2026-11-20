@@ -465,8 +465,12 @@ function MultiStage({
 
   const known = main.map((tile) => aspects[tile.key]).filter((a): a is number => typeof a === 'number')
   const aspect = known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : 16 / 9
-  // The screens may take up to ~62 % of the window's height, less the strip under them.
-  const room = Math.max(160, viewport * (phone ? 0.5 : 0.62) - (stripOrdered.length > 0 ? (phone ? 74 : 106) : 0) - 24)
+    // The chat keeps the rest: a short window (a laptop at 150 %) gives the screens less.
+  const share = phone ? 0.5 : chosen ? 0.52 : 0.6
+  const room = Math.max(
+    140,
+    viewport * share - (stripOrdered.length > 0 ? (phone ? 74 : 106) : 0) - 24 - (!phone && viewport < 760 ? 70 : 0),
+  )
   const grid = chosen ? { columns: 1, rows: 1, tileHeight: Math.floor(room) } : sideBySide(main.length, width, room, aspect)
 
   const move = (step: number) => {
