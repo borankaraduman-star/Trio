@@ -312,6 +312,9 @@ export function shouldAskShell(input: HintInput): boolean {
   if (shell.status === 'available' && shell.version && (compareVersions(shell.version, release.version) ?? -1) >= 0) {
     return false
   }
+  // A failed DOWNLOAD (the check found the version): not retried from here, or
+  // a file that keeps failing its hash would be fetched every ten minutes.
+  if (shell.status === 'error' && shell.version) return false
   const last = input.last
   if (last && last.version === release.version && input.now - last.at >= 0 && input.now - last.at < HINT_RETRY_MS) {
     return false

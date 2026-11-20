@@ -259,6 +259,8 @@ describe('"look now": the page asks the shell when it learns of a newer desktop 
     // Automatic download off and the shell already knows this version: it waits for "İndir".
     expect(shouldAskShell({ ...ask, shell: shell({ status: 'available', version: '0.9.1' }) })).toBe(false)
     expect(shouldAskShell({ ...ask, shell: shell({ status: 'available', version: '0.9.0-rc.1' }) })).toBe(true)
+    // A download that failed is not retried from the page (a file failing its hash would be fetched again and again).
+    expect(shouldAskShell({ ...ask, shell: shell({ status: 'error', version: '0.9.1', error: 'indirilen dosya doğrulanamadı' }) })).toBe(false)
   })
   it('once per version per ten minutes; a newer version asks at once', () => {
     const last = { version: '0.9.1', at: ask.now }

@@ -13,6 +13,9 @@
  * - a shell that cannot update here (unsigned macOS): the reason and a direct
  *   download for its own processor.
  * - a failed self-update falls back to the direct download.
+ * - a release published while the page is open: the page asks the shell to
+ *   look (`checkForUpdates`, once), and the band follows downloading → ready
+ *   without opening settings; in a voice room it says "odadan çıkınca".
  */
 import type { BrowserContext, Page } from '@playwright/test'
 import { freshServer } from '../lib/server'
@@ -25,24 +28,25 @@ test.beforeEach(async () => {
 
 const SHOTS = 'screenshots'
 
-async function withRelease(context: BrowserContext, version: string): Promise<void> {
-  await context.route('**/api/downloads', (route) =>
-    route.fulfill({
+async function withRelease(context: BrowserContext, version: string | (() => string)): Promise<void> {
+  await context.route('**/api/downloads', (route) => {
+    const v = typeof version === 'function' ? version() : version
+    return route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
-        version,
+        version: v,
         published_at: '2026-11-20T00:00:00Z',
         signed: { windows: false, mac: false },
         files: ['windows', 'mac-arm64', 'mac-x64', 'linux'].map((platform) => ({
           platform,
-          name: `Trio-${version}-${platform}`,
+          name: `Trio-${v}-${platform}`,
           size: 1,
           sha256: null,
           url: `/indir/dosya/${platform}`,
         })),
       }),
-    }),
-  )
+    })
+  })
 }
 
 /**
@@ -97,7 +101,7 @@ test('a ready update: restart offered, never during a call, "Sonra" hides it', a
   // In a voice room: no restart, a calm sentence instead.
   await setState(ayse.page, { inVoice: true })
   await expect(band).toHaveAttribute('data-in-voice', 'true')
-  await expect(band).toContainText('sesli odadan çıkınca yeniden başlatabilirsin')
+  await expect(band).toContainText('Güncelleme hazır: 0.9.0 — sesli odadan çıkınca kurulabilir')
   await expect(ayse.page.getByTestId('desktop-update-install')).toHaveCount(0)
   await ayse.page.getByTestId('btn-settings').click()
   await settingsTab(ayse.page, 'hakkinda')
@@ -167,8 +171,9 @@ test('automatic download off: "İndir" asks the shell; a failed self-update offe
   await expect(band).toHaveAttribute('data-kind', 'available')
   await ayse.page.getByTestId('desktop-update-fetch').click()
   await expect.poll(() => calls(ayse.page)).toEqual(['download'])
-  // Downloading: the band steps aside (Hakkında shows the progress).
-  await expect(band).toHaveCount(0)
+  // Downloading: one line with the progress.
+  await expect(band).toHaveAttribute('data-kind', 'downloading')
+  await expect(band).toContainText('Güncelleme indiriliyor: 0.9.0 (%0)')
 
   await setState(ayse.page, { status: 'error', error: 'indirilen dosya doğrulanamadı' })
   await expect(band).toHaveAttribute('data-kind', 'manual')
@@ -199,4 +204,70 @@ test('an unsigned Mac app: the reason, and a direct download for its own process
   await expect(ayse.page.getByTestId('desktop-update-status')).toHaveCount(0)
   await expect(ayse.page.getByTestId('desktop-update-check')).toHaveCount(0)
   await expect(ayse.page.getByTestId('desktop-update-line-download')).toHaveAttribute('href', '/indir/dosya/mac-arm64')
+})
+
+test('a desktop release published while the app is open: the page asks the shell once, the band follows, in a call "odadan çıkınca"', async ({
+  browser,
+  trio,
+}) => {
+  let published = '0.9.0'
+  const ayse = trio.add(
+    await personViaApi(browser, 'Ayşe', {
+      prepare: async (c) => {
+        await c.addInitScript(updatingDesktop({ status: 'up-to-date', currentVersion: '0.9.0' }))
+        await withRelease(c, () => published)
+        // The page polls /api/downloads every 5 minutes: the test moves the clock instead of waiting.
+        await c.clock.install()
+      },
+      viewport: { width: 1280, height: 800 },
+    }),
+  )
+  const page = ayse.page
+  const band = page.getByTestId('desktop-update')
+  await expect(page.getByTestId('composer')).toBeVisible()
+  await expect(band).toHaveCount(0)
+  await expect(page.getByTestId('desktop-update-dot')).toHaveCount(0)
+  expect(await calls(page)).toEqual([])
+
+  // GitHub gets 0.9.1; nobody opens Ayarlar.
+  published = '0.9.1'
+  await page.clock.fastForward('05:30')
+  await expect.poll(() => calls(page)).toEqual(['check'])
+
+  // The shell found it and downloads (during a call too).
+  await setState(page, { status: 'downloading', version: '0.9.1', percent: 30 })
+  await expect(band).toHaveAttribute('data-kind', 'downloading')
+  await expect(band).toContainText('Güncelleme indiriliyor: 0.9.1 (%30)')
+  await expect(page.getByTestId('btn-settings').getByTestId('desktop-update-dot')).toBeVisible()
+  await setState(page, { inVoice: true })
+  await expect(band).toContainText('sesli odadan çıkınca kurulabilir')
+  await setState(page, { status: 'ready', percent: 100 })
+  await expect(band).toHaveAttribute('data-kind', 'ready')
+  await expect(band).toContainText('Güncelleme hazır: 0.9.1 — sesli odadan çıkınca kurulabilir')
+  await expect(page.getByTestId('desktop-update-install')).toHaveCount(0)
+  await page.screenshot({ path: `${SHOTS}/v10-update-ready-in-voice.png` })
+
+  // Out of the call: the restart is offered.
+  await setState(page, { inVoice: false })
+  await expect(page.getByTestId('desktop-update-install')).toBeVisible()
+
+  // The shell was asked once, not on every poll.
+  await page.clock.fastForward('05:30')
+  await page.waitForTimeout(200)
+  expect(await calls(page)).toEqual(['check'])
+})
+
+test('an app without the update members keeps the manual notice and is never asked to check', async ({ browser, trio }) => {
+  const ayse = trio.add(
+    await personViaApi(browser, 'Ayşe', {
+      prepare: async (c) => {
+        await c.addInitScript(`window.trioDesktop = { isDesktop: true, appVersion: '0.7.1', setPttKey() {}, onPtt() { return () => {} }, setVoiceState() {} }`)
+        await withRelease(c, '0.9.1')
+      },
+    }),
+  )
+  const band = ayse.page.getByTestId('desktop-update')
+  await expect(band).toHaveAttribute('data-kind', 'manual')
+  await expect(band).toContainText('Masaüstü uygulamasının yeni sürümü var (0.9.1).')
+  await expect(ayse.page.getByTestId('desktop-update-dot')).toHaveCount(0)
 })
