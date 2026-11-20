@@ -340,6 +340,35 @@ def test_page_and_redirects(make_app) -> None:
     assert client.get("/kanal/3").text == "<html>app</html>"
 
 
+def test_page_link_preview_urls_become_absolute(make_app, tmp_path) -> None:
+    client, _ = make_app(static=True)
+    (tmp_path / "dist" / "indir.html").write_text(
+        '<head><meta property="og:image" content="/og/trio-og.png" />'
+        '<meta property="og:url" content="/indir" />'
+        '<meta name="theme-color" content="#111318" />'
+        '<meta name="x" content="//evil.example/a" />'
+        '<link rel="icon" href="/favicon.svg" /></head>'
+    )
+    forwarded = {"host": "trio.example:8443", "x-forwarded-proto": "https, http"}
+    page = client.get("/indir", headers=forwarded)
+    assert page.status_code == 200
+    assert page.headers["content-type"].startswith("text/html")
+    assert 'content="https://trio.example:8443/og/trio-og.png"' in page.text
+    assert 'content="https://trio.example:8443/indir"' in page.text
+    # Only root-relative meta content changes: colours, protocol-relative values and links stay.
+    assert 'content="#111318"' in page.text
+    assert 'content="//evil.example/a"' in page.text
+    assert 'href="/favicon.svg"' in page.text
+    # Without a forwarded scheme, the request's own; an odd Host changes nothing.
+    plain = {"host": "trio.example"}
+    assert 'content="http://trio.example/indir"' in client.get("/indir", headers=plain).text
+    odd = client.get("/indir", headers={"host": 'x" onload="y', "x-forwarded-proto": "https"})
+    assert 'content="/og/trio-og.png"' in odd.text and "onload" not in odd.text
+    head = client.head("/indir", headers=plain)
+    assert head.status_code == 200 and head.text == ""
+    assert int(head.headers["content-length"]) == len(client.get("/indir", headers=plain).content)
+
+
 def test_page_without_static_dir_is_404(make_app) -> None:
     client, _ = make_app()
     assert client.get("/indir").status_code == 404

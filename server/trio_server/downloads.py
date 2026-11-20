@@ -51,7 +51,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import (
-    FileResponse,
+    HTMLResponse,
     JSONResponse,
     RedirectResponse,
     Response,
@@ -434,7 +434,15 @@ def register_download_routes(
         index = Path(static_dir) / "indir.html" if static_dir else None
         if index is None or not index.is_file():
             return error_response(404, "NOT_FOUND", "not found")
-        return FileResponse(index, headers=page_headers(request.headers.get("host", "")))
+        html = absolute_preview_urls(index.read_text(encoding="utf-8"), page_origin(request))
+        headers = page_headers(request.headers.get("host", ""))
+        if request.method == "HEAD":
+            return Response(
+                status_code=200,
+                media_type="text/html; charset=utf-8",
+                headers={**headers, "Content-Length": str(len(html.encode("utf-8")))},
+            )
+        return HTMLResponse(html, headers=headers)
 
     app.add_api_route("/indir", page, methods=["GET", "HEAD"])
 
@@ -444,6 +452,35 @@ def register_download_routes(
     for path in ("/download", "/download/", "/indir/", "/indir.html"):
         app.add_api_route(path, to_page, methods=["GET", "HEAD"])
     return catalog
+
+
+# Link previews (WhatsApp, Telegram, Discord…) want absolute og:image/og:url.
+# The page is static, so the server writes its own origin in front of the
+# root-relative ones: only in <meta> content attributes that start with "/",
+# and only from a Host that is a plain host[:port] (anything else leaves the
+# page exactly as built). The scheme is X-Forwarded-Proto's first value when
+# it is http or https (Railway's edge terminates TLS), else the request's own.
+_PLAIN_HOST = re.compile(
+    r"^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:.]+\])(?::[0-9]{1,5})?$"
+)
+_META_PATH = re.compile(r'(<meta\s[^>]*?content=")(/[^"/][^"]*|/)(")')
+
+
+def page_origin(request: Request) -> str | None:
+    host = request.headers.get("host", "")
+    if not _PLAIN_HOST.match(host):
+        return None
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    scheme = forwarded if forwarded in ("http", "https") else request.url.scheme
+    if scheme not in ("http", "https"):
+        return None
+    return f"{scheme}://{host}"
+
+
+def absolute_preview_urls(html: str, origin: str | None) -> str:
+    if origin is None:
+        return html
+    return _META_PATH.sub(lambda m: f"{m.group(1)}{origin}{m.group(2)}{m.group(3)}", html)
 
 
 async def _signed_redirect(catalog: DownloadCatalog, entry: FileEntry) -> Response:
