@@ -90,8 +90,12 @@ MAX_SUBSCRIPTIONS_PER_USER = 10
 ENDPOINT_MAX = 2048
 LABEL_MAX = 40
 UA_FAMILIES = ("chrome", "edge", "firefox", "safari", "samsung", "opera", "electron", "other")
-QUEUE_SIZE = 500
-WORKERS = 4
+# CONTRACT-V10-GROUPS §5: one message fans out to every subscription of every
+# other member: fifteen people with up to 10 devices each is 140 deliveries for
+# one message (sized for three friends, 500 would drop the fourth such burst).
+QUEUE_SIZE = 2000
+# Deliveries in flight at once; each waits at most SEND_TIMEOUT_SECONDS.
+WORKERS = 8
 SEND_TIMEOUT_SECONDS = 10.0
 MAX_ATTEMPTS = 4
 RETRY_DELAYS = (2.0, 10.0, 60.0)

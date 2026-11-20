@@ -13,6 +13,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from trio_server.db import Database
+from trio_server.push import QUEUE_SIZE
 from trio_server.push_crypto import b64url, decrypt, public_point, verify_jwt
 
 FCM = "https://fcm.googleapis.com/fcm/send/"
@@ -621,7 +622,7 @@ def test_a_full_queue_drops_instead_of_blocking(app):
         for task in sender._tasks:  # noqa: SLF001 - stop the workers to fill the queue
             task.cancel()
         await asyncio.sleep(0)
-        for _ in range(501):
+        for _ in range(QUEUE_SIZE + 1):
             sender.enqueue([1], {"v": 1}, {"ttl": 1, "urgency": "normal"})
         return sender.dropped
 
