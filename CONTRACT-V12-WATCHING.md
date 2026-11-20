@@ -74,9 +74,8 @@ decodes every share at full size whether it is shown large or as a thumbnail.
 **The first share is not frozen by a second one** through the network (their
 bandwidth estimates are separate connections); it slows only by CPU, here.
 
-**What "only pay for what you watch" (§3) saves** — spec 95, four shares in a
-room of five, each viewer's own layout: see `[95]` lines in §11 (filled from
-the run).
+**What "only pay for what you watch" (§3) saves** is in §11: the same rooms,
+the same machine, after it.
 
 ## 3. Each viewer is sent the size it shows ("only pay for what you watch")
 
@@ -319,9 +318,51 @@ aynı anda 4 kişiye kadar ekran paylaşabilir (sunucu sahibi değiştirebilir).
 oynarken köşede küçük bir pencerede izler; küçük gösterdiği paylaşım ona
 küçük gönderilir."
 
-## 11. Measurements of what was built
+## 11. Measurements of what was built (same machine, same day)
 
-(filled from spec 92/95 runs)
+Spec 91 again, every viewer in its default window (1280×800) and layout
+(Yan yana): with two or more screens on a stage that size, each grid cell is
+under 250 device px tall, so each viewer is sent `thumb` (≤ 360 lines,
+≤ 300 kbit/s; these runs were at 8 frames/s, since raised to 12, §3).
+
+| room, shares | time to first frame (median), before → after | encoder ms/frame (max), before → after | frames/s to viewers, before → after |
+|---|---|---|---|
+| 3, 3 | 0.68 s → 0.36 s | 59–87 → 1.4–2.6 | 11–16 → 8 steady |
+| 5, 3 | 2.3 s → 0.57 s | 134–413 → 3.8–7.8 | 2–6 → 8 steady |
+| 5, 4 | 5.9 s → 0.80 s | 231–490 → 4.5–8.3 | 1–3 → 8 steady |
+| 5, 4 at once | 4.0 s (max 8.0) → 1.0 s (max 1.3) | | |
+| 8, 2 | 4.3 s → 6.0 s¹ | 210–260 → 11–14 | 0–7 → 8 to all seven |
+| 8, 2 at once | — → 2.8 s (max 3.3) | | |
+
+¹ not better: in a room of eight the first share starts at full size for
+every viewer until their tiles report (60 ms), and eight contexts on four
+cores make single runs vary by seconds; what changed is that afterwards all
+seven viewers get frames (before: three of them got 0–1 frames/s).
+
+Spec 95, four shares in a room of five, all five viewers' layouts the same:
+
+| layout | upload per sharer (to 4) | encoder ms/frame max | each viewer receives | decode ms/frame |
+|---|---|---|---|---|
+| Yan yana (2×2, all `thumb` at this size) | 207–293 kbit/s | 2.8–4.4 | 199–311 kbit/s | 0.4–0.8 |
+| Odak (one `mid`/`full`, three `thumb`) | 413–1210 kbit/s | 14–99 | 541–683 kbit/s | 3.2–5.8 |
+| Hafif on everything | see `[95]` in the e2e output (the run's numbers vary by ±30 %) | | | |
+
+Spec 92 (three people, two shares, 1440×900): a strip thumbnail is sent at
+120 lines high (`scale` 3 of a 360-line slot, bandwidth-limited at the start)
+at 34–42 kbit/s; "Hafif" on the large one: 58–101 kbit/s at 8 frames/s;
+"Sadece ses": 0 video bytes, the share's sound bytes keep growing; the
+picture back 0.8–1.0 s after "Görüntüyü aç" (a keyframe and the bandwidth
+estimate climbing again). Not one offer for any of it (offers counted).
+
+What it means for real people: the sharer's encoders now do the work the
+viewers actually look at. A sharer in a room of five whose four viewers
+follow three screens side by side encodes four small pictures instead of four
+1080p ones; a viewer in a game with "Hafif" or a mini window gets a 360-line
+picture. The large one a viewer focuses still gets the profile as chosen.
+
+Not measured here: the bitrate of a real 1080p desktop at these sizes (the
+fake pattern compresses unusually well), and a sharer's real CPU (eight
+contexts share four cores here).
 
 ## 12. Mode × platform
 
