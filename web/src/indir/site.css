@@ -853,7 +853,8 @@ main h3 {
   max-width: var(--page);
   margin: 0 auto;
   padding: 32px var(--gutter) max(36px, env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
+  /* the rule spans the content, not the gutters */
+  background: linear-gradient(var(--border), var(--border)) no-repeat top center / calc(100% - 2 * var(--gutter)) 1px;
   color: var(--muted);
   font-size: 14px;
 }

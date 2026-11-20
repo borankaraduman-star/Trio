@@ -1691,6 +1691,10 @@ button.vr-btn:active {
   color: var(--coral-ink);
 }
 
+.bento-share .vg-screen {
+  max-height: none;
+}
+
 .vg-hint {
   color: var(--body);
   font-size: 14px;

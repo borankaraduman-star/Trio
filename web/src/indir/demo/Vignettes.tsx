@@ -134,7 +134,7 @@ export function ServerVignette() {
   const { ref, live, reduced } = useLive<HTMLDivElement>()
   return (
     <div className="vg vg-server" ref={ref} data-live={live} data-reduced={reduced} data-testid="vignette-server">
-      <svg viewBox="0 0 320 170" role="img" aria-label="Üç cihaz tek bir küçük sunucuya bağlı">
+      <svg viewBox="0 0 320 170" role="img" aria-label="Üç arkadaşın cihazı tek bir küçük sunucuya bağlı">
         <g className="vg-links" fill="none" stroke="#2b303a" strokeWidth="2">
           <path d="M60 46 C110 46 120 85 160 85" />
           <path d="M60 128 C110 128 120 85 160 85" />
@@ -152,8 +152,11 @@ export function ServerVignette() {
           <circle cx="188" cy="88" r="7" />
         </g>
         <rect x="24" y="30" width="44" height="32" rx="5" fill="#1a1d24" stroke="#3a404c" />
+        <circle cx="46" cy="46" r="7" fill="#ee997f" />
         <rect x="32" y="108" width="24" height="40" rx="5" fill="#1a1d24" stroke="#3a404c" />
+        <circle cx="44" cy="128" r="6" fill="#69b9aa" />
         <rect x="256" y="66" width="48" height="36" rx="5" fill="#1a1d24" stroke="#3a404c" />
+        <circle cx="280" cy="84" r="7" fill="#ddb174" />
       </svg>
     </div>
   )
