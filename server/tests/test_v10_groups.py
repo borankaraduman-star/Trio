@@ -38,7 +38,15 @@ NAMES = [
 
 # Frames another socket's actions cause, in whatever order the sockets'
 # tasks ran; skipped while waiting for the frame a test is about.
-NOISE = {"presence", "voice.joined", "voice.left", "voice.state", "channel.new", "typing"}
+NOISE = {
+    "presence",
+    "voice.joined",
+    "voice.left",
+    "voice.state",
+    "voice.ring",
+    "channel.new",
+    "typing",
+}
 
 
 def skip_to(sock, frame_type: str) -> dict:
@@ -368,3 +376,18 @@ def test_ready_for_fifteen_is_small():
     assert len(frame["users"]) == 15
     # A ready frame for the whole group stays a few kilobytes.
     assert len(json.dumps(frame)) < 4096
+
+
+def test_a_full_room_cannot_ring(make_trio):
+    trio = make_trio(voice_room_max=2)
+    ali, berk, cem = trio.user("Ali"), trio.user("Berk"), trio.user("Cem")
+    with trio.ws(ali) as a, trio.ws(berk) as b, trio.ws(cem) as c:
+        join(a)
+        a.send_json({"type": "voice.ring", "channel_id": VOICE})
+        assert skip_to(c, "voice.ring")["from"] == ali["id"]
+        join(b)
+        a.send_json({"type": "voice.ring", "channel_id": VOICE})
+        frame = room_full(a)
+        assert frame["request"] == "voice.ring"
+        assert frame["limit"] == 2
+        assert [f for f in drain_until_pong(c) if f["type"] == "voice.ring"] == []

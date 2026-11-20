@@ -341,6 +341,16 @@ class Session:
                 "you can only ring from the voice channel you are in",
                 request="voice.ring",
             )
+        # CONTRACT-V10-GROUPS §2: nobody could answer a call into a full room.
+        if len(self.hub.voice.get(channel_id, {})) >= self.hub.voice_room_max:
+            limit = self.hub.voice_room_max
+            raise FrameError(
+                "ROOM_FULL",
+                f"the voice room is full ({limit} people)",
+                request="voice.ring",
+                channel_id=channel_id,
+                limit=limit,
+            )
         if not self.hub.rings.allow(str(self.user["id"])):
             raise FrameError(
                 "RATE_LIMITED", "you can ring at most once every 30 seconds", request="voice.ring"
