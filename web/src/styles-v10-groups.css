@@ -138,7 +138,7 @@
   overflow-y: auto;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 880px) {
   .call-stage.grid.all {
     grid-auto-rows: calc((100vw - var(--sidebar-width) - 16px) / var(--stage-columns, 1) * 9 / 16);
   }
@@ -171,4 +171,105 @@
 
 .ops-removed summary {
   cursor: pointer;
+}
+
+/* --- "Üyeler" in the header, and the member panel at every width (§4a) ------------- */
+
+.members-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.members-toggle:hover,
+.members-toggle.on {
+  color: var(--text-strong);
+  background: var(--bg-hover);
+}
+
+.members-toggle + .pins-button {
+  margin-left: 0;
+}
+
+.members-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.members-count .dot {
+  position: static;
+  width: 8px;
+  height: 8px;
+  border: 0;
+}
+
+.members-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 0;
+}
+
+.members-title {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+
+.members-note {
+  margin: 4px 8px 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.member-me {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Wide: the column can be hidden from "Üyeler" (remembered per device). */
+.app.members-hidden {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+
+.members.hidden {
+  display: none;
+}
+
+.app.members-hidden .call-stage.grid {
+  height: min(58vh, calc((100vw - var(--sidebar-width)) / var(--stage-columns, 1) * 9 / 16 * var(--stage-rows, 1) + 16px));
+}
+
+/* Narrower than the column: the same panel over the chat, from the right. */
+@media (max-width: 880px) {
+  .members.overlay {
+    display: block;
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 30;
+    width: min(300px, 86vw);
+    box-shadow: -8px 0 32px rgb(0 0 0 / 50%);
+  }
+
+  .members-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: rgb(0 0 0 / 45%);
+  }
 }

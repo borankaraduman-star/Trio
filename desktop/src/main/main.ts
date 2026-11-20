@@ -23,6 +23,7 @@ import {
   net,
   powerMonitor,
   protocol,
+  screen,
   session,
   shell,
   systemPreferences,
@@ -46,6 +47,7 @@ import { badgeText, parseUnread } from "../shared/title";
 import { MusicCaptureArm, musicCaptureSupport } from "../shared/musicCapture";
 import { NowPlayingWatcher, defaultSource } from "./nowPlaying";
 import { answerDisplayMedia } from "./displayMedia";
+import { initialWindowSize } from "../shared/windowSize";
 import {
   isExternalOpenable,
   isSameOrigin,
@@ -280,9 +282,11 @@ function installPermissionHandlers(ses: Session): void {
 // ------------------------------------------------------------ main window
 
 function createMainWindow(): void {
+  // CONTRACT-V10-GROUPS §4a: never larger than the work area (scaled DIP), so the page's width is what shows.
+  const size = initialWindowSize(screen.getPrimaryDisplay().workAreaSize);
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: size.width,
+    height: size.height,
     minWidth: 420,
     minHeight: 420,
     show: false,

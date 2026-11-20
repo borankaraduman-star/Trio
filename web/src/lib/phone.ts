@@ -8,8 +8,9 @@ import { namesWithMore } from './groups'
 
 /** At or under this the sidebar is a drawer (styles.css): the call bar and the header presence show. */
 export const PHONE_QUERY = '(max-width: 680px)'
-/** At or under this the member list column is hidden (styles.css): presence moves into the sidebar. */
-export const NO_MEMBERS_QUERY = '(max-width: 960px)'
+/** At or under this the member list column is hidden (styles.css): presence moves into the sidebar, and "Üyeler" opens it over the chat. */
+// V10 (CONTRACT-V10-GROUPS §4a): 880, was 960, so a 1366×768 laptop at 150 % (911 CSS px) keeps the column.
+export const NO_MEMBERS_QUERY = '(max-width: 880px)'
 
 function subscribeTo(query: string) {
   return (onChange: () => void) => {
