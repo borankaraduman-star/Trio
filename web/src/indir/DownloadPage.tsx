@@ -486,8 +486,8 @@ function OwnServer() {
           <div>
             <dt>Kaç kişi</dt>
             <dd>
-              Bir sunucu 15 kişiye kadar, bir sesli oda en çok 8 kişi (sahibi 16'ya açabilir). Daha kalabalık bir
-              topluluk için Trio doğru araç değil.
+              Bir sunucu 10–15 kişilik bir grup için; bir sesli odaya en çok 8 kişi girer (sahibi 16'ya açabilir).
+              Daha kalabalık bir topluluk için Trio doğru araç değil.
             </dd>
           </div>
           <div>
