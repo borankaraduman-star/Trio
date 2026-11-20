@@ -1,7 +1,7 @@
 {
   "name": "trio-desktop",
   "productName": "Trio",
-  "version": "0.7.1",
+  "version": "0.8.1",
   "private": true,
   "description": "Trio masaüstü uygulaması",
   "author": "Trio",
@@ -20,6 +20,7 @@
   },
   "desktopName": "trio-desktop.desktop",
   "dependencies": {
+    "electron-updater": "6.8.11",
     "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {
@@ -42,11 +43,28 @@
       "!dist/test/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "../THIRD-PARTY-NOTICES.md",
+        "to": "THIRD-PARTY-NOTICES.md"
+      }
+    ],
     "asarUnpack": [
       "node_modules/uiohook-napi/**"
     ],
     "npmRebuild": false,
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "borankaraduman-star",
+        "repo": "Trio",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": [
         {
@@ -67,6 +85,13 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64",
             "arm64"

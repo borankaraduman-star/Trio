@@ -1,0 +1,103 @@
+# One file through SignPath, for desktop/scripts/signpath-bridge.cjs: wait for
+# electron-builder to ask for it, upload it as a workflow artifact, submit it
+# to SignPath (a person approves the request there), check the Authenticode
+# signature and its publisher, and hand the signed file back to the build.
+# docs/signpath-basvuru.md has the SignPath side (project, policies, the
+# artifact configurations named here).
+name: signpath-sign
+description: Sign one file of the running electron-builder build through SignPath
+inputs:
+  role:
+    description: app | uninstaller | installer (signpath-bridge.cjs ROLES)
+    required: true
+  artifact-configuration-slug:
+    description: The SignPath artifact configuration for this file
+    required: true
+  api-token:
+    description: SignPath API token (secret)
+    required: true
+  organization-id:
+    description: SignPath organization id
+    required: true
+  project-slug:
+    description: SignPath project slug
+    required: true
+  signing-policy-slug:
+    description: SignPath signing policy slug
+    required: true
+  publisher:
+    description: The CN the signing certificate must carry (also written to app-update.yml)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Wait for electron-builder (${{ inputs.role }})
+      id: wait
+      shell: pwsh
+      working-directory: desktop
+      env:
+        ROLE: ${{ inputs.role }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $json = node scripts/signpath-bridge.cjs wait $env:ROLE
+        if ($LASTEXITCODE -ne 0) { throw "signpath-bridge wait $env:ROLE failed" }
+        $info = $json | ConvertFrom-Json
+        $version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($info.path)
+        if ($version.ProductName -cne 'Trio' -or [string]::IsNullOrWhiteSpace($version.ProductVersion)) {
+          throw "$($info.file) carries no Trio product name/version (got '$($version.ProductName)' '$($version.ProductVersion)')"
+        }
+        "path=$($info.path)" >> $env:GITHUB_OUTPUT
+        "signed-directory=$($info.signedDirectory)" >> $env:GITHUB_OUTPUT
+        "file=$($info.file)" >> $env:GITHUB_OUTPUT
+        "product-version=$($version.ProductVersion)" >> $env:GITHUB_OUTPUT
+
+    - name: Upload the unsigned ${{ inputs.role }}
+      id: upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: signpath-${{ inputs.role }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ${{ steps.wait.outputs.path }}
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Sign the ${{ inputs.role }} with SignPath
+      id: sign
+      uses: signpath/github-action-submit-signing-request@v3
+      with:
+        api-token: ${{ inputs.api-token }}
+        organization-id: ${{ inputs.organization-id }}
+        project-slug: ${{ inputs.project-slug }}
+        signing-policy-slug: ${{ inputs.signing-policy-slug }}
+        artifact-configuration-slug: ${{ inputs.artifact-configuration-slug }}
+        github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+        wait-for-completion: true
+        # A person approves each request in SignPath; give them an hour.
+        wait-for-completion-timeout-in-seconds: 3600
+        output-artifact-directory: ${{ steps.wait.outputs.signed-directory }}
+        parameters: |
+          productVersion: ${{ toJSON(steps.wait.outputs.product-version) }}
+
+    - name: Check the signature and hand the ${{ inputs.role }} back
+      shell: pwsh
+      working-directory: desktop
+      env:
+        ROLE: ${{ inputs.role }}
+        SIGNED: ${{ steps.wait.outputs.signed-directory }}
+        FILE: ${{ steps.wait.outputs.file }}
+        PUBLISHER: ${{ inputs.publisher }}
+        REQUEST_URL: ${{ steps.sign.outputs.signing-request-web-url }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+        Write-Host "SignPath request: $env:REQUEST_URL"
+        $path = Join-Path $env:SIGNED $env:FILE
+        $sig = Get-AuthenticodeSignature -LiteralPath $path
+        Write-Host "$($env:FILE): $($sig.Status) $($sig.SignerCertificate.Subject)"
+        if ($sig.Status -ne 'Valid') { throw "$($env:FILE) has no valid signature: $($sig.Status)" }
+        # electron-updater compares this CN with app-update.yml's publisherName
+        # on every later update (CONTRACT-V10-UPDATE §8): they must be equal.
+        $cn = ($sig.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false))
+        if ($cn -cne $env:PUBLISHER) { throw "signed by '$cn', expected '$($env:PUBLISHER)' (SIGNPATH_PUBLISHER_NAME)" }
+        # Without a timestamp the signature dies with the certificate.
+        if (-not $sig.TimeStamperCertificate) { Write-Host "::warning::$($env:FILE) carries no timestamp" }
+        node scripts/signpath-bridge.cjs accept $env:ROLE
+        if ($LASTEXITCODE -ne 0) { throw "signpath-bridge accept $env:ROLE failed" }

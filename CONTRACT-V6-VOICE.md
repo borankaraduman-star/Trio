@@ -194,17 +194,10 @@ room has no stage and no strip.
 - Ayarlar's footer, in the desktop app only, adds "Masaüstü uygulaması
   <appVersion>" (`desktop-version`), or "Masaüstü uygulaması (eski sürüm)" when
   the bridge has no `appVersion`.
-- Update notice: desktop and server are released with one version, so when
-  `appVersion` is lower (semver, `lib/desktopVersion.ts`) than
-  `ready.server_version` — or this web build's own version when the server
-  does not say — or is missing, a band (`desktop-update`, dismissable per
-  version: `localStorage` `trio.desktopUpdateDismissed`) and a line in the
-  settings footer (`desktop-update-line`) say "Masaüstü uygulamasının yeni
-  sürümü var (<server version>). İndir". "İndir" is a `target="_blank"` link to
-  https://github.com/borankaraduman-star/Trio/releases/latest: the desktop
-  app's window-open handler denies the window and opens https links with
-  `shell.openExternal` (the system browser). Never shown in a plain browser.
-  No auto-updater (the builds are unsigned).
+- Update notice: **replaced by CONTRACT-V10-UPDATE** (the app updates itself
+  on Windows and as an AppImage; the notice follows the newest desktop release
+  from `/api/downloads`, not the server's version, and links this machine's
+  installer directly). The test ids below are kept.
 
 ## Test ids
 

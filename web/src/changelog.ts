@@ -15,6 +15,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.8.1',
+    lines: [
+      'Trio artık her küçük grup için: site, giriş ekranı ve tüm metinler buna göre yenilendi; sitede “Kendi sunucunu kur” bölümü var.',
+      'Proje MIT lisansıyla açık kaynak.',
+    ],
+  },
+  {
+    version: '0.8.0',
+    title: 'Masaüstü kendini güncelliyor',
+    lines: [
+      'Masaüstü uygulaması artık kendini güncelliyor (Windows ve Linux AppImage): yeni sürüm arka planda iner, “Yeniden başlat ve güncelle” ile ya da uygulamadan çıkınca kurulur. Sesli odadayken kendiliğinden yeniden başlamaz.',
+      'Bu son elle kurulum: 0.8.0’ı bir kez indirip kur, sonrası kendiliğinden gelir.',
+      'Ayarlar › Hakkında’da güncelleme durumu, “Güncellemeleri denetle” düğmesi ve otomatik indirmeyi kapatma seçeneği.',
+      'Yalnız sunucuyu ilgilendiren sürümlerde masaüstü uygulaması artık “yeni sürüm var” demiyor.',
+      'Mac’te (uygulama imzasız) güncelleme hâlâ elle; bildirim bu Mac’e uygun dosyayı doğrudan indiren bir düğme gösteriyor.',
+    ],
+  },
+  {
     version: '0.7.1',
     lines: [
       'İndirme sayfası yenilendi: Trio’nun neler yaptığını canlı örneklerle gösteriyor; bağlantıyı bir arkadaşına attığında önizlemesi de düzgün görünüyor.',

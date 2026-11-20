@@ -17,6 +17,12 @@ ince bir kabuk: arayüzün kendisi sizin Trio sunucunuzdan gelir; uygulama ona
   (sesli odadan düşmezsin). Tam çıkmak için tepsi menüsünden ya da
   `Trio → Çıkış` ile (Ctrl/Cmd+Q).
 - **Okunmamış sayısı** görev çubuğunda / Dock'ta rozet olarak.
+- **Kendini güncelleme (Windows, Linux AppImage):** yeni bir masaüstü sürümü
+  çıkınca arka planda iner; "Güncelleme hazır — Yeniden başlat ve güncelle"
+  der ya da uygulamadan çıkınca kurulur. Sesli odadayken asla kendiliğinden
+  yeniden başlamaz. macOS'ta uygulama imzasız olduğu için güncelleme elle
+  kurulur (uygulama doğrudan indirme düğmesi gösterir). Ayrıntı:
+  `CONTRACT-V10-UPDATE.md`; elle deneme listesi: `docs/guncelleme-kontrol.md`.
 
 ## İlk açılış
 

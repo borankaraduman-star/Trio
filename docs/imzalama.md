@@ -119,42 +119,71 @@ imzalı bir Windows dosyası için "yine de uyarırsa" satırını gösterir.
   sertifika varsa işe yarar; bulut HSM'li bir sertifika alırsan ona özel bir
   imza adımı eklemek gerekir (electron-builder'ın `win.signtoolOptions.sign`
   kancası).
+- Bulut HSM'li bir OV sertifika (ör. SSL.com eSigner'ın `CodeSignTool`'u,
+  Certum SimplySign) iş akışına SignPath'le **aynı yerden** bağlanır:
+  electron-builder'ın `win.signtoolOptions.sign` kancası her dosya için
+  sağlayıcının komut satırı aracını çağırır. SignPath'te araya bir insan onayı
+  girdiği için kanca arka planda bekleyen bir köprü
+  (`desktop/scripts/signpath-bridge.cjs`); bulut HSM'de kimlik bilgileri sır
+  olarak sunucuda durduğu için kanca doğrudan imzalar, köprü gerekmez. Yaklaşık
+  yarım günlük iş; yazılmadı.
+- **Yayımcı değişimi güncellemeyi bozar:** imzalı bir sürümden sonra başka bir
+  yayımcıya geçmek, kurulu uygulamaların yeni dosyayı reddetmesine yol açar;
+  herkes bir kez `/indir`'den elle kurar (CONTRACT-V10-UPDATE §9). SignPath
+  ile başlarsan OV'ye geçiş (ya da tersi) bu bedeli öder.
 
-### c) SignPath Foundation — ücretsiz, ama açık kaynak şartı
+### c) SignPath Foundation — ücretsiz; **seçilen yol**
 
-- Açık kaynak projelere ücretsiz imza (sertifika SignPath Foundation adına).
-- Şartlar (signpath.org — birinci elden): OSI onaylı bir lisans, ticari çift
-  lisans yok, kötü amaçlı yazılım yok, imzalayan ekip depo sahibi ekip, iki
-  aşamalı doğrulama. Depo **herkese açık** olmalı (bu, ikinci elden bir rehberde
-  yazıyor; resmi sayfada açıkça bulamadım).
-- Trio'nun deposu özelse bu yol kapalı. Depoyu açmak **sunucunun davet kodunu
-  ya da verileri açığa çıkarmaz** (onlar Railway'de), ama kod herkese açık olur.
-  Karar senin.
+- Açık kaynak projelere ücretsiz imza; sertifika ve yayımcı adı **SignPath
+  Foundation**, anahtar onların donanımında. Trio artık MIT lisanslı ve deposu
+  herkese açık, yani şartların temelini karşılıyor.
+- Başvuru, şartlar (MFA, README'deki "Code signing policy", her imzanın elle
+  onayı), Trio için riskler (proje çok yeni, tek bakımcı, kamuya duyurulmamış:
+  reddedilebilir) ve onaydan sonra girilecek sırlar:
+  **[`docs/signpath-basvuru.md`](signpath-basvuru.md)**.
+- İş akışında hazır: `SIGNPATH_API_TOKEN` (secret) +
+  `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`,
+  `SIGNPATH_SIGNING_POLICY_SLUG` (variables). İmza electron-builder'ın içinde
+  atılır (`Trio.exe`, kaldırıcı, kurulum dosyası), böylece güncelleme bilgisi
+  (`latest.yml`) imzalı dosyaya göre yazılır.
 
-### d) Microsoft Store — bireyler için ücretsiz
+### d) Microsoft Store — bireyler için ücretsiz, ayrı bir dağıtım
 
 - Eylül 2025'ten beri bireysel geliştirici hesabı **ücretsiz** (Windows
-  Developer Blog, 10 Eylül 2025 — birinci elden; şirket hesabı tek seferlik
-  99 $). Kimlik doğrulaması kimlik kartı + selfie ile.
+  Developer Blog, 10 Eylül 2025 — birinci elden, 19 Kasım'da; şirket hesabı tek
+  seferlik ~99 $). Kimlik doğrulaması kimlik kartı + selfie ile.
 - Mağazadan kurulan MSIX paketini Microsoft imzalar; SmartScreen uyarısı
-  çıkmaz. electron-builder `appx` hedefini üretebilir.
-- Ama: mağaza incelemesi, mağaza sayfası, ve uygulamanın her sürümde
-  mağazaya gönderilmesi gerekir; kullanıcılar uygulamayı `/indir`'den değil
-  Microsoft Store'dan kurar. Bu iş akışına **bağlanmadı** (gönderim elle).
-  Mağazanın bir sunucu adresi soran "özel" bir sohbet uygulamasını kabul
-  edip etmeyeceğini doğrulayamadım.
+  çıkmaz. electron-builder `appx` hedefiyle MSIX üretir (mağaza paketi için
+  kendi imzamız gerekmez; mağaza dışında dağıtılan bir MSIX ise imzasız
+  kurulamaz).
+- **Kendini güncelleme mağaza sürümünde kullanılamaz**: mağaza kurulumunu
+  mağaza günceller; electron-updater orada çalışmaz ve çalışmamalı. Uygulamanın
+  güncelleme bildirimi (`desktop/src/shared/update.ts`) mağaza kurulumunu tanıyıp
+  "Microsoft Store günceller" demeli — bu kod değişikliği yapılmadı.
+- **Mağaza politikası:** sunucu adresi soran, kendi sunucunda çalışan bir
+  sohbet uygulaması kendiliğinden yasak değil; ama inceleme ekibinin
+  uygulamayı deneyebilmesi gerekir. Gönderim notlarına çalışan bir deneme
+  sunucusu adresi ve davet kodu yazman gerekecek (mağazanın "giriş gerektiren
+  uygulamalar için test hesabı" kuralı; bu sürümde kuralın tam metnini
+  **doğrulamadım**). Global kısayol dinleyicisi (bas-konuş) MSIX'te
+  `runFullTrust` ile çalışır; incelemede sorulabilir.
+- Çaba: ilk gönderim için yaklaşık bir-iki gün (appx hedefi, mağaza simgeleri ve
+  sayfası, güncelleme bildiriminin mağaza durumu, gönderim) + inceleme süresi;
+  sonra her sürüm elle mağazaya yüklenir (iş akışına bağlanmadı). Arkadaşlar
+  uygulamayı `/indir`'den değil Microsoft Store'dan kurar; iki ayrı Windows
+  kurulumu olur.
 
 ### Önerim
 
-1. **macOS'u şimdi imzala**: üyeliğin zaten var, maliyeti sıfır, uyarı tamamen
+1. **Windows: SignPath Foundation'a başvur** (`docs/signpath-basvuru.md`).
+   Ücretsiz, iş akışı hazır, onaydan sonra sırları girmek yeter.
+2. **macOS'u imzala**: üyeliğin zaten var, maliyeti sıfır, uyarı tamamen
    kalkar. Yukarıdaki üç adım yarım saat.
-2. **Windows'ta şimdilik imzasız kal**, sayfadaki yardım ve SHA-256 doğrulaması
-   birbirini tanıyan küçük bir grup için yeterli. Uyarı ilk açılışta bir kez çıkar.
-3. Windows uyarısı gerçekten sorun olursa sırayla: depo açık kaynak olabiliyorsa
-   **SignPath Foundation** (ücretsiz); olamıyorsa **Microsoft Store** (ücretsiz,
-   ama mağaza süreci); en son yıllık ücretli bir **OV** sertifika (bulut HSM'li,
-   CI'ya özel imza adımıyla). EV'ye ve Azure'a (bireysel olarak erişilemiyor)
-   para verme.
+3. SignPath reddederse: **Microsoft Store** (ücretsiz ama mağaza süreci ve ayrı
+   bir kurulum), ya da yıllık ücretli bir **OV** sertifika (bulut HSM'li; bkz.
+   b). EV'ye ve Azure'a (bireysel olarak erişilemiyor) para verme.
+4. O zamana kadar `/indir`'deki yardım ve SHA-256 doğrulaması yeterli; uyarı
+   ilk açılışta bir kez çıkar.
 
 ---
 
@@ -169,7 +198,8 @@ AppImage için imza yaygın değil ve masaüstleri uyarı göstermez; yalnız
   (EV/OV itibarı, Artifact Signing uygunluğu)
 - Microsoft Learn — Quickstart: Set up Artifact Signing (bireyler: ABD/Kanada)
 - DigiCert Knowledge Base — EV-signed application showing SmartScreen warnings
-- signpath.org/terms — SignPath Foundation koşulları
+- signpath.org/terms — SignPath Foundation koşulları (ayrıntı ve kaynaklar:
+  `docs/signpath-basvuru.md`)
 - Windows Developer Blog, 10 Eylül 2025 — Free developer registration for
   individual developers on Microsoft Store
 - shop.certum.eu — Open Source Code Signing (fiyatlar çelişkili)
@@ -177,3 +207,22 @@ AppImage için imza yaygın değil ve masaüstleri uyarı göstermez; yalnız
   `mac.notarize`, `APPLE_API_KEY` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`
 - macOS Sequoia: Control+tık ile açma kaldırıldı, "Yine de Aç" Gizlilik ve
   Güvenlik'te (9to5Mac, iDownloadBlog, Michael Tsai, Ağustos 2024 — ikinci elden)
+
+---
+
+## İmza ve kendini güncelleme (CONTRACT-V10-UPDATE)
+
+- **Windows** imzasızken de kendini günceller; imza eklenince güncelleyici yeni
+  kurulumun **aynı yayımcı** tarafından imzalandığını da denetler (ek bir
+  güvence: GitHub hesabı ele geçse bile imzasız ya da başka imzalı bir dosya
+  kurulmaz).
+  İmzasız 0.8.x'ten ilk imzalı sürüme geçiş kendiliğinden olur; imzalı bir
+  sürümden sonra imzasız (ya da başka yayımcılı) bir sürüm ise kurulu
+  uygulamalarca **reddedilir** — iş akışı bu yüzden o durumda durur
+  (`TRIO_ALLOW_UNSIGNED_WINDOWS`, CONTRACT-V10-UPDATE §9).
+- **macOS** ancak Developer ID ile imzalı ve onaylı (notarize) bir uygulamada
+  kendini güncelleyebilir. Sırlar eklenince iş akışı uygulamaya bunu söyler
+  (`trioBuild.macSigned`); **ilk imzalı sürüm Mac'te bir kez elle kurulur**,
+  sonrakiler kendiliğinden gelir.
+- electron-builder 27'ye geçerken imzasız Windows yapısı için
+  `win.verifyUpdateCodeSignature: false` açıkça yazılmalı (CONTRACT-V10-UPDATE §8).

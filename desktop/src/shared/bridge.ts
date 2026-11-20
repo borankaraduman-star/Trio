@@ -6,6 +6,7 @@
  */
 import type { MusicSupport, PrepareResult } from "./musicCapture";
 import type { NowPlaying } from "./nowPlaying";
+import type { UpdateState } from "./update";
 
 export type { MusicSupport, PrepareResult, NowPlaying };
 
@@ -18,4 +19,16 @@ export interface TrioDesktopMusicBridge {
   setNowPlayingWatch(on: boolean): void;
   /** Called on every change while the watch is on. */
   onNowPlaying(cb: (info: NowPlaying | null) => void): () => void;
+}
+
+/** CONTRACT-V10-UPDATE §3: absent in apps built before it (the page then shows the manual notice). */
+export interface TrioDesktopUpdateBridge {
+  getUpdateState(): Promise<UpdateState | null>;
+  onUpdateState(cb: (state: UpdateState) => void): () => void;
+  checkForUpdates(): Promise<UpdateState | null>;
+  /** Only with status "available" (automatic download off) or after a failed download. */
+  downloadUpdate(): Promise<UpdateState | null>;
+  /** Restarts into the ready update; refused (`in-voice`) while the page is in a voice room. */
+  installUpdate(): Promise<{ ok: boolean; reason?: string }>;
+  setAutoUpdate(on: boolean): void;
 }
