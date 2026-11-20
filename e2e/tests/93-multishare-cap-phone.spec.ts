@@ -82,13 +82,16 @@ test('a phone viewer with two and three shares', async ({ browser, trio }) => {
   expect(boxes).toHaveLength(2)
   expect(boxes[1].top).toBeGreaterThan(boxes[0].top + 50)
   for (const box of boxes) expect(box.width).toBeGreaterThan(330)
+  await phone.page.waitForTimeout(1500)
   await phone.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-390-2.png') })
 
   await zeynep.page.getByTestId('btn-screen').click()
   await expectDecodingFrom(phone, [ayse.user.id, mehmet.user.id, zeynep.user.id])
   await expect(phone.page.getByTestId('stage-sharing-line')).toHaveText('Ayşe, Mehmet ve Zeynep ekran paylaşıyor')
+  await phone.page.waitForTimeout(1500)
   await phone.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-390-3.png') })
   await phone.page.getByTestId('stage-mode-focus').click()
+  await phone.page.waitForTimeout(1500)
   await phone.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-390-3-focus.png') })
 
   // Collapsed: hidden, still decoding (V7), and sent small (V12: nobody looks at it).

@@ -92,6 +92,7 @@ test('two shares: Sen de paylaş, Yan yana and Odak, each viewer sent the size i
   expect(boxes).toHaveLength(2)
   expect(Math.abs(boxes[0].width - boxes[1].width)).toBeLessThan(2)
   expect(Math.abs(boxes[0].top - boxes[1].top)).toBeLessThan(2)
+  await zeynep.page.waitForTimeout(1500)
   await zeynep.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-1440-2-side.png') })
 
   // Two shares' sound at once (both fake captures carry a tone): both flow, each with its own volume.
@@ -125,6 +126,7 @@ test('two shares: Sen de paylaş, Yan yana and Odak, each viewer sent the size i
   console.log(`[92] Odak strip: Mehmet→Zeynep ${Math.round(thumbOut.kbps)} kbit/s, ${Math.round(thumbOut.fps)} fps, h ${thumbOut.height}, scale ${thumb.scale}`)
   expect(thumbOut.fps).toBeLessThanOrEqual(13)
   expect(thumbOut.height).toBeLessThanOrEqual(362)
+  await zeynep.page.waitForTimeout(1500)
   await zeynep.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-1440-2-focus.png') })
 
   // → moves the focus: Mehmet large, Ayşe small.
@@ -198,13 +200,17 @@ test('three shares at 911 px (150 %) and on a phone: the layouts stay readable',
   for (const person of people) await joinVoice(person)
   for (const sharer of [ayse, mehmet]) await sharer.page.getByTestId('btn-screen').click()
   await expectDecodingFrom(ali, [ayse.user.id, mehmet.user.id])
+  await ali.page.waitForTimeout(1500)
   await ali.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-911-2-side.png') })
   await zeynep.page.getByTestId('btn-screen').click()
   await expectDecodingFrom(ali, [ayse.user.id, mehmet.user.id, zeynep.user.id])
   await expect(ali.page.getByTestId('stage-sharing-line')).toHaveText('Ayşe, Mehmet ve Zeynep ekran paylaşıyor')
+  await ali.page.waitForTimeout(1500)
   await ali.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-911-3-side.png') })
   await ali.page.getByTestId('stage-mode-focus').click()
+  await ali.page.waitForTimeout(1500)
   await ali.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-911-3-focus.png') })
+  await zeynep.page.waitForTimeout(1500)
   await zeynep.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-1440-3-side.png') })
   // 1–9 picks a screen.
   await ali.page.getByTestId('stage').focus()
