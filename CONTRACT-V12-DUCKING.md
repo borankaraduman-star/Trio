@@ -62,13 +62,13 @@ How each stream reaches the speakers today, and what ducks it:
   and a duck only matters while the share plays sound. Even throttled, a late
   tick lands on the right value (coarser, never wrong or lagging).
   **Measured** (e2e 96): ticks ≤ 22 ms apart visible; with the page told it is
-  hidden, ≤ 12 ms, 101 ticks over the episode. **Not measured**: Chromium's
+  hidden, ≤ 14 ms, ~100 ticks over the episode. **Not measured**: Chromium's
   real throttling of a hidden page — headless Chromium keeps every page
   `visible` whatever is done (measured: another tab in front, `window.open`, a
   minimised window, a tab opened over CDP, headed under Xvfb), so spec 96
   overrides `document.visibilityState`/`hidden` and fires `visibilitychange`.
 - **Steps.** On the element path the volume moves in 10 ms steps; the largest
-  measured step in e2e 96 was 0.099 of full scale (the cosine's steepest point
+  measured step in e2e 96 was ~0.10 of full scale (the cosine's steepest point
   at amount 60 %: 0.6 × π/2 × 10/100 = 0.094, plus timer jitter). On the boost
   path the AudioParam smooths each step with a 10 ms time constant.
 
@@ -128,7 +128,7 @@ Why these defaults:
   the prefs and their key.
 - e2e 96 (three browsers, fake media; the share's sound is a steady 0.2 tone,
   the speaker a continuous speech-like file): from the speaker's ring on the
-  listener's row to the ducked level **88–95 ms**; from her unmute click
+  listener's row to the ducked level **88–96 ms**; from her unmute click
   **~250–400 ms** (network, jitter buffer, detector poll, attack); ducked level
   0.40–0.414 while she speaks; back to full **840 ms** after her ring goes off
   (250 + 650 = 900 ms nominal from the ducker's own view); the boost route's
@@ -139,5 +139,6 @@ Why these defaults:
 - **Not verified**: real speech (the ring's threshold on real voices, so how
   often a cough or a laugh ducks), how a duck SOUNDS on a real game (whether
   60 %/650 ms is pleasant, any audible stepping on the element path in a real
-  output device), real hidden-tab/minimised-window throttling in Chrome and in
-  the desktop app (Electron's `backgroundThrottling`), Safari and Firefox.
+  output device), real hidden-tab/minimised-window throttling in Chrome (the
+  desktop app's window sets `backgroundThrottling: false`, so there it does
+  not apply), Safari and Firefox.
