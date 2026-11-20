@@ -17,6 +17,7 @@ response, page and link is then exactly what v10 served.
 | variable | default | meaning |
 |---|---|---|
 | `TRIO_PUBLIC_URL` | unset | the canonical address, a plain origin: `https://<host>[:<port>]`, no path, query, fragment or user info (a single trailing `/` is dropped). Anything else refuses to start. Set it only once the new address serves the app with a certificate |
+| `TRIO_NEXT_URL` | unset | the address the server WILL have (the rename path, §8), same form as `TRIO_PUBLIC_URL`. Clients are told beforehand; move codes are redeemable there too |
 | `TRIO_RECOVERY_CODE` | unset | the owner's lock-out insurance (§6): at least 24 characters, none of them whitespace; anything shorter refuses to start. Unset = the feature is off |
 | `TRIO_TEST_HTTP_PUBLIC_URL` | unset | TESTS ONLY: `1` lets `TRIO_PUBLIC_URL` be `http://127.0.0.1:<port>` or `http://localhost:<port>`. Refused on Railway (`RAILWAY_ENVIRONMENT`, `RAILWAY_ENVIRONMENT_NAME` or `RAILWAY_PROJECT_ID` set) |
 
@@ -34,8 +35,8 @@ server writes; the request's `Host` is not used for them any more:
   `url`/`image` (CONTRACT-V6-DOWNLOAD);
 - `/robots.txt`'s `Sitemap:` and `/sitemap.xml`'s `<loc>`;
 - `GET /api/health` carries it: `{"ok", "version", "persistent", "data_since",
-  "public_url": "<origin>"}` (unauthenticated, as before; the key is absent
-  while unset).
+  "public_url": "<origin>", "next_url": "<origin>"}` (unauthenticated, as
+  before; each key is absent while its variable is unset).
 
 The client builds its own links from it (`web/src/lib/address.ts`):
 
@@ -71,7 +72,7 @@ made on (CONTRACT-V6-PUSH: a subscription belongs to an origin).
     peek / join / adopt:
       403 INVALID_MOVE_CODE  unknown, expired, used, its old session is gone, its user removed
                              (the join path answers INVALID_LINK_CODE, as for any bad code)
-      409 NOT_CANONICAL      asked on an origin that is not TRIO_PUBLIC_URL (or it is unset)
+      409 NOT_CANONICAL      asked on an origin that is neither TRIO_PUBLIC_URL nor TRIO_NEXT_URL
       409 OTHER_ACCOUNT      adopt: the code belongs to somebody else (the code is spent)
       429 RATE_LIMITED       the join limiter (CONTRACT-V3 §5)
 
@@ -202,7 +203,18 @@ server page (`fromServerPage`), it:
    permission handlers and every IPC origin check then follow the new origin.
 
 A hostile page asking for `https://evil.example` is refused at step 2 (the
-trusted server does not declare it). `TRIO_SERVER_URL` in the environment still
+trusted server does not declare it).
+
+    window.trioDesktop.storeNextMove({origin, code, expiresAt}) → Promise<{ok} | {ok: false, reason}>
+
+§8: kept only when the CURRENT server's `/api/health` declares `origin` as its
+`next_url` (fetched by the main process). When the stored server cannot be
+reached (`did-fail-load`), the shell's “Sunucuya ulaşılamıyor — adres
+değişmiş olabilir” page offers the remembered address as a button (and a field
+to type another); with a remembered next code it first tries by itself: the
+next address must answer as a Trio server that declares it (`next_url` or
+`public_url`); then it is stored and `<next>/#tasi=<code>` is opened. The
+stored code is forgotten once used or expired. `TRIO_SERVER_URL` in the environment still
 wins at the next start.
 
 **Older shells** (no `moveServer`): the band says “Uygulama menüsü → Sunucu
@@ -231,7 +243,70 @@ device in with nothing but the dashboard, also when every session is gone:
   (a restart) clears `recovery_used_at` and the band.
 - Client: “Zaten hesabım var” › “Sunucunun sahibiysen: kurtarma kodu”.
 
-## 7. Security
+## 7. The owner's order of steps
+
+The rename path step by step, in Turkish, is `docs/adres-degistirme.md`; the
+custom-domain path (both addresses alive) needs only §1's `TRIO_PUBLIC_URL`
+once the new address serves the app with a certificate.
+
+## 8. The rename path: both addresses are never alive together
+
+Renaming the generated Railway domain (or moving the service) kills the old
+origin the moment it happens, so §3's one tap (which needs both) cannot help.
+What can be done is done BEFORE the rename:
+
+    POST /api/move/next      (Bearer; any origin but TRIO_NEXT_URL) {"prefs"}
+      → 201 {"code", "expires_at", "next_url", "url": "<next_url>/#tasi=<code>"}
+      409 NO_NEXT_URL | ALREADY_HERE ; 403 FORBIDDEN ; 422 INVALID_PREFS — as §3
+
+A **next code** is a move code (`kind = 'next'`) that lives **7 days**; one per
+session (asking again replaces it; it does not replace the 10-minute one).
+It is redeemed exactly like a move code, on `TRIO_NEXT_URL` (which, after the
+rename, is the server's own address) or on `TRIO_PUBLIC_URL`. Like every move
+code it dies with the session it was made from.
+
+- **Desktop app (new shell):** the page sees `next_url`, silently asks for a
+  next code and hands it to the shell (`storeNextMove`, §5); the shell keeps
+  `{next origin, code, expires}` in its own store, which is not origin-bound.
+  When the stored server stops answering, the shell checks the remembered next
+  address itself (`/api/health` answers `ok: true` and declares that address
+  as its `next_url` or `public_url`), switches to it and opens
+  `<next>/#tasi=<code>`: one tap (“Devam et”), no typing.
+- **Browser / phone:** a band “Trio’nun adresi yakında değişecek: <host>” with
+  [Taşınma kodunu göster]: the code, a copy button and the new link
+  (`<next>/#tasi=<code>`) to keep somewhere. A browser cannot carry anything
+  across origins by itself; whoever did not keep it gets a code from the
+  owner (§9).
+- **Yönetim** shows how many sessions hold a live next code (`prepared` in
+  `GET /api/owner/address`).
+
+Lost with the old origin, and said so in docs/adres-degistirme.md: invite
+links and device QRs pointing at it, push subscriptions (a new permission is
+asked on the new origin), the installed home-screen app.
+
+## 9. A code for everybody (the owner, after the address changed)
+
+    POST   /api/owner/bulk-codes  (owner) {"confirm_code": <the invite code>}
+      → 201 {"codes": [{"user": {id, name}, "code", "url": "<origin>/#cihaz=<code>"}], "expires_at"}
+    GET    /api/owner/bulk-codes  (owner) → {"live": n, "expires_at": str | null}
+    DELETE /api/owner/bulk-codes  (owner) → {"cancelled": n}
+
+- One CONTRACT-V3 §2 link code per active member except the owner, valid
+  **24 hours**, single use, stored as `link_codes` rows with `bulk = 1`. They
+  do not count towards a person's 5 live codes (and are not limited by them).
+  Asking again REPLACES every outstanding bulk code (at most one per person);
+  DELETE cancels them all. The codes are shown once (never retrievable).
+- The confirm code is the invite code, spending the join limiter (CONTRACT-V6-OPS §1).
+- `<origin>` is `TRIO_PUBLIC_URL` when set, else the request's origin.
+- **Why 24 hours is acceptable:** the ten-minute life of a code bounds the
+  time a code read over somebody's shoulder is worth anything. Here the owner
+  sends each friend their own code in a private message and friends answer
+  within hours, not minutes. The bound is still there (24 h, one per person,
+  single use, ~49.5 bits against at most ~90 checked guesses per 10 minutes —
+  about 13 000 guesses a day against 31^10 ≈ 8·10^14), every creation and
+  cancellation is logged at WARNING, and the owner can cancel all at once.
+
+## 10. Security
 
 - **No open redirect.** The only navigation the move makes is to the
   `public_url` the server declares in its own response (§3, `url`), and the
