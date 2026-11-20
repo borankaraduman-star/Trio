@@ -2,7 +2,6 @@ import { useSyncExternalStore } from 'react'
 import type { Member } from '../types'
 import { Avatar } from './Avatar'
 import { hereLine, showChannel, VIEWER_ROWS_MAX } from '../lib/viewers'
-import { namesWithMore } from '../lib/groups'
 
 /**
  * CONTRACT-V10-GROUPS §4b: who is in a text channel right now, under its row
@@ -45,7 +44,6 @@ export function ChannelViewerList({ channelId, people, me }: { channelId: number
       <span className="channel-viewer-more" data-testid={`channel-viewers-more-${channelId}`}>
         +{people.length - shown.length}
       </span>
-      <span className="channel-viewer-names">{namesWithMore(people.map((p) => (p.id === me ? 'Sen' : p.name)), 1)}</span>
     </div>
   )
 }
