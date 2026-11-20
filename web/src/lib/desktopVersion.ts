@@ -147,8 +147,8 @@ export type DesktopNotice =
   /** Download and install by hand (no updater, or one that cannot update here, or one that failed). */
   | { kind: 'manual'; version: string; downloads: DownloadButton[]; lastManual: boolean }
   /** The shell found a newer version and automatic download is off. */
-  | { kind: 'available'; version: string }
-  | { kind: 'downloading'; version: string; percent: number | null }
+  | { kind: 'available'; version: string; inVoice: boolean }
+  | { kind: 'downloading'; version: string; percent: number | null; inVoice: boolean }
   /** Downloaded and verified: "Yeniden başlat ve güncelle". */
   | { kind: 'ready'; version: string; inVoice: boolean }
 
@@ -183,8 +183,10 @@ export function desktopNotice(input: NoticeInput): DesktopNotice | null {
     if ((shell.status === 'ready' || shell.status === 'installing') && version) {
       return { kind: 'ready', version, inVoice: shell.inVoice }
     }
-    if (shell.status === 'available' && version) return { kind: 'available', version }
-    if (shell.status === 'downloading' && version) return { kind: 'downloading', version, percent: shell.percent }
+    if (shell.status === 'available' && version) return { kind: 'available', version, inVoice: shell.inVoice }
+    if (shell.status === 'downloading' && version) {
+      return { kind: 'downloading', version, percent: shell.percent, inVoice: shell.inVoice }
+    }
     // Self-update failed: the newer release is still one download away.
     if (shell.status !== 'error') return null
   }
@@ -254,6 +256,169 @@ export function statusText(state: ShellUpdateState): string {
 
 export function updateText(version: string): string {
   return `Masaüstü uygulamasının yeni sürümü var (${version}).`
+}
+
+/** The band's one line for the shell's own states (CONTRACT-V10-UPDATE §5). */
+export function bandText(notice: Exclude<DesktopNotice, { kind: 'manual' }>): string {
+  const inVoice = notice.inVoice ? ' — sesli odadan çıkınca kurulabilir' : ''
+  switch (notice.kind) {
+    case 'available':
+      return updateText(notice.version)
+    case 'downloading':
+      return `Güncelleme indiriliyor: ${notice.version} (%${notice.percent ?? 0})${inVoice}`
+    case 'ready':
+      return `Güncelleme hazır: ${notice.version}${inVoice}`
+  }
+}
+
+// ------------------------------------------------------------ "look now"
+
+/**
+ * CONTRACT-V10-UPDATE §4a: the page learns of a new desktop release from
+ * `/api/downloads` (polled) long before the shell's own schedule would, and
+ * then asks the shell to look (`checkForUpdates()`, which every updating
+ * shell since 0.8.0 has). The shell stays the authority: it reads its pinned
+ * feed and decides; this only says "look now". At most once per version per
+ * `HINT_RETRY_MS`, also across reloads.
+ */
+export const HINT_RETRY_MS = 10 * 60 * 1000
+export const HINT_KEY = 'trio.desktopUpdateHint'
+/** How often an open page asks the server for the newest desktop release. */
+export const RELEASE_POLL_MS = 5 * 60 * 1000
+
+export interface HintRecord {
+  version: string
+  at: number
+}
+
+export interface HintInput {
+  appVersion: unknown
+  hasUpdater: boolean
+  shell: ShellUpdateState | null
+  release: DesktopRelease | null
+  last: HintRecord | null
+  now: number
+}
+
+/** Statuses in which the shell is already busy with (or done with) an update: never nudged. */
+const SHELL_BUSY: readonly ShellUpdateState['status'][] = ['checking', 'downloading', 'ready', 'installing', 'manual']
+
+export function shouldAskShell(input: HintInput): boolean {
+  const { shell, release } = input
+  if (!input.hasUpdater || !shell || shell.capability !== 'auto' || !release) return false
+  if (!newerRelease(input.appVersion, release)) return false
+  if (SHELL_BUSY.includes(shell.status)) return false
+  // The shell already knows this version (or a newer one) and only waits for "İndir".
+  if (shell.status === 'available' && shell.version && (compareVersions(shell.version, release.version) ?? -1) >= 0) {
+    return false
+  }
+  const last = input.last
+  if (last && last.version === release.version && input.now - last.at >= 0 && input.now - last.at < HINT_RETRY_MS) {
+    return false
+  }
+  return true
+}
+
+export function loadHint(storage: Pick<Storage, 'getItem'> | null = safeStorage()): HintRecord | null {
+  try {
+    const raw = JSON.parse(storage?.getItem(HINT_KEY) ?? 'null') as Partial<HintRecord> | null
+    return raw && typeof raw.version === 'string' && typeof raw.at === 'number' ? { version: raw.version, at: raw.at } : null
+  } catch {
+    return null
+  }
+}
+
+export function saveHint(record: HintRecord, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
+  try {
+    storage?.setItem(HINT_KEY, JSON.stringify(record))
+  } catch {
+    // Private mode: the in-memory record still rate-limits this page.
+  }
+}
+
+/** "Sonra" on available/downloading, per version; a ready update shows again. */
+export const LATER_KEY = 'trio.desktopUpdateLater'
+
+export function loadLater(storage: Pick<Storage, 'getItem'> | null = safeStorage()): string | null {
+  try {
+    return storage?.getItem(LATER_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+export function saveLater(version: string, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
+  try {
+    storage?.setItem(LATER_KEY, version)
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * The newest desktop release, kept fresh while somebody watches: asked on the
+ * first subscription, every `RELEASE_POLL_MS`, when the page becomes visible
+ * again (respecting the poll interval) and on `refresh(true)` (the socket's
+ * `ready`, i.e. every (re)connect; at most once per `FORCE_GAP_MS`). The
+ * server caches GitHub for ten minutes, so these are in-memory answers.
+ */
+export const FORCE_GAP_MS = 30 * 1000
+
+export interface ReleaseWatchDeps {
+  fetchRelease: () => Promise<DesktopRelease | null>
+  now: () => number
+  setInterval: (cb: () => void, ms: number) => unknown
+  clearInterval: (handle: unknown) => void
+}
+
+export class ReleaseWatch {
+  private value: DesktopRelease | null = null
+  private askedAt: number | null = null
+  private inFlight: Promise<void> | null = null
+  private timer: unknown = null
+  private readonly listeners = new Set<(release: DesktopRelease | null) => void>()
+
+  constructor(private readonly deps: ReleaseWatchDeps) {}
+
+  get current(): DesktopRelease | null {
+    return this.value
+  }
+
+  subscribe(listener: (release: DesktopRelease | null) => void): () => void {
+    this.listeners.add(listener)
+    if (this.listeners.size === 1) {
+      this.timer = this.deps.setInterval(() => void this.refresh(), RELEASE_POLL_MS)
+    }
+    void this.refresh()
+    return () => {
+      this.listeners.delete(listener)
+      if (this.listeners.size === 0 && this.timer !== null) {
+        this.deps.clearInterval(this.timer)
+        this.timer = null
+      }
+    }
+  }
+
+  /** Asks the server unless it was asked recently (`force`: recently = `FORCE_GAP_MS`). */
+  refresh(force = false): Promise<void> {
+    if (this.inFlight) return this.inFlight
+    const now = this.deps.now()
+    const gap = force ? FORCE_GAP_MS : RELEASE_POLL_MS - 1000
+    if (this.askedAt !== null && now - this.askedAt >= 0 && now - this.askedAt < gap) return Promise.resolve()
+    this.askedAt = now
+    this.inFlight = this.deps
+      .fetchRelease()
+      .catch(() => null)
+      .then((release) => {
+        // A failed ask keeps what was known (GitHub or the server may be briefly down).
+        if (release) this.value = release
+        for (const listener of [...this.listeners]) listener(this.value)
+      })
+      .finally(() => {
+        this.inFlight = null
+      })
+    return this.inFlight
+  }
 }
 
 export function loadDismissed(storage: Pick<Storage, 'getItem'> | null = safeStorage()): string | null {

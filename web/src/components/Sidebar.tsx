@@ -13,6 +13,7 @@ import {
   SpeakerIcon,
 } from './icons'
 import { CameraIcon, SettingsIcon } from './icons2'
+import { DesktopUpdateDot } from './voice/DesktopVersion'
 import { ServerMark } from './ServerMark'
 import { EmptyState } from './EmptyState'
 import { MicLostNotice, PeerHealthBadge } from './VoiceHealth'
@@ -460,6 +461,7 @@ export function Sidebar(props: SidebarProps) {
           >
             <SettingsIcon />
             <BackupDot />
+            <DesktopUpdateDot />
           </button>
         )}
         {/* V7: signing out is in Ayarlar › Hesap (with its safe-logout dialog), not one tap from here. */}

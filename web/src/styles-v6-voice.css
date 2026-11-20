@@ -521,3 +521,15 @@
   padding-top: 0;
   border-top: 0;
 }
+
+/* CONTRACT-V10-UPDATE §5: a desktop update to show, on the settings button (left of the backup dot). */
+.ops-dot.update-dot {
+  right: auto;
+  left: 4px;
+  background: var(--trio-coral, #ee997f);
+}
+
+.drawer-toggle .ops-dot.update-dot {
+  left: auto;
+  right: 4px;
+}

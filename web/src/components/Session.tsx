@@ -71,7 +71,7 @@ import { useVoiceEvening } from '../useVoiceEvening'
 import { ShareMenu } from './voice/ShareMenu'
 import { stageExtras } from './voice/StageExtras'
 import { useParticipantMenu, VolumeSheet, type VolumeTarget } from './voice/VolumeSheet'
-import { DesktopUpdateBand } from './voice/DesktopVersion'
+import { DesktopUpdateBand, DesktopUpdateDot } from './voice/DesktopVersion'
 // CONTRACT-V7-PHONE: the call bar, presence where the member column is hidden, the collapsible stage.
 import { NO_MEMBERS_QUERY, PHONE_QUERY, useMediaQuery } from '../lib/phone'
 import { CallBar } from './phone/CallBar'
@@ -877,6 +877,7 @@ export function Session({
             <MenuIcon />
             {unreadTotal > 0 && <span className="unread-dot" />}
             <BackupDot />
+            <DesktopUpdateDot />
           </button>
           <HashIcon size={20} />
           <h1>{activeChannel?.name ?? 'Trio'}</h1>
