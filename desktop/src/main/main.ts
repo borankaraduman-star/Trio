@@ -272,6 +272,15 @@ app.on("web-contents-created", (_event, contents) => {
 
   contents.on("will-navigate", (event) => {
     if (contents === mainWindow?.webContents && isSameOrigin(event.url, serverOrigin)) return;
+    // CONTRACT-V12-MINI-DESKTOP: a new mini window's own first load, once (every later navigation is refused).
+    if (
+      contents !== mainWindow?.webContents &&
+      (contents.getURL() === "" || contents.getURL() === "about:blank") &&
+      isSameOrigin(event.url, serverOrigin) &&
+      miniWindows?.takeInitialLoad(event.url)
+    ) {
+      return;
+    }
     event.preventDefault();
     if (isExternalOpenable(event.url) && originOf(event.url) !== serverOrigin) {
       void shell.openExternal(event.url);

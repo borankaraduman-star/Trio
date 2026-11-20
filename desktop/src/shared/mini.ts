@@ -21,9 +21,9 @@ export const MAX_MINI_WINDOWS = 4;
 export const MINI_MIN = { width: 160, height: 90 } as const;
 export const MINI_DEFAULT = { width: 400, height: 225 } as const;
 export const MINI_MAX_SHARE = 0.6;
-/** Gap from the work area's edge when the shell places a window itself. */
-export const MINI_MARGIN = 16;
-/** A drag that ends this close to an edge of the work area snaps flush to it. */
+/** Gap from the work area's edge: where the shell places a window, and where a snap puts it. */
+export const MINI_MARGIN = 8;
+/** A drag that ends this close to an edge of the work area snaps to it (MINI_MARGIN from it). */
 export const SNAP_DISTANCE = 24;
 
 export const OPACITY_MIN = 0.4;
@@ -139,15 +139,24 @@ export function clampToWorkArea(bounds: Rect, workArea: Rect): Rect {
   return { x, y, width, height };
 }
 
-/** A window dropped within SNAP_DISTANCE of an edge is moved flush to it (corners are two edges). */
+/**
+ * A window dropped within SNAP_DISTANCE of an edge is moved to MINI_MARGIN from
+ * it (a corner is two edges). One that would not fit with the margin stays put.
+ */
 export function snapToEdges(bounds: Rect, workArea: Rect, distance = SNAP_DISTANCE): Rect {
   let { x, y } = bounds;
-  const right = workArea.x + workArea.width - bounds.width;
-  const bottom = workArea.y + workArea.height - bounds.height;
-  if (Math.abs(x - workArea.x) <= distance) x = workArea.x;
-  else if (Math.abs(x - right) <= distance) x = right;
-  if (Math.abs(y - workArea.y) <= distance) y = workArea.y;
-  else if (Math.abs(y - bottom) <= distance) y = bottom;
+  const left = workArea.x + MINI_MARGIN;
+  const top = workArea.y + MINI_MARGIN;
+  const right = workArea.x + workArea.width - bounds.width - MINI_MARGIN;
+  const bottom = workArea.y + workArea.height - bounds.height - MINI_MARGIN;
+  if (right >= left) {
+    if (x - workArea.x <= distance) x = left;
+    else if (workArea.x + workArea.width - (x + bounds.width) <= distance) x = right;
+  }
+  if (bottom >= top) {
+    if (y - workArea.y <= distance) y = top;
+    else if (workArea.y + workArea.height - (y + bounds.height) <= distance) y = bottom;
+  }
   return { x, y, width: bounds.width, height: bounds.height };
 }
 

@@ -15,6 +15,7 @@ import {
   idClass,
   isMiniId,
   maxMiniSize,
+  MINI_MIN,
   miniIdFromName,
   miniWindowOptions,
   normalizeMiniOptions,
@@ -85,10 +86,15 @@ interface Entry {
   aspect: number;
   moveTimer: unknown;
   closed: boolean;
+  /** The URL the window was allowed to load, until its first navigation has used it. */
+  initialUrl: string | null;
+  /** The last bounds reported (a closed window has none to ask). */
+  lastBounds: Rect;
 }
 
 interface Pending {
   origin: string;
+  url: string;
   bounds: Rect;
   displayId: number;
   focusable: boolean;
@@ -140,6 +146,7 @@ export class MiniWindowManager {
     const display = this.deps.screen.getAllDisplays().find((d) => d.id === place.displayId) ?? fallback;
     this.pending.set(check.id, {
       origin: serverOrigin,
+      url: details.url,
       bounds: place.bounds,
       displayId: place.displayId,
       focusable: check.focusable,
@@ -182,12 +189,14 @@ export class MiniWindowManager {
       aspect: aspectOf(pending.bounds),
       moveTimer: null,
       closed: false,
+      initialUrl: pending.url || null,
+      lastBounds: pending.bounds,
     };
     this.entries.set(id, entry);
     // Applied again after creation: the features string may have set other values.
     const display = this.displayFor(pending.bounds);
     const max = maxMiniSize(display.workArea);
-    win.setMinimumSize(160, 90);
+    win.setMinimumSize(MINI_MIN.width, MINI_MIN.height);
     win.setMaximumSize(max.width, max.height);
     win.setBounds(clampToWorkArea(pending.bounds, display.workArea));
     win.setAspectRatio(entry.aspect);
@@ -208,6 +217,28 @@ export class MiniWindowManager {
     win.on("closed", () => this.forget(entry));
     this.deps.onChange();
     return true;
+  }
+
+  /**
+   * Electron reports a child window's FIRST load as a navigation, which the
+   * app's guard refuses for every window but the main one. This allows exactly
+   * one: the URL a mini window was allowed to open, once, into a window that
+   * has loaded nothing yet (the caller checks that).
+   */
+  takeInitialLoad(url: string): boolean {
+    for (const entry of this.entries.values()) {
+      if (!entry.closed && entry.initialUrl !== null && entry.initialUrl === url) {
+        entry.initialUrl = null;
+        return true;
+      }
+    }
+    for (const [id, p] of this.pending) {
+      if (p.url === url && !this.entries.has(id)) {
+        p.url = "";
+        return true;
+      }
+    }
+    return false;
   }
 
   /** The page's `setOptions(id, …)`; unknown ids and other origins do nothing. */
@@ -385,8 +416,8 @@ export class MiniWindowManager {
       height = max.height;
       width = Math.round(height * aspect);
     }
-    if (height < 90) {
-      height = 90;
+    if (height < MINI_MIN.height) {
+      height = MINI_MIN.height;
       width = Math.round(height * aspect);
     }
     // Grow towards the corner it is in, so a window snapped bottom-right stays there.
@@ -447,18 +478,13 @@ export class MiniWindowManager {
     entry.closed = true;
     if (entry.moveTimer !== null) this.clearTimer(entry.moveTimer);
     if (this.entries.get(entry.id) === entry) this.entries.delete(entry.id);
-    let bounds: Rect = { x: 0, y: 0, width: 0, height: 0 };
-    try {
-      if (!entry.win.isDestroyed()) bounds = entry.win.getBounds();
-    } catch {
-      /* gone */
-    }
-    this.deps.onState({ id: entry.id, visible: false, clickThrough: false, bounds, closed: true });
+    this.deps.onState({ id: entry.id, visible: false, clickThrough: false, bounds: entry.lastBounds, closed: true });
     this.deps.onChange();
   }
 
   private stateOf(entry: Entry): MiniState {
-    return { id: entry.id, visible: entry.win.isVisible(), clickThrough: entry.clickThrough, bounds: entry.win.getBounds() };
+    entry.lastBounds = entry.win.getBounds();
+    return { id: entry.id, visible: entry.win.isVisible(), clickThrough: entry.clickThrough, bounds: entry.lastBounds };
   }
 
   private changed(entry: Entry): void {
