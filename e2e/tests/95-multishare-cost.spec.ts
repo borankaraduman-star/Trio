@@ -5,8 +5,8 @@
  * every viewer's received bitrate and decode time, in "Yan yana" and in
  * "Odak" (one large, the rest thumbnails), and with everybody on "Hafif".
  * Printed as `[95] …`; the assertions: the encoder time per frame of a
- * four-screen grid stays far under spec 91's baseline, Hafif costs less than
- * Odak, and every screen keeps decoding.
+ * four-screen grid stays far under spec 91's baseline, Hafif's encoder time
+ * is under Odak's, and every screen keeps decoding.
  */
 import { freshServer } from '../lib/server'
 import { crowd, expectFullMesh, joinAllAtOnce, round } from '../lib/groups'
@@ -92,5 +92,6 @@ test('four shares in a room of five: Yan yana, Odak, Hafif', async ({ browser, t
   // contract's §2): every viewer got every share at 1080p. Now a grid of four sends
   // small pictures, and Odak sends one large one per viewer.
   expect(side.encMax).toBeLessThan(60)
-  expect(light.sum).toBeLessThan(focus.sum)
+  // Odak's large picture is the expensive encode; Hafif takes it away (bytes vary by ±30 % between runs, encoder time does not).
+  expect(light.encMax).toBeLessThan(focus.encMax)
 })

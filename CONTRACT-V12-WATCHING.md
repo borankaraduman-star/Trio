@@ -343,9 +343,13 @@ Spec 95, four shares in a room of five, all five viewers' layouts the same:
 
 | layout | upload per sharer (to 4) | encoder ms/frame max | each viewer receives | decode ms/frame |
 |---|---|---|---|---|
-| Yan yana (2×2, all `thumb` at this size) | 207–293 kbit/s | 2.8–4.4 | 199–311 kbit/s | 0.4–0.8 |
-| Odak (one `mid`/`full`, three `thumb`) | 413–1210 kbit/s | 14–99 | 541–683 kbit/s | 3.2–5.8 |
-| Hafif on everything | see `[95]` in the e2e output (the run's numbers vary by ±30 %) | | | |
+| Yan yana (2×2, all `thumb` at this size) | 207–431 kbit/s | 2.8–6.0 | 199–480 kbit/s | 0.3–1.0 |
+| Odak (one `mid`, three `thumb`) | 413–1403 kbit/s | 11–99 | 541–904 kbit/s | 3.2–5.8 |
+| Hafif on every share | 756–773 kbit/s | 10–11 | 571–760 kbit/s | 1.6–2.1 |
+
+(Two runs; bytes move ±30 % between runs while the bandwidth estimate
+ramps, the encoder time per frame does not. Before V12 the same room spent
+230–490 ms per frame.)
 
 Spec 92 (three people, two shares, 1440×900): a strip thumbnail is sent at
 120 lines high (`scale` 3 of a 360-line slot, bandwidth-limited at the start)
