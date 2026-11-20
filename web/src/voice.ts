@@ -1760,7 +1760,7 @@ export class VoiceEngine {
 
       case 'error':
         // V10: the room is full (CONTRACT-V10-GROUPS §2): nothing was joined.
-        if (event.code === 'ROOM_FULL' && this.joinSent && (this.status === 'joining' || this.resuming)) {
+        if (event.code === 'ROOM_FULL' && event.request !== 'voice.ring' && this.joinSent && (this.status === 'joining' || this.resuming)) {
           if (event.channel_id === undefined || event.channel_id === this.channelId) {
             this.joinSent = false
             const limit = typeof event.limit === 'number' ? event.limit : null
