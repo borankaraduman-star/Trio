@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore, type RefObject } from 'react'
-import { ducker } from './audio/ducking'
+import { duckedPlayback, ducker } from './audio/ducking'
 import { playbackMixer } from './audio/playback'
 import { voicePrefsStore, volumeOf, type PersonVolume } from './lib/voicePrefs'
 import { settingsStore } from './settings'
@@ -41,7 +41,9 @@ export function useRemoteVolume(
     }
     element.dataset.volume = String(volume)
     const apply = (duck: number) => {
-      const boosted = volume > 1 && playbackMixer.route(key, stream, volume * duck, deafened)
+      const wanted = duckedPlayback(volume, deafened, duck)
+      // A boost that cannot be had (no Web Audio, no sound track) falls back to the element.
+      const boosted = wanted.boost && playbackMixer.route(key, stream, wanted.routeGain, deafened)
       element.dataset.route = boosted ? 'webaudio' : 'element'
       element.dataset.duck = String(Math.round(duck * 1000) / 1000)
       if (boosted) {
@@ -49,8 +51,8 @@ export function useRemoteVolume(
         element.volume = 1
       } else {
         playbackMixer.unroute(key)
-        element.muted = deafened
-        element.volume = Math.min(1, volume) * duck
+        element.muted = wanted.elementMuted
+        element.volume = wanted.elementVolume
       }
     }
     // Only a remote screen's sound ducks; a voice never does.

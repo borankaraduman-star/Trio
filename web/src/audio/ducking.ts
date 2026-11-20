@@ -344,6 +344,21 @@ export class Ducker {
   }
 }
 
+/**
+ * What a remote screen's playback is set to (useRemoteVolume): the route is
+ * chosen by the slider alone (above 100 % = the Web Audio boost, when it can
+ * be had), so a duck never moves a stream from one path to the other; the
+ * duck multiplies the element's volume or the route's gain. Deafen mutes.
+ */
+export function duckedPlayback(
+  volume: number,
+  deafened: boolean,
+  duck: number,
+): { boost: boolean; routeGain: number; elementVolume: number; elementMuted: boolean } {
+  if (volume > 1) return { boost: true, routeGain: volume * duck, elementVolume: Math.min(1, volume) * duck, elementMuted: deafened }
+  return { boost: false, routeGain: 0, elementVolume: volume * duck, elementMuted: deafened }
+}
+
 /** One per page, following the settings. */
 export const duckPrefsStore = new DuckPrefsStore()
 export const ducker = new Ducker(duckPrefsStore.getSnapshot())
