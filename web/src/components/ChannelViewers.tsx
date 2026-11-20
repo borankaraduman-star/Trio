@@ -2,6 +2,23 @@ import { useSyncExternalStore } from 'react'
 import type { Member } from '../types'
 import { Avatar } from './Avatar'
 import { hereLine, showChannel, VIEWER_ROWS_MAX } from '../lib/viewers'
+import { CompactActivity } from './GameActivity'
+import { activityStore, activitySummary } from '../gameActivity'
+
+/** V11: "Ece — WoW Forever · 37 · Orgrimmar" for a list of names (labels and tooltips). */
+/** Names one per line once somebody has an activity; "a, b" as before otherwise. */
+function joinNames(lines: string[], plain: string[]): string {
+  return lines.some((line, i) => line !== plain[i]) ? lines.join('\n') : plain.join(', ')
+}
+
+function useWithActivity(): (name: string, id: number) => string {
+  const entries = useSyncExternalStore(activityStore.subscribe, activityStore.getSnapshot)
+  return (name, id) => {
+    const entry = entries[id]
+    const summary = entry ? activitySummary(entry.activity) : ''
+    return summary ? `${name} — ${summary}` : name
+  }
+}
 
 /**
  * CONTRACT-V10-GROUPS §4b: who is in a text channel right now, under its row
@@ -9,6 +26,7 @@ import { hereLine, showChannel, VIEWER_ROWS_MAX } from '../lib/viewers'
  * "+n" past four. Only CURRENT presence: nothing here says who has read what.
  */
 export function ChannelViewerList({ channelId, people, me }: { channelId: number; people: Member[]; me: number }) {
+  const withActivity = useWithActivity()
   if (people.length === 0) return null
   const label = (person: Member) => (person.id === me ? `${person.name} (sen)` : person.name)
   if (people.length <= VIEWER_ROWS_MAX) {
@@ -18,21 +36,25 @@ export function ChannelViewerList({ channelId, people, me }: { channelId: number
           <li key={person.id} className="channel-viewer" data-testid={`viewer-${channelId}-${person.id}`}>
             <Avatar id={person.id} name={person.name} size={18} url={person.avatar_url} />
             <span className="channel-viewer-name">{label(person)}</span>
+            <CompactActivity userId={person.id} testid={`viewer-activity-${channelId}-${person.id}`} />
           </li>
         ))}
       </ul>
     )
   }
   const shown = people.slice(0, VIEWER_ROWS_MAX)
-  const names = people.map(label).join(', ')
+  const detailed = joinNames(
+    people.map((person) => withActivity(label(person), person.id)),
+    people.map(label),
+  )
   return (
     <div
       className="channel-viewers stacked"
       data-testid={`channel-viewers-${channelId}`}
       data-count={people.length}
       role="group"
-      aria-label={`Bu kanalda şu an: ${names}`}
-      title={names}
+      aria-label={`Bu kanalda şu an: ${people.map((p) => withActivity(label(p), p.id)).join(', ')}`}
+      title={detailed}
     >
       <span className="channel-viewer-faces">
         {shown.map((person) => (
@@ -50,10 +72,14 @@ export function ChannelViewerList({ channelId, people, me }: { channelId: number
 
 /** The channel header's "Burada: Sen, Ece +2". */
 export function HereLine({ people, me }: { people: Member[]; me: number }) {
+  const withActivity = useWithActivity()
   const line = hereLine(people, me)
   if (line === null) return null
   return (
-    <span className="here-line" data-testid="here-line" title={people.map((p) => p.name).join(', ')}>
+    <span className="here-line" data-testid="here-line" title={joinNames(
+        people.map((p) => withActivity(p.name, p.id)),
+        people.map((p) => p.name),
+      )}>
       <span className="here-faces" aria-hidden="true">
         {people.slice(0, 3).map((person) => (
           <Avatar key={person.id} id={person.id} name={person.name} size={18} url={person.avatar_url} />

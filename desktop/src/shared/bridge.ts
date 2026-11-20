@@ -6,9 +6,20 @@
  */
 import type { MusicSupport, PrepareResult } from "./musicCapture";
 import type { NowPlaying } from "./nowPlaying";
+import type { ListeningState } from "./listening";
 import type { UpdateState } from "./update";
 
-export type { MusicSupport, PrepareResult, NowPlaying };
+export type { MusicSupport, PrepareResult, NowPlaying, ListeningState };
+
+/** CONTRACT-V11-ACTIVITY §5: absent in apps built before it (the page then falls back to V8 only). */
+export interface TrioDesktopListeningBridge {
+  /** False on macOS/Linux: nothing can be read there. */
+  listeningStatus: { supported: boolean };
+  /** Start/stop the status watcher; `browsers` lets browsers and other apps through. */
+  setListeningStatus(opts: { on: boolean; browsers: boolean }): void;
+  /** Called with the current state at once, then on every change. */
+  onListening(cb: (state: ListeningState) => void): () => void;
+}
 
 export interface TrioDesktopMusicBridge {
   /** Whether system sound without Trio's own output is possible here; no side effect. */

@@ -1,7 +1,7 @@
 import type { Channel, Member, VoiceParticipant } from '../../types'
 import { Avatar } from '../Avatar'
 import { SpeakerIcon } from '../icons'
-import { GameActivityLine } from '../GameActivity'
+import { PersonActivity } from '../GameActivity'
 
 /**
  * CONTRACT-V7-PHONE §2: where the member column is hidden (≤ 960 px), who is
@@ -55,13 +55,13 @@ export function DrawerPresence({
         </span>
         <span className="v7-presence-name">
           <span>{member.name}</span>
-          {room !== undefined ? (
+          {room !== undefined && (
             <small className="v7-presence-room">
               <SpeakerIcon size={12} /> {channelName(room)}
             </small>
-          ) : (
-            <GameActivityLine userId={member.id} testid={`drawer-activity-${member.id}`} />
           )}
+          {/* V11: what they play and listen to, in a voice room or not. */}
+          <PersonActivity userId={member.id} prefix="drawer" />
         </span>
       </li>
     )
