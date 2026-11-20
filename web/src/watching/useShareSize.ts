@@ -16,6 +16,12 @@ export function useShareSize(
   ref: RefObject<HTMLElement | null>,
   shown: boolean,
   fixed: ViewSize | null = null,
+  /**
+   * The only screen on the stage: a visible tile asks `full` whatever its size
+   * (the V6 profile as chosen, as before V12); sizes below that are for a stage
+   * with several screens, a strip, or something not on the screen.
+   */
+  alone = false,
 ): void {
   const key = useRef<string>('')
   if (key.current === '') key.current = `place-${(sources += 1)}`
@@ -48,7 +54,7 @@ export function useShareSize(
       }
       const rect = element.getBoundingClientRect()
       const visible = shown && onScreen && rect.height > 0
-      viewSizes.report(userId, source, viewSizeFor(rect.height, window.devicePixelRatio || 1, visible))
+      viewSizes.report(userId, source, alone && visible ? 'full' : viewSizeFor(rect.height, window.devicePixelRatio || 1, visible))
     }
     const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
     resize?.observe(element)
@@ -88,5 +94,5 @@ export function useShareSize(
       document.removeEventListener('fullscreenchange', measure)
       viewSizes.report(userId, source, null)
     }
-  }, [userId, ref, shown, fixed])
+  }, [userId, ref, shown, fixed, alone])
 }

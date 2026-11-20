@@ -130,7 +130,10 @@ function Tile({
   onActivate,
   overlay,
   folded = false,
+  multi = false,
 }: {
+  /** V12: one of several screens on the stage (sized by what it shows). */
+  multi?: boolean
   tile: StageTile
   deafened: boolean
   focused: boolean
@@ -146,7 +149,7 @@ function Tile({
   const muted = tile.silent || deafened
   useSinkId(video, !tile.silent)
   // V12: how large this place shows a remote screen (the sharer sends that size to me).
-  useShareSize(tile.kind === 'screen' && tile.userId !== null ? tile.userId : null, video, !folded)
+  useShareSize(tile.kind === 'screen' && tile.userId !== null ? tile.userId : null, video, !folded, null, !multi && !small)
 
   useEffect(() => {
     const element = video.current
@@ -513,6 +516,7 @@ function MultiStage({
               deafened={deafened}
               focused={chosen === tile}
               small={false}
+              multi
               onActivate={() => {
                 if (mode === 'focus' && focusKey === null) return
                 onActivate(tile.key)
@@ -531,6 +535,7 @@ function MultiStage({
                 deafened={deafened}
                 focused={false}
                 small
+                multi
                 onActivate={() => {
                   if (tile.kind === 'screen' && tile.userId !== null && mode === 'focus' && focusKey === null) {
                     watchStore.update({ focus: tile.userId })
