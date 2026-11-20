@@ -69,6 +69,9 @@ form:
   the sharer's `meta` arrives.
 - The sharer sees who watches: on the local tile (`local-watchers`) and in the
   menu (`share-watchers`).
+- **CONTRACT-V12-WATCHING §3** adds `size` (`full` | `mid` | `thumb` |
+  `audio`) to `watch` with `on: true`: how large the viewer shows the share,
+  which the sharer encodes for that viewer. Absent = unchanged.
 
 ## 3. Per-person volume
 
