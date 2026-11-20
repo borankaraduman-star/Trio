@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.7.1',
+    lines: [
+      'İndirme sayfası yenilendi: Trio’nun neler yaptığını canlı örneklerle gösteriyor; bağlantıyı bir arkadaşına attığında önizlemesi de düzgün görünüyor.',
+      'Giriş ekranı aynı havaya kavuştu.',
+    ],
+  },
+  {
     version: '0.7.0',
     title: 'Müzik paylaş',
     lines: [
