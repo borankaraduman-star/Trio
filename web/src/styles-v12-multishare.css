@@ -82,6 +82,16 @@
   .v12-sharing-line {
     flex-basis: 100%;
   }
+
+  .v12-toolbar {
+    gap: 6px 8px;
+    padding-top: 6px;
+  }
+
+  .v12-tip {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
 }
 
 /* --- two or more screens: Yan yana / Odak --------------------------------------------- */
@@ -133,7 +143,7 @@
   grid-template-rows: none;
   grid-auto-rows: calc((100vw - 24px) * 9 / 16);
   height: auto;
-  max-height: 52vh;
+  max-height: 40vh;
   overflow-y: auto;
 }
 
