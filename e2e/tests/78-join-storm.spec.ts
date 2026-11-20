@@ -33,7 +33,7 @@ const ROLLBACK_PROBE = `
 
 test('a join storm: six people in one room within a second all connect and hear each other', async ({ browser, trio }) => {
   test.setTimeout(240_000)
-  const people = await crowd(browser, trio, 6, { prepare: (context) => context.addInitScript(ROLLBACK_PROBE) })
+  const people = await crowd(browser, trio, 6, { prepare: async (context) => void (await context.addInitScript(ROLLBACK_PROBE)) })
 
   const spread = await joinAllAtOnce(people)
   console.log(`[78] six clicks landed within ${spread} ms`)
