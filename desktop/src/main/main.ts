@@ -41,7 +41,8 @@ import {
   type Session,
 } from "electron";
 import { ConfigStore } from "./config";
-import { checkHealth } from "./health";
+import { checkHealth, type Fetcher } from "./health";
+import { checkNext, moveUrl, verifyMove, verifyNextStore } from "./serverMove";
 import { PttController } from "./ptt";
 import { badgeBitmap } from "./badge";
 import { versionArgument, versionLabel } from "../shared/appVersion";
@@ -519,8 +520,10 @@ function createMainWindow(): void {
     // -3 is ERR_ABORTED (our own navigation guard, or a reload interrupting).
     if (!isMainFrame || errorCode === -3) return;
     if (!isSameOrigin(validatedURL, serverOrigin)) return;
-    connectNotice = "Sunucuya bağlanılamadı. Adresi kontrol edip tekrar dene.";
+    // CONTRACT-V11-ADDRESS §8: the address may have changed; a remembered next one is tried first.
+    connectNotice = "Sunucuya ulaşılamıyor — adres değişmiş olabilir. Yeni adresi biliyorsan aşağıya yaz.";
     showConnectPage();
+    void tryNextServer();
   });
 
   wc.on("render-process-gone", (_event, details) => {
@@ -540,10 +543,31 @@ function createMainWindow(): void {
   else showConnectPage();
 }
 
-function loadServer(origin: string): void {
+/** The main process's own fetch for §5/§8 checks: no cache, no redirects. */
+const shellFetch: Fetcher = (url, init) => net.fetch(url, { signal: init.signal, cache: "no-store", redirect: "error" });
+
+/**
+ * CONTRACT-V11-ADDRESS §8: the stored server does not answer. When it had
+ * announced a next address and this app kept a code for it, go there by
+ * itself once that address answers as the Trio server it was announced as.
+ */
+async function tryNextServer(): Promise<boolean> {
+  const next = config.getNextMove();
+  if (!next) return false;
+  const check = await checkNext(next, shellFetch, Date.now());
+  if (!check.ok) {
+    if (check.reason === "invalid") config.setNextMove(null);
+    return false;
+  }
+  config.setServerOrigin(check.origin);
+  loadServer(check.origin, moveUrl(check.origin, check.code));
+  return true;
+}
+
+function loadServer(origin: string, url = `${origin}/`): void {
   if (!mainWindow) return;
   serverOrigin = origin;
-  void mainWindow.loadURL(`${origin}/`).catch(() => {
+  void mainWindow.loadURL(url).catch(() => {
     /* reported through did-fail-load */
   });
 }
@@ -821,7 +845,44 @@ function installIpc(): void {
     if (!fromConnectPage(event)) return null;
     const notice = connectNotice;
     connectNotice = null;
-    return { current: config.getServerOrigin(), notice, version: app.getVersion() };
+    const next = config.getNextMove();
+    return {
+      current: config.getServerOrigin(),
+      notice,
+      version: app.getVersion(),
+      // §8: offered as a button when the stored server stopped answering.
+      next: next && next.expiresAt > Date.now() ? next.origin : null,
+    };
+  });
+
+  ipcMain.handle("trio:connect-next", async (event) => {
+    if (!fromConnectPage(event)) return { ok: false, message: "İzin verilmedi." };
+    if (await tryNextServer()) return { ok: true };
+    return { ok: false, message: "Yeni adres henüz cevap vermiyor. Biraz sonra tekrar dene ya da adresi yaz." };
+  });
+
+  // CONTRACT-V11-ADDRESS §5: move to the canonical address the CURRENT server declares.
+  ipcMain.handle("trio:move-server", async (event, request: unknown) => {
+    if (!fromServerPage(event)) return { ok: false, reason: "invalid" };
+    const record = typeof request === "object" && request !== null ? (request as Record<string, unknown>) : {};
+    const check = await verifyMove(serverOrigin, record, shellFetch);
+    if (!check.ok) {
+      console.warn(`[trio] move refused: ${check.reason}`);
+      return { ok: false, reason: check.reason };
+    }
+    config.setServerOrigin(check.origin);
+    loadServer(check.origin, moveUrl(check.origin, check.code));
+    return { ok: true };
+  });
+
+  // §8: keep a 7-day code for the address the current server announced.
+  ipcMain.handle("trio:store-next-move", async (event, request: unknown) => {
+    if (!fromServerPage(event)) return { ok: false, reason: "invalid" };
+    const record = typeof request === "object" && request !== null ? (request as Record<string, unknown>) : {};
+    const check = await verifyNextStore(serverOrigin, record, shellFetch, Date.now());
+    if (!check.ok) return { ok: false, reason: check.reason };
+    config.setNextMove(check.next);
+    return { ok: true };
   });
 
   ipcMain.handle("trio:connect-submit", async (event, input: unknown) => {

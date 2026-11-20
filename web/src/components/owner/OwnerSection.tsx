@@ -15,6 +15,7 @@ import { dataAgeLine, freeSeatsLine, NOT_PERSISTENT_TEXT } from '../../lib/persi
 import { opsApi, type ClientErrorRow, type OwnerUser } from '../../owner/opsApi'
 import { opsStore } from '../../owner/opsStore'
 import { ConfirmCodeDialog } from './ConfirmCodeDialog'
+import { AddressCard } from '../address/AddressCard'
 import { UsageBar } from './StorageSection'
 import { OWNER_SEARCH_FROM, OWNER_SORTS, ownerRows, quotaLine, quotaShortfall, shortfallLine, type OwnerSort } from '../../lib/ownerGroup'
 
@@ -315,6 +316,8 @@ export function OwnerSection() {
           </ul>
         </div>
       )}
+
+      <AddressCard />
 
       <div className={`ops-card ops-backup${stale ? ' stale' : ''}`} data-testid="owner-backup">
         <div className="ops-card-head">

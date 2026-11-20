@@ -65,6 +65,19 @@ CREATE TABLE IF NOT EXISTS link_codes (
     expires_ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_link_codes_user ON link_codes (user_id, expires_ts);
+-- (v11: link_codes.bulk, below in UPGRADE_COLUMNS: an owner's 24-hour code, §9.)
+-- v11 (CONTRACT-V11-ADDRESS §3): one-time codes that move a device to the
+-- canonical address. Not link codes: their own table, hash prefix and quota.
+CREATE TABLE IF NOT EXISTS move_codes (
+    code_hash       TEXT PRIMARY KEY,  -- SHA-256 hex ("trio-move:" + code)
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    from_token_hash TEXT NOT NULL,     -- the session being moved; one live code each
+    prefs           TEXT NOT NULL,     -- JSON object of carried preferences
+    kind            TEXT NOT NULL DEFAULT 'move',  -- 'move' (10 min) | 'next' (7 days, §8)
+    created_ts      REAL NOT NULL,
+    expires_ts      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_move_codes_from ON move_codes (from_token_hash);
 -- v4 (CONTRACT-V4 B): reactions and pins. A message's rows go with it (the
 -- delete removes them explicitly too, so it does not depend on the pragma).
 CREATE TABLE IF NOT EXISTS reactions (
@@ -130,7 +143,18 @@ CREATE TABLE IF NOT EXISTS read_state (
 #   attachments.deleted_at (v6 ops): the uploader deleted the file; the row stays
 #   as the message's tombstone ({id, filename, deleted: true}) and no longer
 #   counts towards the quota.
+#   tokens.last_origin / via_move / moved_from (v11, CONTRACT-V11-ADDRESS §4):
+#   the origin the session was last seen through, whether a move created it,
+#   and the old session a move will end once this one is confirmed.
 UPGRADE_COLUMNS = {
+    "link_codes": {
+        "bulk": "ALTER TABLE link_codes ADD COLUMN bulk INTEGER NOT NULL DEFAULT 0",
+    },
+    "tokens": {
+        "last_origin": "ALTER TABLE tokens ADD COLUMN last_origin TEXT",
+        "via_move": "ALTER TABLE tokens ADD COLUMN via_move INTEGER NOT NULL DEFAULT 0",
+        "moved_from": "ALTER TABLE tokens ADD COLUMN moved_from TEXT",
+    },
     "users": {
         "removed_at": "ALTER TABLE users ADD COLUMN removed_at TEXT",
         "avatar": "ALTER TABLE users ADD COLUMN avatar TEXT",
@@ -421,8 +445,9 @@ class Database:
         try:
             # Expired codes are worthless; this is their sweep.
             await self.conn.execute("DELETE FROM link_codes WHERE expires_ts <= ?", (now_ts,))
+            # V11 §9: the owner's bulk codes do not use up a person's five.
             (row,) = await self._all(
-                "SELECT count(*) AS n FROM link_codes WHERE user_id = ?", (user_id,)
+                "SELECT count(*) AS n FROM link_codes WHERE user_id = ? AND bulk = 0", (user_id,)
             )
             if row["n"] >= max_live:
                 await self.conn.commit()

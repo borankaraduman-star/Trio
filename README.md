@@ -98,6 +98,9 @@ Kod sızarsa Railway'de `TRIO_INVITE_CODE`'u değiştir (servis yeniden başlar)
 | `TRIO_UPLOAD_DIR` | imajda `/data/uploads` | yüklenen dosyaların klasörü |
 | `TRIO_STATIC_DIR` | imajda `/app/static` | derlenmiş web istemcisi |
 | `PORT` | `8000` | dinlenen port; Railway kendisi verir |
+| `TRIO_PUBLIC_URL` | boş | sunucunun kalıcı adresi (`https://alan.adi`, yol yok). Ayarlıysa bağlantılar onu kullanır, eski adresten açanlara “Bu cihazı taşı” çıkar. **Yalnızca yeni adres sertifikasıyla açılıyorken** ayarla |
+| `TRIO_NEXT_URL` | boş | adres değişecekse (Railway adını değiştirmek gibi) yeni adres, önceden: cihazlar taşınma kodunu saklar. [docs/adres-degistirme.md](docs/adres-degistirme.md) |
+| `TRIO_RECOVERY_CODE` | boş | kilitlenme sigortası: en az 24 karakter. Hiçbir cihazında giriş kalmazsa “Zaten hesabım var”a bunu yazıp sahip olarak girersin; işin bitince sil |
 
 TURN önceliği: Cloudflare (iki değişken de doluysa) → coturn (`TRIO_TURN_HOST` + `TRIO_TURN_SECRET`) → yalnızca STUN. Cloudflare'e ulaşılamazsa `/api/ice` hata vermez, yalnızca STUN döner ve sunucu günlüğüne bir uyarı yazar (token asla yazılmaz). Cloudflare'in yanıtı 1 saat önbellekte tutulur.
 

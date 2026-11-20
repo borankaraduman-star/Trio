@@ -16,6 +16,27 @@ _TEST_PUSH_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
 PRODUCTION_MARKERS = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID")
 
 
+_HTTPS_ORIGIN = re.compile(r"^https://[a-z0-9-]+(?:\.[a-z0-9-]+)*(?::[0-9]{1,5})?$")
+_TEST_HTTP_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
+RECOVERY_CODE_MIN = 24
+
+
+def normalize_public_url(
+    raw: str, *, allow_test_http: bool = False, name: str = "TRIO_PUBLIC_URL"
+) -> str:
+    """CONTRACT-V11-ADDRESS §1: a plain origin, lower-case host, no trailing slash."""
+    value = raw.strip()
+    if value.endswith("/"):
+        value = value[:-1]
+    scheme, sep, rest = value.partition("://")
+    candidate = f"{scheme.lower()}{sep}{rest.lower()}"
+    if _HTTPS_ORIGIN.match(candidate):
+        return candidate
+    if allow_test_http and _TEST_HTTP_ORIGIN.match(candidate):
+        return candidate
+    raise ConfigError(f"{name} must be a plain https origin such as https://trio.example.org")
+
+
 class ConfigError(RuntimeError):
     """The environment does not describe a server that may start."""
 
@@ -58,6 +79,15 @@ class Settings:
     # CONTRACT-V10-GROUPS §2: people in one voice room at once. Voice is a full
     # mesh (everybody sends to everybody), so a room has an honest ceiling.
     voice_room_max: int = 8
+    # CONTRACT-V11-ADDRESS: the canonical address (a plain origin) and the
+    # owner's recovery code; both None = off.
+    public_url: str | None = None
+    # The address the server will move to soon (the rename path): clients are
+    # told beforehand, and a move code is redeemable there too.
+    next_url: str | None = None
+    recovery_code: str | None = None
+    # TESTS ONLY: lets public_url be http://127.0.0.1|localhost:<port>.
+    test_http_public_url: bool = False
 
     def __post_init__(self) -> None:
         if not self.invite_code:
@@ -84,6 +114,21 @@ class Settings:
             self.test_push_service
         ):
             raise ConfigError("TRIO_TEST_PUSH_SERVICE must be http://127.0.0.1:<port>")
+        if self.public_url is not None and self.public_url != normalize_public_url(
+            self.public_url, allow_test_http=self.test_http_public_url
+        ):
+            raise ConfigError("TRIO_PUBLIC_URL must be given normalised")
+        if self.next_url is not None and self.next_url != normalize_public_url(
+            self.next_url, allow_test_http=self.test_http_public_url, name="TRIO_NEXT_URL"
+        ):
+            raise ConfigError("TRIO_NEXT_URL must be given normalised")
+        if self.recovery_code is not None and (
+            len("".join(ch for ch in self.recovery_code if ch != "-")) < RECOVERY_CODE_MIN
+            or any(ch.isspace() for ch in self.recovery_code)
+        ):
+            raise ConfigError(
+                f"TRIO_RECOVERY_CODE must be at least {RECOVERY_CODE_MIN} characters, no spaces"
+            )
 
     @property
     def max_upload_bytes(self) -> int:
@@ -112,7 +157,9 @@ class Settings:
             f"trusted_proxy_hops={self.trusted_proxy_hops}, "
             f"cloudflare_turn={self.cloudflare_turn}, owner={self.owner!r}, "
             f"voice_room_max={self.voice_room_max}, "
-            f"test_push_service={self.test_push_service!r})"
+            f"test_push_service={self.test_push_service!r}, "
+            f"public_url={self.public_url!r}, next_url={self.next_url!r}, "
+            f"recovery_code_set={self.recovery_code is not None})"
         )
 
     @classmethod
@@ -142,6 +189,23 @@ class Settings:
         if test_push is not None and any(env.get(m) for m in PRODUCTION_MARKERS):
             raise ConfigError("TRIO_TEST_PUSH_SERVICE is for tests and is refused on Railway")
 
+        test_http = env.get("TRIO_TEST_HTTP_PUBLIC_URL", "").strip() == "1"
+        if test_http and any(env.get(m) for m in PRODUCTION_MARKERS):
+            raise ConfigError("TRIO_TEST_HTTP_PUBLIC_URL is for tests and is refused on Railway")
+        raw_public = optional("TRIO_PUBLIC_URL")
+        public_url = (
+            None
+            if raw_public is None
+            else normalize_public_url(raw_public, allow_test_http=test_http)
+        )
+        raw_next = optional("TRIO_NEXT_URL")
+        next_url = (
+            None
+            if raw_next is None
+            else normalize_public_url(raw_next, allow_test_http=test_http, name="TRIO_NEXT_URL")
+        )
+        recovery = optional("TRIO_RECOVERY_CODE")
+
         return cls(
             invite_code=env.get("TRIO_INVITE_CODE", ""),
             db_path=optional("TRIO_DB_PATH") or "./trio.db",
@@ -161,4 +225,8 @@ class Settings:
             test_push_service=test_push,
             owner=optional("TRIO_OWNER"),
             voice_room_max=integer("TRIO_VOICE_ROOM_MAX", 8),
+            public_url=public_url,
+            next_url=next_url,
+            recovery_code=recovery,
+            test_http_public_url=test_http,
         )
