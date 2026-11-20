@@ -86,6 +86,8 @@ export interface SidebarProps {
   musicPanel?: ReactNode
   /** V10: people per voice room (`ready.voice_room_max`), null when the server does not say. */
   voiceRoomMax?: number | null
+  /** V12: the share button's words ("Sen de paylaş" while others share, the cap). */
+  screenShareButton?: { label: string; title: string; full: boolean }
   /** V10 (§4b): user id → the text channel they are in now. */
   viewers?: Record<number, number>
 }
@@ -385,11 +387,13 @@ export function Sidebar(props: SidebarProps) {
             <>
               <button
                 type="button"
-                className={voice.screensharing ? 'icon-button on' : 'icon-button'}
+                className={`${voice.screensharing ? 'icon-button on' : 'icon-button'}${props.screenShareButton?.full ? ' full' : ''}`}
                 data-testid="btn-screen"
+                data-share-too={!voice.screensharing && props.screenShareButton?.label === 'Sen de paylaş'}
+                data-full={props.screenShareButton?.full === true}
                 aria-pressed={voice.screensharing}
-                title={voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
-                aria-label={voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş'}
+                title={props.screenShareButton?.title ?? (voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş')}
+                aria-label={props.screenShareButton?.label ?? (voice.screensharing ? 'Paylaşımı durdur' : 'Ekran paylaş')}
                 onClick={props.onToggleScreen}
               >
                 <ScreenIcon />

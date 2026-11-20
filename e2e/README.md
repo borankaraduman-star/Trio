@@ -82,6 +82,7 @@ Useful variables:
 | `TRIO_E2E_SERVER_DIR` | run the `trio_server` package found in this directory instead of `server/` (e.g. a frozen copy while `server/` is being edited) |
 | `TRIO_E2E_SKIP_BUILD=1` | do not rebuild `web/` (use the existing `web/dist`) |
 | `TRIO_E2E_CONSOLE=1` | print the pages' console warnings and errors |
+| `TRIO_E2E_HEAVY=1` | spec 91: three and four screen shares in a room of eight (this machine runs out of CPU past two; see CONTRACT-V12-WATCHING §2) |
 | `TRIO_E2E_CI_FONTS=1` | the browser without Inter, as on a CI runner (slow mode) |
 | `TRIO_E2E_CPU_THROTTLE=N` | every page's main thread N times slower (slow mode) |
 

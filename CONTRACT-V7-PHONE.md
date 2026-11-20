@@ -57,7 +57,9 @@ unaffected. (The engine's own refusal stays as a backstop.)
   the sharer still counts this device as watching, and nothing is signalled or
   renegotiated. Not receiving a screen remains the V6 "İzlemeyi bırak"
   (CONTRACT-V6-VOICE §2), per screen and told to the sharer; collapsing never
-  becomes one. The frame is always the same wrapper (`display: contents` while
+  becomes one. Since CONTRACT-V12-WATCHING §3 a collapsed tile asks the
+  sharer for a small picture (`watch.size: "thumb"`): still watching, still
+  heard, never off. The frame is always the same wrapper (`display: contents` while
   inactive), so tiles are never remounted by it appearing.
 
 ## 4. The user bar and adding channels

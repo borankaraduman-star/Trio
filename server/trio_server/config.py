@@ -11,6 +11,9 @@ DEFAULT_STUN_URLS = ("stun:stun.l.google.com:19302",)
 # CONTRACT-V10-GROUPS §2: the bounds of TRIO_VOICE_ROOM_MAX.
 VOICE_ROOM_MIN = 2
 VOICE_ROOM_CEILING = 16
+# CONTRACT-V12-WATCHING §5: simultaneous screen shares in one voice room.
+SCREEN_SHARES_MIN = 1
+SCREEN_SHARES_CEILING = 16
 _TEST_PUSH_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
 # Set by Railway in every deployment: a test-only setting is refused there.
 PRODUCTION_MARKERS = ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID")
@@ -79,6 +82,10 @@ class Settings:
     # CONTRACT-V10-GROUPS §2: people in one voice room at once. Voice is a full
     # mesh (everybody sends to everybody), so a room has an honest ceiling.
     voice_room_max: int = 8
+    # CONTRACT-V12-WATCHING §5: people sharing a screen at once in one voice
+    # room. Every share is encoded once per viewer (a mesh), and every viewer
+    # decodes every share; past this a share is refused with who is sharing.
+    screen_shares_max: int = 4
     # CONTRACT-V11-ADDRESS: the canonical address (a plain origin) and the
     # owner's recovery code; both None = off.
     public_url: str | None = None
@@ -97,6 +104,11 @@ class Settings:
         if not VOICE_ROOM_MIN <= self.voice_room_max <= VOICE_ROOM_CEILING:
             raise ConfigError(
                 f"TRIO_VOICE_ROOM_MAX must be between {VOICE_ROOM_MIN} and {VOICE_ROOM_CEILING}"
+            )
+        if not SCREEN_SHARES_MIN <= self.screen_shares_max <= SCREEN_SHARES_CEILING:
+            raise ConfigError(
+                "TRIO_SCREEN_SHARES_MAX must be between "
+                f"{SCREEN_SHARES_MIN} and {SCREEN_SHARES_CEILING}"
             )
         if self.max_upload_mb < 1:
             raise ConfigError("TRIO_MAX_UPLOAD_MB must be at least 1")
@@ -159,7 +171,8 @@ class Settings:
             f"voice_room_max={self.voice_room_max}, "
             f"test_push_service={self.test_push_service!r}, "
             f"public_url={self.public_url!r}, next_url={self.next_url!r}, "
-            f"recovery_code_set={self.recovery_code is not None})"
+            f"recovery_code_set={self.recovery_code is not None}, "
+            f"screen_shares_max={self.screen_shares_max})"
         )
 
     @classmethod
@@ -225,6 +238,7 @@ class Settings:
             test_push_service=test_push,
             owner=optional("TRIO_OWNER"),
             voice_room_max=integer("TRIO_VOICE_ROOM_MAX", 8),
+            screen_shares_max=integer("TRIO_SCREEN_SHARES_MAX", 4),
             public_url=public_url,
             next_url=next_url,
             recovery_code=recovery,

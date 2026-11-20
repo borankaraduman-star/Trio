@@ -81,6 +81,8 @@ export interface AppState {
   divider: { channelId: number; after: number } | null
   /** V10: `ready.voice_room_max`, or null from a server that predates it (no cap known). */
   voiceRoomMax: number | null
+  /** V12: `ready.screen_shares_max`, or null from a server that predates it. */
+  screenSharesMax: number | null
   /** V10 (§4b): user id → the text channel they are in now (absent: none). */
   viewers: Record<number, number>
 }
@@ -159,6 +161,7 @@ export function createInitialState(init: {
     serverRead: {},
     divider: null,
     voiceRoomMax: null,
+    screenSharesMax: null,
     viewers: {},
   }
 }
@@ -428,6 +431,10 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         voiceRoomMax:
           typeof event.voice_room_max === 'number' && Number.isInteger(event.voice_room_max) && event.voice_room_max > 0
             ? event.voice_room_max
+            : null,
+        screenSharesMax:
+          typeof event.screen_shares_max === 'number' && Number.isInteger(event.screen_shares_max) && event.screen_shares_max > 0
+            ? event.screen_shares_max
             : null,
         users,
         channels: event.channels,

@@ -18,9 +18,10 @@ export default defineConfig({
     __TRIO_VERSION__: JSON.stringify(VERSION),
     __TRIO_BUILD__: JSON.stringify(BUILD),
   },
-  // Two pages: the app, and the public download page /indir (CONTRACT-V6-DOWNLOAD).
+  // Three pages: the app, the public download page /indir (CONTRACT-V6-DOWNLOAD)
+  // and the mini player window /mini.html (CONTRACT-V12-WATCHING §6).
   build: {
-    rollupOptions: { input: { index: 'index.html', indir: 'indir.html' } },
+    rollupOptions: { input: { index: 'index.html', indir: 'indir.html', mini: 'mini.html' } },
   },
   server: {
     port: 5173,

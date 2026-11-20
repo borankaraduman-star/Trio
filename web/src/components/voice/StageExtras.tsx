@@ -5,6 +5,8 @@ import { Avatar } from '../Avatar'
 import { HeadphonesIcon, MicIcon, ScreenIcon } from '../icons'
 import { EyeIcon } from './icons'
 import { ShareMenu, ShareWatchers } from './ShareMenu'
+import { AudioOnlyCover, ReceiveLine, TileMenu } from '../watch/TileMenu'
+import { useWatch } from '../../watching/store'
 import { useSyncExternalStore } from 'react'
 import { activityStore, activitySummary } from '../../gameActivity'
 import { PadIcon, useActivityOf } from '../GameActivity'
@@ -57,6 +59,45 @@ export function StageTileOverlay({
     )
   }
   const userId = tile.userId
+  return <RemoteScreenOverlay tile={tile} userId={userId} engine={engine} nameOf={nameOf} />
+}
+
+/** V12: a remote screen's tile: ⋯ (CONTRACT-V12-WATCHING §8), "Sadece ses", the receiving line, İzlemeyi bırak. */
+function RemoteScreenOverlay({
+  tile,
+  userId,
+  engine,
+  nameOf,
+}: {
+  tile: StageTile
+  userId: number
+  engine: VoiceEngine
+  nameOf: (userId: number) => string
+}) {
+  const watch = useWatch()
+  const choice = watch.choices[userId]
+  return (
+    <>
+      <TileMenu
+        userId={userId}
+        name={nameOf(userId)}
+        stream={tile.stream}
+        engine={engine}
+        tileVideo={() => document.querySelector<HTMLVideoElement>(`figure.call-tile.screen[data-user-id="${userId}"] video`)}
+      />
+      {choice?.audioOnly && <AudioOnlyCover userId={userId} name={nameOf(userId)} />}
+      {choice?.light && !choice.audioOnly && (
+        <span className="v12-light-badge" data-testid={`light-badge-${userId}`} title="Hafif izleme: küçük ve az kare/sn">
+          Hafif
+        </span>
+      )}
+      {watch.stats && <ReceiveLine userId={userId} engine={engine} />}
+      <UnwatchButton userId={userId} engine={engine} nameOf={nameOf} />
+    </>
+  )
+}
+
+function UnwatchButton({ userId, engine, nameOf }: { userId: number; engine: VoiceEngine; nameOf: (userId: number) => string }) {
   return (
     <button
       type="button"

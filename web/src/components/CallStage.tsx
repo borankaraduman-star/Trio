@@ -5,6 +5,9 @@ import type { RemoteMedia } from '../voice'
 import { ExpandIcon } from './icons2'
 import { stageTileLimit } from '../lib/groups'
 import { PHONE_QUERY, useMediaQuery } from '../lib/phone'
+import { sideBySide } from '../lib/multishare'
+import { useShareSize } from '../watching/useShareSize'
+import { focusedShare, shareOrder, useWatch, watchStore } from '../watching/store'
 
 /**
  * v2 stage (CONTRACT-V2 §4): shared screens AND cameras, several people at
@@ -127,7 +130,10 @@ function Tile({
   onActivate,
   overlay,
   folded = false,
+  multi = false,
 }: {
+  /** V12: one of several screens on the stage (sized by what it shows). */
+  multi?: boolean
   tile: StageTile
   deafened: boolean
   focused: boolean
@@ -142,6 +148,8 @@ function Tile({
   const figure = useRef<HTMLElement>(null)
   const muted = tile.silent || deafened
   useSinkId(video, !tile.silent)
+  // V12: how large this place shows a remote screen (the sharer sends that size to me).
+  useShareSize(tile.kind === 'screen' && tile.userId !== null ? tile.userId : null, video, !folded, null, !multi && !small)
 
   useEffect(() => {
     const element = video.current
@@ -188,6 +196,11 @@ function Tile({
       aria-label={`${tile.label}${focused ? ' (büyütülmüş)' : ''}`}
       title={focused ? 'Küçültmek için tıkla' : 'Büyütmek için tıkla'}
       onClick={onActivate}
+      onDoubleClick={(event) => {
+        // V12: a double click is the real fullscreen (on the monitor the window is on).
+        event.preventDefault()
+        fullscreen()
+      }}
       onKeyDown={onKeyDown}
     >
       <video
@@ -227,6 +240,7 @@ export function CallStage({
   overlay,
   hide,
   footer,
+  toolbar,
 }: {
   remoteScreens: readonly RemoteMedia[]
   remoteCameras: readonly RemoteMedia[]
@@ -240,6 +254,8 @@ export function CallStage({
   hide?: (tile: StageTile) => boolean
   /** V6: under the tiles (the room's people); also shown when every tile is hidden. */
   footer?: ReactNode
+  /** V12: over the stage (the layout switch, who is sharing, "Sen de paylaş"). */
+  toolbar?: ReactNode
 }) {
   const allTiles = useMemo(
     () => buildTiles({ remoteScreens, remoteCameras, localScreen, localCamera, nameOf }),
@@ -250,17 +266,44 @@ export function CallStage({
   const focused = tiles.find((tile) => tile.key === focusKey) ?? null
   const phone = useMediaQuery(PHONE_QUERY)
   const [showAll, setShowAll] = useState(false)
+  const watch = useWatch()
 
   // V6: the people strip sits right under the stage (and stays when every tile is hidden).
   const people = footer ? <div className="call-stage-people">{footer}</div> : null
   if (tiles.length === 0) return people
 
   const activate = (key: string) => setFocusKey((current) => (current === key ? null : key))
+  const bar = toolbar ? <div className="v12-stage-bar">{toolbar}</div> : null
+
+  // V12 (CONTRACT-V12-WATCHING §4): two or more screens get their own layout,
+  // "Yan yana" (equal, as large as the stage allows) or "Odak" (one large).
+  const screens = tiles.filter((tile) => tile.kind === 'screen')
+  if (screens.length >= 2) {
+    return (
+      <>
+        {bar}
+        <MultiStage
+          tiles={tiles}
+          screens={screens}
+          deafened={deafened}
+          overlay={overlay}
+          phone={phone}
+          mode={focused ? 'focus' : watch.stageMode}
+          focusKey={focused?.key ?? null}
+          pinned={watch.pinned}
+          focusUser={watch.focus}
+          onActivate={activate}
+        />
+        {people}
+      </>
+    )
+  }
 
   if (focused && tiles.length > 1) {
     const others = tiles.filter((tile) => tile !== focused)
     return (
       <>
+      {bar}
       <section className="call-stage focus" aria-label="Kameralar ve paylaşılan ekranlar" data-testid="stage">
         <div className="call-stage-main">
           <Tile tile={focused} deafened={deafened} focused small={false} onActivate={() => activate(focused.key)} overlay={overlay} />
@@ -286,6 +329,7 @@ export function CallStage({
   const rows = Math.ceil(cells / columns)
   return (
     <>
+    {bar}
     <section
       className={`call-stage grid${showAll && tiles.length > limit ? ' all' : ''}`}
       aria-label="Kameralar ve paylaşılan ekranlar"
@@ -328,5 +372,185 @@ export function CallStage({
     </section>
     {people}
     </>
+  )
+}
+
+/**
+ * V12: two or more shared screens. "Yan yana": the screens in an equal grid
+ * whose arrangement makes each as large as the stage allows for their shape
+ * (two wide screens side by side, two ultrawide ones stacked), cameras in a
+ * strip under them. "Odak": one screen large (the chosen one, else the
+ * pinned one, else the first), every other tile in the strip, where each is
+ * sent to me small (the strip reports `thumb`). ← / → move the focus, 1–9
+ * pick a screen.
+ */
+function MultiStage({
+  tiles,
+  screens,
+  deafened,
+  overlay,
+  phone,
+  mode,
+  focusKey,
+  pinned,
+  focusUser,
+  onActivate,
+}: {
+  tiles: StageTile[]
+  screens: StageTile[]
+  deafened: boolean
+  overlay?: (tile: StageTile) => ReactNode
+  phone: boolean
+  mode: 'side' | 'focus'
+  /** A tile clicked into focus (temporary, as before V12). */
+  focusKey: string | null
+  pinned: number | null
+  focusUser: number | null
+  onActivate: (key: string) => void
+}) {
+  const box = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(960)
+  const [viewport, setViewport] = useState(() => (typeof window === 'undefined' ? 800 : window.innerHeight))
+  const [aspects, setAspects] = useState<Record<string, number>>({})
+  useEffect(() => {
+    const element = box.current
+    if (!element || typeof ResizeObserver !== 'function') return
+    const observer = new ResizeObserver(() => {
+      const rect = element.getBoundingClientRect()
+      if (rect.width > 0) setWidth(rect.width)
+    })
+    observer.observe(element)
+    const onResize = () => setViewport(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', onResize)
+    }
+  }, [mode])
+  useEffect(() => {
+    const element = box.current
+    if (!element) return
+    const onResize = (event: Event) => {
+      const video = event.target as HTMLVideoElement
+      const key = video.closest<HTMLElement>('[data-tile-key]')?.dataset.tileKey
+      if (key && video.videoWidth > 0 && video.videoHeight > 0) {
+        const aspect = video.videoWidth / video.videoHeight
+        setAspects((current) => (Math.abs((current[key] ?? 0) - aspect) < 0.01 ? current : { ...current, [key]: aspect }))
+      }
+    }
+    element.addEventListener('resize', onResize, true)
+    element.addEventListener('loadedmetadata', onResize, true)
+    return () => {
+      element.removeEventListener('resize', onResize, true)
+      element.removeEventListener('loadedmetadata', onResize, true)
+    }
+  }, [])
+
+  // Remote screens by sharer, pinned first; mine last.
+  const remote = screens.filter((tile) => tile.userId !== null)
+  const order = shareOrder(remote.map((tile) => tile.userId as number), pinned)
+  const orderedScreens = [
+    ...order.map((id) => remote.find((tile) => tile.userId === id) as StageTile),
+    ...screens.filter((tile) => tile.userId === null),
+  ]
+  const others = tiles.filter((tile) => tile.kind !== 'screen')
+  const chosen =
+    focusKey !== null
+      ? (tiles.find((tile) => tile.key === focusKey) ?? null)
+      : mode === 'focus'
+        ? (remote.find((tile) => tile.userId === focusedShare(order, focusUser, pinned)) ?? orderedScreens[0])
+        : null
+  const main = chosen ? [chosen] : orderedScreens
+  const stripOrdered = chosen ? [...orderedScreens.filter((t) => t !== chosen), ...others.filter((t) => t !== chosen)] : others
+
+  const known = main.map((tile) => aspects[tile.key]).filter((a): a is number => typeof a === 'number')
+  const aspect = known.length > 0 ? known.reduce((a, b) => a + b, 0) / known.length : 16 / 9
+    // The chat keeps the rest: a short window (a laptop at 150 %) gives the screens less.
+  const share = phone ? 0.5 : chosen ? 0.52 : 0.6
+  const room = Math.max(
+    140,
+    viewport * share - (stripOrdered.length > 0 ? (phone ? 74 : 106) : 0) - 24 - (!phone && viewport < 760 ? 70 : 0),
+  )
+  const grid = chosen ? { columns: 1, rows: 1, tileHeight: Math.floor(room) } : sideBySide(main.length, width, room, aspect)
+
+  const move = (step: number) => {
+    const current = chosen?.userId ?? focusedShare(order, focusUser, pinned)
+    const at = order.indexOf(current ?? -1)
+    const next = order[(at + step + order.length) % order.length]
+    if (next !== undefined) watchStore.update({ focus: next, stageMode: 'focus' })
+  }
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+      if (mode !== 'focus') return
+      event.preventDefault()
+      move(event.key === 'ArrowRight' ? 1 : -1)
+    } else if (/^[1-9]$/.test(event.key)) {
+      const target = order[Number(event.key) - 1]
+      if (target === undefined) return
+      event.preventDefault()
+      watchStore.update({ focus: target, stageMode: 'focus' })
+    }
+  }
+
+  return (
+    <section
+      className={`call-stage v12-multi ${chosen ? 'focus' : 'side'}${phone ? ' phone' : ''}`}
+      aria-label="Paylaşılan ekranlar ve kameralar"
+      data-testid="stage"
+      data-layout={chosen ? 'focus' : 'side'}
+      data-count={tiles.length}
+      data-shown={tiles.length}
+      data-screens={screens.length}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+    >
+      <div
+        ref={box}
+        className="v12-main"
+        style={{
+          ['--v12-columns' as string]: String(grid.columns),
+          ['--v12-rows' as string]: String(grid.rows),
+          ['--v12-height' as string]: `${grid.tileHeight * grid.rows + 10 * (grid.rows - 1)}px`,
+        }}
+      >
+        {main.map((tile) => (
+          <div key={tile.key} className="v12-cell" data-tile-key={tile.key}>
+            <Tile
+              tile={tile}
+              deafened={deafened}
+              focused={chosen === tile}
+              small={false}
+              multi
+              onActivate={() => {
+                if (mode === 'focus' && focusKey === null) return
+                onActivate(tile.key)
+              }}
+              overlay={overlay}
+            />
+          </div>
+        ))}
+      </div>
+      {stripOrdered.length > 0 && (
+        <div className="call-stage-strip v12-strip">
+          {stripOrdered.map((tile) => (
+            <div key={tile.key} className="v12-cell small" data-tile-key={tile.key}>
+              <Tile
+                tile={tile}
+                deafened={deafened}
+                focused={false}
+                small
+                multi
+                onActivate={() => {
+                  if (tile.kind === 'screen' && tile.userId !== null && mode === 'focus' && focusKey === null) {
+                    watchStore.update({ focus: tile.userId })
+                  } else onActivate(tile.key)
+                }}
+                overlay={overlay}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }

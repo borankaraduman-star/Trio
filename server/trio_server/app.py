@@ -165,6 +165,7 @@ def create_app(
     # CONTRACT-V6-OPS: the hub that marks the owner in their ``ready.user``.
     hub: Hub = OwnerAwareHub(now, settings.owner)
     hub.voice_room_max = settings.voice_room_max
+    hub.screen_shares_max = settings.screen_shares_max
     join_guard = JoinGuard(
         now,
         per_address=JOIN_ATTEMPTS,
@@ -787,7 +788,8 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
         if path and "\x00" not in path:
             candidate = (root / path).resolve()
             # resolve() follows ".." and symlinks; anything outside the root is not ours.
-            if candidate == root / "index.html":
+            # CONTRACT-V12-WATCHING §6: the mini player is part of the app: same policy.
+            if candidate in (root / "index.html", root / "mini.html"):
                 return FileResponse(candidate, headers=_app_shell_headers(request))
             if candidate.is_relative_to(root) and candidate.is_file():
                 headers = {"X-Content-Type-Options": "nosniff"}

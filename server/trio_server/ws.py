@@ -305,6 +305,12 @@ class Session:
             isinstance(session, str) and 1 <= len(session) <= VOICE_SESSION_MAX
         ):
             raise FrameError("BAD_REQUEST", "'session' must be a short string")
+        if (
+            screensharing
+            and not resume
+            and self.hub.screen_shares_full(self.user["id"], channel_id)
+        ):
+            screensharing = False  # V12: the share is not part of the join; the state frame asks
         if self.hub.room_full(self.user["id"], channel_id, resume=resume):
             limit = self.hub.voice_room_max
             raise FrameError(
@@ -374,7 +380,18 @@ class Session:
         camera = _bool(frame, "camera", default=False)
         afk = _bool(frame, "afk", default=False)
         music, music_title = _music(frame)
-        self._own_voice_channel()
+        channel_id = self._own_voice_channel()
+        if screensharing and self.hub.screen_shares_full(self.user["id"], channel_id):
+            # Nothing of this frame is applied; the client sends its state again without the share.
+            limit = self.hub.screen_shares_max
+            raise FrameError(
+                "SCREEN_SHARES_FULL",
+                f"at most {limit} people can share a screen in this room at once",
+                request="voice.state",
+                channel_id=channel_id,
+                limit=limit,
+                sharers=self.hub.screen_sharers(channel_id, besides=self.user["id"]),
+            )
         self.hub.voice_state(
             self.user["id"],
             muted,

@@ -75,6 +75,21 @@ yeter.
    CPU'suna bak; oyunun FPS'inde belirgin düşüş var mı?
 2. Görüntü takılıyor mu, ses kayıyor mu? Bir cümle yaz.
 
+## 7. İzleme biçimleri (Trio penceresinde, 1 dk)
+
+1. Odada iki kişi paylaşsın. Sahnenin üstünde "Ayşe ve Mehmet ekran
+   paylaşıyor" yazmalı; **Yan yana** ve **Odak** düğmeleriyle düzen değişmeli,
+   Odak'ta ← → ile büyük olan değişmeli.
+2. Bir paylaşımın ⋯ menüsünden **Sinema modu**: paylaşım Trio penceresini
+   doldurur, birkaç saniye fareye dokunmayınca düğmeler kaybolur, biri
+   sohbete yazınca altta kısa süre görünür, Esc çıkar.
+3. ⋯ › **Hafif izleme** ve **Sadece ses**: Ayarlar › Görüntü › "Bağlantı
+   bilgisini göster" açıkken üstteki satır küçük çözünürlük / az kare
+   göstermeli; Sadece ses'te görüntü durur, ses sürer.
+4. Ayarlar › Görüntü › "Trio arka plandayken paylaşılan ekranı mini
+   oynatıcıda göster"i aç; Trio'yu tepsiye indir: mini oynatıcı kendiliğinden
+   açılmalı, Trio'ya dönünce kapanmalı.
+
 ## İsteğe bağlı
 
 - Kendi ekranını paylaşırken mini oynatıcı açık: arkadaşın kendi paylaşımını

@@ -4,6 +4,7 @@ import { HangupIcon, HeadphonesIcon, MicIcon, ScreenIcon } from '../icons'
 import { CameraIcon } from '../icons2'
 import { heldCameraTitle } from '../VoiceExtras'
 import { screenShareSupported, talkingLine } from '../../lib/phone'
+import { sharingLine } from '../../lib/multishare'
 
 /**
  * CONTRACT-V7-PHONE §1: the call bar. On a phone, while this tab is in a
@@ -25,6 +26,7 @@ export function CallBar({
   onHangup,
   onOpenRoom,
   musicButton,
+  sharingNames = [],
 }: {
   voice: VoiceSnapshot
   me: number
@@ -40,6 +42,8 @@ export function CallBar({
   musicButton?: ReactNode
   /** The room line opens the drawer, where the room's people are listed. */
   onOpenRoom: () => void
+  /** V12: who shares a screen in the room ("Ayşe ve Sen ekran paylaşıyor" when nobody is talking). */
+  sharingNames?: readonly string[]
 }) {
   if (voice.status === 'idle') return null
   const micOff = voice.muted || voice.micLost
@@ -51,9 +55,14 @@ export function CallBar({
         <span
           data-testid="call-bar-talking"
           data-speaking={voice.speaking.length > 0}
+          data-sharing={sharingNames.length > 0}
           title={connected ? talkingLine(voice.speaking, me, participantCount, nameOf) : undefined}
         >
-          {connected ? talkingLine(voice.speaking, me, participantCount, nameOf) : roomName}
+          {!connected
+            ? roomName
+            : voice.speaking.length === 0 && sharingNames.length > 0
+              ? (sharingLine(sharingNames) ?? '')
+              : talkingLine(voice.speaking, me, participantCount, nameOf)}
         </span>
       </button>
       <div className="v7-call-buttons">
