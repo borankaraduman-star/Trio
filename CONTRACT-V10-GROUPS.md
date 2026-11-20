@@ -217,8 +217,8 @@ channel" — voice rooms list their people under the row, text channels did not.
 **Client.** Under each text channel row (`channel-viewers-<id>`,
 `data-count`): up to four people as a light list (an 18 px avatar and the
 name, mine with "(sen)", `viewer-<channel>-<user>`); five or more fold into
-one row of four stacked faces, "+n" (`channel-viewers-more-<id>`) and the
-first name. In the channel header (wider than a phone) "Burada: Sen, Ece +2"
+one row of four stacked faces and "+n" (`channel-viewers-more-<id>`), the
+names in its label and title. In the channel header (wider than a phone) "Burada: Sen, Ece +2"
 with up to three faces (`here-line`; only the faces at ≤ 1100 px, the names in
 its title). At ≤ 680 px the drawer shows the same rows. Drops to nobody while
 the connection is down, until the next `ready`.
