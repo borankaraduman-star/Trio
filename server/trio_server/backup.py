@@ -202,6 +202,8 @@ def build_plan(db_path: str, upload_dir: Path, created_at: float) -> Plan:
             target.execute("PRAGMA journal_mode=DELETE")
             # Not part of a backup: a code is a 10-minute capability.
             target.execute("DELETE FROM link_codes")
+            # V11: move codes are 10-minute capabilities too (and carry preferences).
+            target.execute("DELETE FROM move_codes")
             target.execute("VACUUM")
             (check,) = target.execute("PRAGMA integrity_check").fetchone()
             if check != "ok":

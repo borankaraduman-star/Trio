@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from trio_server import linkcodes, logsafe
+from trio_server.address import register_address_routes
 from trio_server.config import Settings
 from trio_server.db import (
     SQL_INT_MAX,
@@ -35,7 +36,7 @@ from trio_server.db import (
     hash_token,
     utc_iso,
 )
-from trio_server.downloads import DownloadConfig, register_download_routes
+from trio_server.downloads import DownloadConfig, page_origin, register_download_routes
 from trio_server.errors import ApiError, error_response
 from trio_server.hub import Hub
 from trio_server.ice import IceProvider
@@ -134,6 +135,10 @@ async def current_user(request: Request) -> dict[str, Any]:
         request.state.token_hash = token_hash
     if user is None:
         raise ApiError(401, "UNAUTHORIZED", "missing or invalid token")
+    # CONTRACT-V11-ADDRESS §4: which origin this session is used through.
+    origins = getattr(request.app.state, "session_origins", None)
+    if origins is not None:
+        await origins.note(request.state.token_hash, page_origin(request))
     return user
 
 
@@ -255,6 +260,7 @@ def create_app(
         notifier.prefs = await push_store.all_prefs()
         await push_sender.start(vapid)
         await app.state.record_boot()  # CONTRACT-V6-OPS §7
+        await app.state.address_boot()  # CONTRACT-V11-ADDRESS §6
         # Not only on upload: a server nobody uploads to never swept at all.
         await sweep_orphans()
         await sweep_unreferenced_files()
@@ -322,12 +328,16 @@ def create_app(
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
         boot = app.state.boot  # CONTRACT-V6-OPS §7
-        return {
+        body = {
             "ok": True,
             "version": VERSION,
             "persistent": boot["persistent"],
             "data_since": boot["data_since"],
         }
+        # CONTRACT-V11-ADDRESS §2: only when set (unset, the answer is v10's).
+        if settings.public_url is not None:
+            body["public_url"] = settings.public_url
+        return body
 
     @app.post("/api/join", status_code=201)
     async def join(request: Request) -> Any:
@@ -343,7 +353,10 @@ def create_app(
             )
         body = await read_json_object(request)
         if body.get("link_code") is not None:
-            return await join_with_link_code(body["link_code"], address)
+            return await join_with_link_code(body["link_code"], address, request)
+        if body.get("recovery_code") is not None:
+            # CONTRACT-V11-ADDRESS §6: the owner's way back in.
+            return await app.state.recover(body["recovery_code"], address)
         supplied = body.get("invite_code")
         supplied_bytes = supplied.encode("utf-8") if isinstance(supplied, str) else b""
         if not hmac.compare_digest(supplied_bytes, invite_code):
@@ -368,7 +381,7 @@ def create_app(
         logger.info("user.joined id=%s", user["id"])
         return {"token": token, "user": user}
 
-    async def join_with_link_code(raw: Any, address: str) -> JSONResponse:
+    async def join_with_link_code(raw: Any, address: str, request: Request) -> JSONResponse:
         """Another device for an existing user: a new token, the same account."""
         code = linkcodes.normalize(raw)
         user = None
@@ -379,6 +392,10 @@ def create_app(
                     linkcodes.hash_code(code), now(), hash_token(token)
                 )
         if user is None:
+            # CONTRACT-V11-ADDRESS §3: a move code typed (or linked) on the canonical address.
+            moved = await app.state.redeem_move_via_join(raw, request, address)
+            if moved is not None:
+                return moved
             join_guard.failed(address)
             raise ApiError(403, "INVALID_LINK_CODE", "invalid or expired link code")
         join_guard.succeeded(address)
@@ -603,6 +620,20 @@ def create_app(
 
     register_media_routes(app, db=db, hub=hub, upload_dir=upload_dir, current_user=current_user)
 
+    # CONTRACT-V11-ADDRESS: the canonical address, moving a device, recovery.
+    register_address_routes(
+        app,
+        db=db,
+        hub=hub,
+        settings=settings,
+        now=now,
+        current_user=current_user,
+        read_json=read_json_object,
+        join_guard=join_guard,
+        delete_push_for_token=push_store.delete_for_token,
+        http_transport=http_transport,
+    )
+
     async def forget_channel_prefs(channel_id: int) -> None:
         """A deleted channel's level leaves every user's push preferences."""
         key = str(channel_id)
@@ -637,6 +668,7 @@ def create_app(
         static_dir=settings.static_dir,
         page_headers=shell_headers,
         trusted_proxy_hops=settings.trusted_proxy_hops,
+        public_url=settings.public_url,
     )
 
     # Registered after every real /api route: an unknown one is a JSON 404 for

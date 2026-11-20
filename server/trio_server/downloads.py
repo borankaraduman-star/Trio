@@ -405,8 +405,14 @@ def register_download_routes(
     static_dir: str | None,
     page_headers: Callable[[str], dict[str, str]],
     trusted_proxy_hops: int,
+    public_url: str | None = None,
 ) -> DownloadCatalog:
     catalog = DownloadCatalog(config, now, http_transport)
+
+    def link_origin(request: Request) -> str | None:
+        # CONTRACT-V11-ADDRESS §2: the canonical address, when set, beats the Host.
+        return public_url if public_url is not None else page_origin(request)
+
     limiter = SlidingWindow(DOWNLOAD_ATTEMPTS, DOWNLOAD_WINDOW_SECONDS, now)
     app.state.downloads = catalog
 
@@ -437,7 +443,7 @@ def register_download_routes(
         index = Path(static_dir) / "indir.html" if static_dir else None
         if index is None or not index.is_file():
             return error_response(404, "NOT_FOUND", "not found")
-        html = absolute_preview_urls(index.read_text(encoding="utf-8"), page_origin(request))
+        html = absolute_preview_urls(index.read_text(encoding="utf-8"), link_origin(request))
         headers = page_headers(request.headers.get("host", ""))
         if request.method == "HEAD":
             return Response(
@@ -457,11 +463,11 @@ def register_download_routes(
 
     async def robots(request: Request) -> Response:
         return PlainTextResponse(
-            robots_txt(page_origin(request)), headers={"Cache-Control": "public, max-age=3600"}
+            robots_txt(link_origin(request)), headers={"Cache-Control": "public, max-age=3600"}
         )
 
     async def sitemap(request: Request) -> Response:
-        origin = page_origin(request)
+        origin = link_origin(request)
         if origin is None:
             # A sitemap's <loc> must be absolute; without a trustworthy host there is none.
             return error_response(404, "NOT_FOUND", "not found")

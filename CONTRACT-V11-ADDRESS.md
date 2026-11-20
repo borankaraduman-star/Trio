@@ -34,7 +34,8 @@ server writes; the request's `Host` is not used for them any more:
   `url`/`image` (CONTRACT-V6-DOWNLOAD);
 - `/robots.txt`'s `Sitemap:` and `/sitemap.xml`'s `<loc>`;
 - `GET /api/health` carries it: `{"ok", "version", "persistent", "data_since",
-  "public_url": "<origin>" | null}` (unauthenticated, as before).
+  "public_url": "<origin>"}` (unauthenticated, as before; the key is absent
+  while unset).
 
 The client builds its own links from it (`web/src/lib/address.ts`):
 
@@ -56,7 +57,7 @@ made on (CONTRACT-V6-PUSH: a subscription belongs to an origin).
       409 ALREADY_HERE      the request's origin IS the canonical one
       403 FORBIDDEN         an Origin header that is not the request's origin
       422 INVALID_PREFS     prefs is not an object (absent = {})
-      413 PAYLOAD_TOO_LARGE body over 96 KiB
+      413 PAYLOAD_TOO_LARGE body over 160 KiB
 
     POST /api/move/peek       (no auth; the CANONICAL origin) {"code"}
       → 200 {"user": {id, name}, "expires_at"}     — redeems nothing
