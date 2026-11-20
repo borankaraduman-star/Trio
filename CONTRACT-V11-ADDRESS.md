@@ -217,8 +217,8 @@ next address must answer as a Trio server that declares it (`next_url` or
 stored code is forgotten once used or expired. `TRIO_SERVER_URL` in the environment still
 wins at the next start.
 
-**Older shells** (no `moveServer`): the band says “Uygulama menüsü → Sunucu
-adresini değiştir → <host>”, and the tap shows the move code as text with a
+**Older shells** (no `moveServer`): the band says “Trio menüsü › Sunucuyu
+değiştir… › <host>”, and the tap shows the move code as text with a
 copy button; after switching, the person types it into “Zaten hesabım var”.
 
 ## 6. The owner's recovery code
