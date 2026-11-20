@@ -78,6 +78,12 @@
   flex: none;
 }
 
+@media (max-width: 680px) {
+  .v12-sharing-line {
+    flex-basis: 100%;
+  }
+}
+
 /* --- two or more screens: Yan yana / Odak --------------------------------------------- */
 
 .call-stage.v12-multi {
@@ -138,9 +144,10 @@
 /* --- on a remote screen tile: ⋯, Hafif, Sadece ses, the receiving line ----------------- */
 
 .v12-tile-menu {
+  /* Top right, left of the V2 fullscreen button: "İzlemeyi bırak" keeps the top left. */
   position: absolute;
   top: 6px;
-  left: 6px;
+  right: 46px;
   z-index: 2;
   display: flex;
   gap: 4px;
@@ -186,7 +193,7 @@
 .v12-menu {
   position: absolute;
   top: 36px;
-  left: 0;
+  right: 0;
   min-width: 230px;
   padding: 6px;
   border: 1px solid var(--trio-border, #2b303a);
@@ -196,11 +203,13 @@
   cursor: default;
 }
 
-.call-tile.small .v12-menu {
-  position: fixed;
-  top: auto;
-  left: auto;
-  transform: translateY(-100%);
+.call-tile.small [data-testid^='tile-menu-'] {
+  /* A strip tile keeps one-click ⧉; its ⋯ menu is on the tile once it is large (one click away). */
+  display: none;
+}
+
+.call-tile.small .v12-tile-menu {
+  right: 6px;
 }
 
 .v12-menu-item {
@@ -275,8 +284,8 @@
 }
 
 .v12-light-badge {
-  top: 10px;
-  left: 90px;
+  bottom: 10px;
+  left: 10px;
 }
 
 .v12-receive-line {

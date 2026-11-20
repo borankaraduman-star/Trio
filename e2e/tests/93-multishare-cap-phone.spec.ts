@@ -11,8 +11,8 @@
 import path from 'node:path'
 import { freshServer } from '../lib/server'
 import { crowd } from '../lib/groups'
-import { expect, joinVoice, test } from '../lib/trio'
-import { PHONE, SCREENSHOTS } from '../lib/v7phone'
+import { expect, joinVoice, SOHBET, test } from '../lib/trio'
+import { joinVoiceOnPhone, PHONE, SCREENSHOTS } from '../lib/v7phone'
 import { NEGOTIATION_PROBE, negotiationLog } from '../lib/v8music'
 import { expectDecodingFrom } from '../lib/v12multishare'
 
@@ -69,7 +69,8 @@ test('a phone viewer with two and three shares', async ({ browser, trio }) => {
   await freshServer()
   const people = await crowd(browser, trio, 4, (i) => (i === 3 ? PHONE : {}))
   const [ayse, mehmet, zeynep, phone] = people
-  for (const person of people) await joinVoice(person)
+  for (const person of [ayse, mehmet, zeynep]) await joinVoice(person)
+  await joinVoiceOnPhone(phone, SOHBET)
   await ayse.page.getByTestId('btn-screen').click()
   await mehmet.page.getByTestId('btn-screen').click()
   await expectDecodingFrom(phone, [ayse.user.id, mehmet.user.id])
