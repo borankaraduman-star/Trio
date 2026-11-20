@@ -15,6 +15,13 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.8.1',
+    lines: [
+      'Trio artık her küçük grup için: site, giriş ekranı ve tüm metinler buna göre yenilendi; sitede “Kendi sunucunu kur” bölümü var.',
+      'Proje MIT lisansıyla açık kaynak.',
+    ],
+  },
+  {
     version: '0.8.0',
     title: 'Masaüstü kendini güncelliyor',
     lines: [
