@@ -139,7 +139,7 @@ imzalı bir Windows dosyası için "yine de uyarırsa" satırını gösterir.
 - Mağazadan kurulan MSIX paketini Microsoft imzalar; SmartScreen uyarısı
   çıkmaz. electron-builder `appx` hedefini üretebilir.
 - Ama: mağaza incelemesi, mağaza sayfası, ve uygulamanın her sürümde
-  mağazaya gönderilmesi gerekir; arkadaşlar uygulamayı `/indir`'den değil
+  mağazaya gönderilmesi gerekir; kullanıcılar uygulamayı `/indir`'den değil
   Microsoft Store'dan kurar. Bu iş akışına **bağlanmadı** (gönderim elle).
   Mağazanın bir sunucu adresi soran "özel" bir sohbet uygulamasını kabul
   edip etmeyeceğini doğrulayamadım.
@@ -149,7 +149,7 @@ imzalı bir Windows dosyası için "yine de uyarırsa" satırını gösterir.
 1. **macOS'u şimdi imzala**: üyeliğin zaten var, maliyeti sıfır, uyarı tamamen
    kalkar. Yukarıdaki üç adım yarım saat.
 2. **Windows'ta şimdilik imzasız kal**, sayfadaki yardım ve SHA-256 doğrulaması
-   üç-beş arkadaş için yeterli. Uyarı ilk açılışta bir kez çıkar.
+   birbirini tanıyan küçük bir grup için yeterli. Uyarı ilk açılışta bir kez çıkar.
 3. Windows uyarısı gerçekten sorun olursa sırayla: depo açık kaynak olabiliyorsa
    **SignPath Foundation** (ücretsiz); olamıyorsa **Microsoft Store** (ücretsiz,
    ama mağaza süreci); en son yıllık ücretli bir **OV** sertifika (bulut HSM'li,

@@ -19,6 +19,9 @@ import {
 import { Dots, useReveal } from './reveal'
 
 const REPO_URL = 'https://github.com/borankaraduman-star/Trio'
+/** The README's own setup section, and its VPS part (GitHub's heading anchors). */
+const SETUP_URL = `${REPO_URL}#kendi-sunucunu-kur`
+const VPS_URL = `${REPO_URL}#kendi-vpsinde-docker-compose`
 
 type Load = { state: 'loading' } | { state: 'ready'; downloads: Downloads }
 
@@ -48,7 +51,9 @@ async function visitorHints(): Promise<Visitor> {
 
 /**
  * /indir: Trio's one public page (CONTRACT-V6-DOWNLOAD). What Trio is, shown
- * by small live demos of the real screens, then the download itself.
+ * by small live demos of the real screens; then the two readers it serves:
+ * somebody invited to a group's server (download, or open it in the browser),
+ * and somebody who wants Trio for their own group (set up a server).
  */
 export function DownloadPage() {
   const [load, setLoad] = useState<Load>({ state: 'loading' })
@@ -97,7 +102,8 @@ export function DownloadPage() {
         </a>
         <nav className="top-nav" aria-label="Sayfa">
           <a href="#oda">Neler var</a>
-          <a href="#baslangic">Nasıl başlanır</a>
+          <a href="#baslangic">Davet edildiysen</a>
+          <a href="#sunucu">Kendi sunucun</a>
           <a href="#indir">İndir</a>
           <a href="/" className="top-open">
             Tarayıcıda aç
@@ -109,22 +115,25 @@ export function DownloadPage() {
         <section className="hero" aria-labelledby="hero-title">
           <div className="hero-copy">
             <p className="eyebrow hero-in" style={{ ['--d' as string]: '0ms' }}>
-              <Dots /> üç arkadaş için
+              <Dots /> arkadaş grubu, ekip, küçük topluluk
             </p>
             <h1 id="hero-title" className="hero-title">
               <span className="hero-in" style={{ ['--d' as string]: '80ms' }}>
-                Üç kişiyiz,
+                Grubunun sohbeti,
               </span>{' '}
               <span className="hero-in hero-accent" style={{ ['--d' as string]: '200ms' }}>
-                bir odamız var.
+                kendi sunucunda.
               </span>
             </h1>
             <p className="hero-lead hero-in" style={{ ['--d' as string]: '320ms' }}>
-              Yazışmak, sesli konuşmak, ekranını açmak, birbirine şarkı çalmak için küçük bir oda. Trio arkadaşının
-              kurduğu sunucuda durur; içeri davet koduyla girilir.
+              Yazışmak, sesli odada konuşmak, ekran açmak, birbirinize müzik çalmak için. Trio'yu gruptan biri küçük
+              bir sunucuya kurar, diğerleri davet koduyla girer; mesajlar ve dosyalar o sunucuda kalır.
             </p>
 
             <div className="hero-actions hero-in" style={{ ['--d' as string]: '440ms' }}>
+              <p className="hero-path" id="hero-invited">
+                Davet edildiysen
+              </p>
               {load.state === 'loading' && !phone && (
                 <p className="muted" role="status">
                   Dosyalar yükleniyor…
@@ -160,6 +169,14 @@ export function DownloadPage() {
                   </p>
                 </div>
               )}
+              <div className="hero-own">
+                <p className="hero-path">Grubun için istiyorsan</p>
+                <a href="#sunucu" className="hero-own-link" data-testid="indir-own-server">
+                  Kendi sunucunu kur
+                  <span aria-hidden="true">→</span>
+                </a>
+                <p className="muted">10–15 kişilik gruplar için; kurulumu bir kişi yapar.</p>
+              </div>
             </div>
           </div>
           <div className="hero-stage hero-in" style={{ ['--d' as string]: '260ms' }}>
@@ -174,14 +191,18 @@ export function DownloadPage() {
             </p>
             <h2 id="voice-title">Sunucu yeniden başlasa da sesiniz kesilmez.</h2>
             <p>
-              Ses arkadaşından sana gider, sunucunun üstünden geçmez; sunucu yalnızca sizi tanıştırır. Güncelleme gelip
-              sunucu yeniden başlarken üstte “ses sürüyor” yazar, siz konuşmaya devam edersiniz.
+              Ses konuşandan dinleyene doğrudan gider, sunucunun üstünden geçmez; sunucu yalnızca sizi tanıştırır.
+              Güncelleme gelip sunucu yeniden başlarken üstte “ses sürüyor” yazar, siz konuşmaya devam edersiniz.
             </p>
             <ul className="ticks">
               <li>Herkesin sesini ayrı ayarla: %0 ile %200 arası, bu cihazda hatırlanır.</li>
               <li>Gürültü engelleme ve bas-konuş; masaüstünde pencere arkadayken de.</li>
-              <li>“Çağır”a bas: odada olmayan arkadaşının telefonu çalar.</li>
+              <li>“Çağır”a bas: odada olmayan birinin telefonu çalar.</li>
             </ul>
+            <p className="muted">
+              Herkes herkese bağlandığı için bir oda yaklaşık 8 kişiye kadar rahat çalışır; kalabalıksanız ikinci bir
+              oda açın.
+            </p>
             <p className="try">Dene: kendi mikrofonunu kapat, Ozan'ın sesini kıs.</p>
           </div>
           <div className="feature-demo" data-reveal>
@@ -258,8 +279,8 @@ export function DownloadPage() {
               <div className="bento-text">
                 <h3>Sunucu sizin</h3>
                 <p>
-                  Mesajlar ve dosyalar arkadaşının kurduğu sunucuda durur. Reklam yok, e-posta ya da telefon numarası
-                  istenmez.
+                  Mesajlar ve dosyalar grubunuzdan birinin kurduğu sunucuda durur, başka bir yere gitmez. Reklam yok;
+                  e-posta ya da telefon numarası istenmez.
                 </p>
               </div>
             </article>
@@ -269,25 +290,28 @@ export function DownloadPage() {
         <section className="steps" id="baslangic" aria-labelledby="steps-title">
           <div className="steps-head" data-reveal>
             <p className="eyebrow">
-              <Dots /> Nasıl başlanır
+              <Dots /> Davet edildiysen
             </p>
-            <h2 id="steps-title">Üç adımda odadasın.</h2>
+            <h2 id="steps-title">Kod elindeyse gerisi kolay.</h2>
           </div>
           <ol className="steps-list" data-reveal>
             <li>
-              <h3>İndir ya da tarayıcıda aç</h3>
-              <p>Windows, macOS ve Linux için uygulama var. Telefonda ve kurmak istemeyen için tarayıcı yeter.</p>
+              <h3>Sunucunun adresini aç</h3>
+              <p>
+                Seni davet eden kişi bir adres verir. Tarayıcıda açman yeter; masaüstü uygulamasını kurarsan ilk
+                açılışta bu adresi sorar.
+              </p>
             </li>
             <li>
               <h3>Davet koduyla katıl</h3>
               <p>
-                Kodu sunucuyu kuran arkadaşından al, bir isim yaz. Başka cihazdan aynı hesapla girmek için cihaz kodu
-                var.
+                Bir isim yaz, kodu gir. Davet bağlantısı geldiyse ona dokunman yeter, kod kendiliğinden gelir. Başka
+                cihazdan aynı hesapla girmek için cihaz kodu var.
               </p>
             </li>
             <li>
               <h3>Odaya gir</h3>
-              <p>“Sohbet”e tıkla. Arkadaşların oradaysa sesleri hemen gelir.</p>
+              <p>Bir sesli odaya tıkla; içeridekilerin sesi hemen gelir.</p>
             </li>
           </ol>
         </section>
@@ -325,6 +349,8 @@ export function DownloadPage() {
           {downloads && files.length > 0 && !phone && <WarningHelp downloads={downloads} visitor={visitor} />}
         </section>
 
+        <OwnServer />
+
         <section className="faq" aria-labelledby="faq-title">
           <div className="faq-head" data-reveal>
             <p className="eyebrow">
@@ -337,10 +363,20 @@ export function DownloadPage() {
               Evet. Trio'yu kullanmak için kimseye para ödemezsin, reklam da yok. Sunucunun barındırıldığı yerin (ör.
               Railway) küçük bir aylık ücreti olabilir; onu sunucuyu kuran öder.
             </Question>
+            <Question q="Kaç kişiyle kullanılır?">
+              Trio küçük gruplar için yapıldı: bir sunucuda 10–15 kişiye kadar. Sesli odada herkes herkese doğrudan
+              bağlandığı için bir oda yaklaşık 8 kişiye kadar rahat çalışır; kamera ve ekran açıkken bu sayı düşer.
+              Yüzlerce kişilik bir topluluk için uygun değil.
+            </Question>
             <Question q="Verilerim nerede duruyor?">
-              Mesajlar ve dosyalar, Trio'yu kuran arkadaşının sunucusunda durur; Trio'nun ayrıca bir bulutu yok.
-              Sunucuda şifresiz saklanırlar, yani sunucuyu yöneten görebilir. Canlı ses, kamera ve ekran tarayıcılar
-              arasında şifreli gider ve kaydedilmez.
+              Mesajlar ve dosyalar, grubunuzun kendi sunucusunda durur; Trio'nun ayrıca bir bulutu yok. Sunucuda
+              şifresiz saklanırlar, yani sunucuyu yöneten görebilir. Canlı ses, kamera ve ekran tarayıcılar arasında
+              şifreli gider ve kaydedilmez.
+            </Question>
+            <Question q="Davet kodum yok, nasıl girerim?">
+              Trio'da herkese açık bir sunucu yok: her grup kendi sunucusunu kurar ve kodunu kendisi dağıtır. Bir gruba
+              katılmak için o grubun adresini ve kodunu bilen birinden iste; kendi grubun için istiyorsan “Kendi
+              sunucunu kur” bölümüne bak.
             </Question>
             <Question q="Telefonda var mı?">
               Ayrı bir uygulama yok, gerekmiyor: Trio telefonun tarayıcısında çalışır. Ana ekrana eklersen simgesiyle
@@ -369,7 +405,7 @@ export function DownloadPage() {
           </span>
         </div>
         <p className="foot-text">
-          Birkaç arkadaşın kendi sunucusunda çalışan küçük bir sohbet uygulaması. Kaynak kodu herkese açık:{' '}
+          Grupların kendi kurduğu sunucuda çalışan küçük bir sohbet uygulaması. Kaynak kodu herkese açık:{' '}
           <a href={REPO_URL} rel="noopener" data-testid="indir-repo">
             GitHub'da Trio
           </a>
@@ -389,5 +425,136 @@ function Question({ q, children }: { q: string; children: ReactNode }) {
       <summary>{q}</summary>
       <p>{children}</p>
     </details>
+  )
+}
+
+/** What the person who sets the server up decides and keeps (CONTRACT-V6-OPS). */
+const OWNER_GETS: { title: string; body: string }[] = [
+  {
+    title: 'Davet kodu ve kişi sınırı',
+    body: 'Kodu ve sunucuya kaç kişinin girebileceğini sen belirlersin. Kod sızarsa değiştirirsin; içerideki kimse çıkmaz.',
+  },
+  {
+    title: 'Yönetim ekranı',
+    body: 'Ayarlar’da kim bağlı, kim ne kadar yer kullanıyor, disk ne durumda görürsün. Telefonunu kaybeden birinin oturumlarını kapatır, gerekirse birini çıkarırsın.',
+  },
+  {
+    title: 'Yedek',
+    body: 'Mesajların ve dosyaların yedeğini tek dosya olarak indirirsin; geri yüklemek tek komut.',
+  },
+  {
+    title: 'Güncelleme',
+    body: 'Yeni sürüm çıktığında depoyu güncellersin, sunucu kendini yeniden kurar. Sesli odadakiler kendiliğinden geri bağlanır.',
+  },
+]
+
+/**
+ * "Kendi sunucunu kur": for somebody who wants Trio for their own group. What
+ * it takes, honestly; the Railway path in five steps; what the owner gets.
+ */
+function OwnServer() {
+  return (
+    <section className="own" id="sunucu" aria-labelledby="own-title" data-testid="own-server">
+      <div className="own-head" data-reveal>
+        <p className="eyebrow">
+          <Dots /> Kendi sunucunu kur
+        </p>
+        <h2 id="own-title">Grubun için Trio’yu sen kur.</h2>
+        <p className="own-lead">
+          Trio’nun herkesin kullandığı merkezî bir sunucusu yok; her grup kendi sunucusunu çalıştırır. Gereken küçük
+          bir konteyner ve verinin durduğu bir disk. Kuran kişi bir kez yarım saat ayırır, gerisi kendi işler.
+        </p>
+      </div>
+
+      <div className="own-grid">
+        <dl className="own-facts" data-reveal>
+          <div>
+            <dt>Ne gerekir</dt>
+            <dd>
+              Bir GitHub hesabı ve Railway’de bir proje. Ya da Docker kurulu küçük bir Linux sunucu: 1 işlemci, 1 GB
+              bellek yeter.
+            </dd>
+          </div>
+          <div>
+            <dt>Ne tutar</dt>
+            <dd>
+              Trio ücretsiz. Barındırma Railway’de planına göre ayda birkaç dolar; kendi sunucunda sağlayıcının en küçük
+              paketi.
+            </dd>
+          </div>
+          <div>
+            <dt>Kaç kişi</dt>
+            <dd>
+              Bir sunucu 10–15 kişilik bir grup için. Bir sesli oda yaklaşık 8 kişiye kadar rahat; daha kalabalık bir
+              topluluk için Trio doğru araç değil.
+            </dd>
+          </div>
+          <div>
+            <dt>Ne kadar uğraş</dt>
+            <dd>Railway yolunda komut satırı gerekmez, her şey panelden. Sonrasında bakım neredeyse yok.</dd>
+          </div>
+        </dl>
+
+        <div className="own-recipe" data-reveal>
+          <p className="own-recipe-title">
+            <span>Railway’de, beş adım</span>
+            <span className="own-recipe-time">yaklaşık 30 dk</span>
+          </p>
+          <ol className="own-steps">
+            <li>
+              <h3>Depoyu kendine kopyala</h3>
+              <p>GitHub’da Trio deposunu kendi hesabına çatalla (Fork).</p>
+            </li>
+            <li>
+              <h3>Railway’de projeyi aç</h3>
+              <p>
+                <b>New Project › Deploy from GitHub repo</b> ile çatalını seç. Railway Dockerfile’ı kendisi bulur.
+              </p>
+            </li>
+            <li>
+              <h3>Bir disk bağla</h3>
+              <p>
+                Servise <code>/data</code> yoluna bağlı bir volume ekle. Mesajlar ve dosyalar orada durur; volume olmazsa
+                her güncellemede silinir.
+              </p>
+            </li>
+            <li>
+              <h3>Kodu ve sınırı yaz</h3>
+              <p>
+                <code>TRIO_INVITE_CODE</code> grubuna vereceğin kod, <code>TRIO_MAX_USERS</code> kaç kişiyseniz o.
+                Farklı ağlardakiler birbirini duysun diye ücretsiz Cloudflare TURN anahtarı da öneriliyor.
+              </p>
+            </li>
+            <li>
+              <h3>Adresi al, ilk sen gir</h3>
+              <p>
+                <b>Generate Domain</b> ile adresini al. İlk giren sunucunun sahibi olur; sonra adresi ve kodu grubuna
+                gönder.
+              </p>
+            </li>
+          </ol>
+          <div className="own-links">
+            <a href={SETUP_URL} className="own-cta" rel="noopener" data-testid="own-setup-guide">
+              Adım adım kurulum (GitHub)
+            </a>
+            <a href={VPS_URL} className="own-alt" rel="noopener">
+              Kendi VPS’inde: Docker Compose
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div className="own-gets" data-reveal>
+        <h3>Kuran kişi sunucunun sahibidir</h3>
+        <ul>
+          {OWNER_GETS.map((item) => (
+            <li key={item.title}>
+              <b>{item.title}</b>
+              <span>{item.body}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   )
 }

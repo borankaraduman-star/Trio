@@ -1,5 +1,5 @@
 /**
- * Pieces the demos share: the three made-up friends, their avatars, the
+ * Pieces the demos share: the made-up people of the demos' group, their avatars, the
  * app's line icons (redrawn here so the page does not load the app), and the
  * controls every moving demo carries (pause, and step-by-step under reduced
  * motion).
@@ -15,8 +15,12 @@ export interface Friend {
 export const ECE: Friend = { name: 'Ece', color: '#3f8a7c' }
 export const OZAN: Friend = { name: 'Ozan', color: '#9b5361' }
 export const DENIZ: Friend = { name: 'Deniz', color: '#8c6a2f' }
+export const SELIN: Friend = { name: 'Selin', color: '#75507a' }
+export const BARIS: Friend = { name: 'Barış', color: '#3e6e85' }
+export const MELIS: Friend = { name: 'Melis', color: '#52638f' }
 export const SEN: Friend = { name: 'Sen', color: '#4b5a78' }
-export const FRIENDS = [ECE, OZAN, DENIZ] as const
+/** Everybody on the demo server: six people, a few of them in the voice room at a time. */
+export const PEOPLE = [ECE, OZAN, DENIZ, SELIN, BARIS, MELIS] as const
 
 export function Avatar({
   friend,

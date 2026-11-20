@@ -584,13 +584,22 @@
   border-bottom: 1px solid rgb(229 181 103 / 35%);
 }
 
+/* Five tiles: three on top, two centred under them (each tile spans two of six columns). */
 .vr-tiles {
   list-style: none;
   margin: 0;
-  padding: 28px 14px 18px;
+  padding: 22px 14px 18px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
+}
+
+.vr-tiles > li {
+  grid-column: span 2;
+}
+
+.vr-tiles > li:nth-child(4):nth-last-child(2) {
+  grid-column: 2 / span 2;
 }
 
 .vr-tile {
@@ -599,7 +608,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 22px 6px 16px;
+  padding: 18px 6px 14px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
@@ -1722,6 +1731,14 @@ button.vr-btn:active {
 
 .vg-pulses path:nth-child(3) {
   animation-delay: -1.7s;
+}
+
+.vg-pulses path:nth-child(4) {
+  animation-delay: -0.4s;
+}
+
+.vg-pulses path:nth-child(5) {
+  animation-delay: -2.1s;
 }
 
 @keyframes travel {

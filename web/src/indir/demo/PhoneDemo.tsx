@@ -5,20 +5,22 @@
  * screen and the app.
  */
 import { BrandMark } from '../../components/BrandMark'
-import { Avatar, DemoControls, demoAttributes, ECE, Icon, OZAN, type Friend } from './parts'
+import { Avatar, BARIS, DemoControls, demoAttributes, Icon, OZAN, SELIN, type Friend } from './parts'
 import { useDemo } from './useDemo'
 
 export const PHONE_STEPS = [900, 1600, 1800, 2400, 1700, 1900, 2800]
 const LOCK_LAST = 3
 const APP_STEP = 5
-const TALKING: Record<number, Friend[]> = { 4: [OZAN], 5: [OZAN, ECE] }
+const TALKING: Record<number, Friend[]> = { 4: [OZAN], 5: [OZAN, SELIN] }
+/** Who is in the call when the visitor joins: the bar counts them. */
+const IN_CALL = 5
 
 export function PhoneDemo() {
   const demo = useDemo<HTMLDivElement>(PHONE_STEPS)
   const { step } = demo
   const lock = step <= LOCK_LAST
   const talking = TALKING[step] ?? []
-  const callLine = talking.length > 0 ? `Konuşuyor: ${talking.map((f) => f.name).join(', ')}` : '3 kişi'
+  const callLine = talking.length > 0 ? `Konuşuyor: ${talking.map((f) => f.name).join(', ')}` : `${IN_CALL} kişi`
 
   return (
     <div className="phone-demo" ref={demo.ref} {...demoAttributes(demo, 'phone')} data-view={lock ? 'lock' : 'app'}>
@@ -77,8 +79,9 @@ export function PhoneDemo() {
               <Icon name="hash" size={15} /> genel
               <span className="ph-people">
                 <Avatar friend={OZAN} size={20} speaking={talking.includes(OZAN)} />
-                <Avatar friend={ECE} size={20} speaking={talking.includes(ECE)} />
-                <i /> 3
+                <Avatar friend={SELIN} size={20} speaking={talking.includes(SELIN)} />
+                <Avatar friend={BARIS} size={20} speaking={talking.includes(BARIS)} />
+                <i /> {IN_CALL}
               </span>
             </div>
             <div className="ph-msgs">
@@ -87,6 +90,9 @@ export function PhoneDemo() {
               </p>
               <p>
                 <b>Ozan</b> Çağırdım, gel.
+              </p>
+              <p>
+                <b>Barış</b> Selin de geliyormuş, yer açın.
               </p>
               <p>
                 <b>Deniz</b> Geldim geldim.

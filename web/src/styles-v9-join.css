@@ -73,6 +73,21 @@
   border-color: var(--trio-coral);
 }
 
+/* "Trio nedir?": for somebody who reached this screen without an invite; the site says what it is. */
+.join-about {
+  display: block;
+  width: fit-content;
+  margin: 10px auto 0;
+  padding: 6px 4px;
+  color: var(--text-muted, #a0a6b2);
+  font-size: 13px;
+  text-underline-offset: 3px;
+}
+
+.join-about:hover {
+  color: var(--text-strong, #f2f1ed);
+}
+
 .living circle {
   transform-box: fill-box;
   transform-origin: center;
