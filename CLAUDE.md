@@ -1,6 +1,7 @@
 # Trio
 
-A private Discord alternative for three friends: text channels, voice rooms
+A private Discord alternative for a small group (up to 10–15 people; it
+started as three friends, CONTRACT-V10-GROUPS): text channels, voice rooms
 (full-mesh WebRTC), screen sharing, camera, attachments. Self-hosted on
 Railway. UI text is Turkish; code, comments and commit messages are English.
 
@@ -11,7 +12,7 @@ Railway. UI text is Turkish; code, comments and commit messages are English.
 | `server/` | REST + WebSocket hub, SQLite, uploads | Python 3.12, FastAPI, aiosqlite (plain SQL) |
 | `web/` | the client | Vite, React 18, TypeScript strict, plain CSS |
 | `desktop/` | Electron shell that loads the client from the server's URL | Electron, electron-builder |
-| `e2e/` | Playwright suite: three browsers against the real server | @playwright/test |
+| `e2e/` | Playwright suite: three browsers (N with `lib/groups.ts`) against the real server | @playwright/test |
 | `addon/` | TrioDurum, the WoW addon behind the game status (CONTRACT-V5) | Lua 5.1, no libraries |
 | `deploy/` | VPS alternative (docker compose + coturn + Caddy) | |
 | `design/` | brief for generated artwork | |
@@ -22,7 +23,7 @@ suppression, desktop bridge), `CONTRACT-V3.md` (quotas, sessions, device
 linking, limits), `CONTRACT-V4.md` (calls that survive a restart, ring,
 connection test, messages family, identity), `CONTRACT-V5.md` (game status) and
 `CONTRACT-V6-OPS.md` (the owner, backups, deleting files, the client error log),
-`CONTRACT-V6-PUSH.md` (Web Push, notification preferences, the service worker), `CONTRACT-V6-MEDIA.md` (previews, gallery, voice messages, drafts), `CONTRACT-V6-VOICE.md` (share profiles, watch, volumes, gate, AFK, hotkeys, desktop version), `CONTRACT-V6-DOWNLOAD.md` (the /indir page, release checksums, signing), `CONTRACT-V7-PHONE.md` (the phone call bar, presence, the collapsible stage, settings in sections), `CONTRACT-V7-READING.md` (read state across devices, the new-messages line, Enter on touch, channel rename/delete, the device-code QR) and `CONTRACT-V8-MUSIC.md` (sharing computer sound in a voice room: the music stream, stereo Opus, capture without Trio's own sound, the title). Read the relevant one before changing either side; change
+`CONTRACT-V6-PUSH.md` (Web Push, notification preferences, the service worker), `CONTRACT-V6-MEDIA.md` (previews, gallery, voice messages, drafts), `CONTRACT-V6-VOICE.md` (share profiles, watch, volumes, gate, AFK, hotkeys, desktop version), `CONTRACT-V6-DOWNLOAD.md` (the /indir page, release checksums, signing), `CONTRACT-V7-PHONE.md` (the phone call bar, presence, the collapsible stage, settings in sections), `CONTRACT-V7-READING.md` (read state across devices, the new-messages line, Enter on touch, channel rename/delete, the device-code QR) `CONTRACT-V8-MUSIC.md` (sharing computer sound in a voice room: the music stream, stereo Opus, capture without Trio's own sound, the title) and `CONTRACT-V10-GROUPS.md` (up to 15 people: the voice room cap `ROOM_FULL`, camera encoding by room size, crowded layouts, measurements). Read the relevant one before changing either side; change
 the contract in the same commit as the code.
 
 ## Production is live and auto-deploys from `main`
