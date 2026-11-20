@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
+    version: '0.10.0',
+    lines: [
+      'Kimin ne oynadığı ve ne dinlediği artık üye listesinde ve metin kanallarının altında da görünür; dinlediğini paylaşmak Ayarlar › Hesap › Durum’dan açılır.',
+      'Aynı anda birden fazla kişi ekran paylaşabilir (bir odada en çok 4): düğme “Sen de paylaş” der. Yan yana ya da biri büyük (Odak) izle; küçük gördüğün paylaşım sana küçük gönderilir.',
+      'Sinema modu ve mini oynatıcı: oyun oynarken arkadaşının ekranı köşede, her şeyin üstünde durur; masaüstünde saydamlık, tıklamayı oyuna geçirme ve izleme kısayolları var. Hafif izleme ve Sadece ses de seçilebilir.',
+      'Biri konuşunca paylaşılan ekranın sesi kendiliğinden kısılır, konuşma bitince geri gelir (Ayarlar › Ses).',
+      'Trio yeni bir adrese taşınırsa kimse dışarıda kalmaz: masaüstü uygulaması kendisi geçer, tarayıcıda taşınma kodu yeter; sunucu sahibi için kurtarma kodu ve Yönetim › Adres.',
+    ],
+  },
+  {
     version: '0.9.1',
     lines: [
       'Masaüstü uygulaması yeni sürümü artık kendisi fark ediyor: yayımlandıktan sonra birkaç dakika içinde arka planda indirir, sesli odadayken de.',

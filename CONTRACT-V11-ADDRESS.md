@@ -122,6 +122,9 @@ rest are dropped in this order's reverse). Anything else in `prefs` is ignored.
 | `trio.recentEmoji`, `trio.sendOriginal`, `trio.gameShare` | small preferences |
 | `trio.v7.stageCollapsed`, `trio.v10.membersHidden`, `trio.v10.showChannel` | layout |
 | `trio.desktopUpdateDismissed`, `trio.desktopUpdateLater`, `trio.desktopUpdateHint` | the desktop update notice |
+| `trio.v11.listen`, `trio.v11.listenAck`, `trio.v11.listenBrowsers` | the listening status choices (V11-ACTIVITY) |
+| `trio.v12.stageLayout`, `trio.v12.watch`, `trio.v12.multishareTip` | watching: layout, per-sharer choices and keys, the tip seen (V12-WATCHING) |
+| `trio.duck12` | lowering share sound under speech (V12-DUCKING) |
 | `trio.invite` | the invite code this device joined with (to share as a link): kept only when it equals the server's invite code (compared in constant time), else dropped |
 
 **Never moved:** `trio.token`, `trio.user` (the move signs the device in

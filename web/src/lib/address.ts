@@ -167,6 +167,13 @@ export const MOVE_PREF_KEYS = [
   'trio.desktopUpdateHint',
   'trio.lastRead',
   'trio.drafts',
+  'trio.v11.listen',
+  'trio.v11.listenAck',
+  'trio.v11.listenBrowsers',
+  'trio.v12.stageLayout',
+  'trio.v12.watch',
+  'trio.v12.multishareTip',
+  'trio.duck12',
 ] as const
 
 const PREF_VALUE_MAX = 32 * 1024
