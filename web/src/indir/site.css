@@ -290,7 +290,7 @@ p {
 
 .hero-title {
   margin-top: 6px;
-  font-size: clamp(46px, 2.9vw + 27px, 70px);
+  font-size: clamp(40px, 2.9vw + 27px, 70px);
   font-weight: 780;
   line-height: 1.02;
   letter-spacing: -0.045em;
@@ -351,18 +351,24 @@ p {
   text-transform: uppercase;
 }
 
+/* The second reader: a label and a link on one line, the honest size under them. */
 .hero-own {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: min(100%, 44ch);
-  margin-top: 6px;
-  padding-top: 22px;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 14px;
+  width: min(100%, 46ch);
+  margin-top: 2px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
 }
 
 .hero-own .hero-path {
-  margin-bottom: 2px;
+  margin: 0;
+}
+
+.hero-own-note {
+  flex-basis: 100%;
 }
 
 .hero-own-link {

@@ -133,9 +133,6 @@ export function HeroDemo() {
             <p className="dw-channel">
               <Icon name="hash" size={14} /> planlar
             </p>
-            <p className="dw-channel">
-              <Icon name="hash" size={14} /> oyun
-            </p>
             <p className="dw-section">Ses kanalları</p>
             <p className="dw-channel dw-voice">
               <Icon name="speaker" size={14} /> Sohbet

@@ -22,6 +22,7 @@ export async function openLanding(
     isMobile?: boolean
     reducedMotion?: 'reduce' | 'no-preference'
     path?: string
+    deviceScaleFactor?: number
   },
 ): Promise<Landing> {
   const context = await browser.newContext({
@@ -29,6 +30,7 @@ export async function openLanding(
     userAgent: options.userAgent,
     viewport: { width: options.width ?? 1440, height: options.height ?? 900 },
     isMobile: options.isMobile,
+    deviceScaleFactor: options.deviceScaleFactor,
     hasTouch: options.isMobile,
     reducedMotion: options.reducedMotion ?? 'no-preference',
     locale: 'tr-TR',

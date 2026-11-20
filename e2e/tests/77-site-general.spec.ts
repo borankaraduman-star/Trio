@@ -236,17 +236,19 @@ test('screenshots at 390, 768 and 1440, and the set-up section', async ({ browse
     await page.evaluate(() => document.getElementById('sunucu')?.scrollIntoView({ block: 'start', behavior: 'instant' }))
     await page.waitForTimeout(500)
     await page.getByTestId('own-server').screenshot({ path: shot(`v10-site-own-${width}.png`) })
-    if (width === 1440) {
-      // The hero's window in its last picture, the source of the link-preview image (design/tools/build_og.py).
-      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-      const hero = page.locator('[data-demo="hero"]')
-      for (let i = 0; i < 30 && (await hero.getAttribute('data-step')) !== (await hero.getAttribute('data-last')); i++)
-        await page.waitForTimeout(500)
-      await hero.getByTestId('demo-pause').click()
-      await page.waitForTimeout(800)
-      await hero.locator('.dw').screenshot({ path: shot('v10-site-hero-window.png') })
-    }
     await v.close()
+    if (width === 1440) {
+      // The hero's window in its last picture, at 2x: the source of the link-preview image (design/tools/build_og.py).
+      const sharp = await openLanding(browser, { userAgent: UA.windows, width, height, deviceScaleFactor: 2 })
+      const hero = sharp.page.locator('[data-demo="hero"]')
+      await expect(hero.locator('.dw')).toBeVisible()
+      for (let i = 0; i < 80 && (await hero.getAttribute('data-step')) !== (await hero.getAttribute('data-last')); i++)
+        await sharp.page.waitForTimeout(500)
+      await hero.getByTestId('demo-pause').click()
+      await sharp.page.waitForTimeout(800)
+      await hero.locator('.dw').screenshot({ path: shot('v10-site-hero-window.png') })
+      await sharp.close()
+    }
   }
   const join = await openLanding(browser, { userAgent: UA.windows, width: 1280, height: 860, path: '/' })
   await expect(join.page.getByTestId('join-about')).toBeVisible()

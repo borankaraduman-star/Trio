@@ -126,8 +126,8 @@ export function DownloadPage() {
               </span>
             </h1>
             <p className="hero-lead hero-in" style={{ ['--d' as string]: '320ms' }}>
-              Yazışmak, sesli odada konuşmak, ekran açmak, birbirinize müzik çalmak için. Trio'yu gruptan biri küçük
-              bir sunucuya kurar, diğerleri davet koduyla girer; mesajlar ve dosyalar o sunucuda kalır.
+              Yazışmak, sesli konuşmak, ekran ve müzik paylaşmak için. Gruptan biri Trio'yu küçük bir sunucuya kurar,
+              diğerleri davet koduyla girer; mesajlar ve dosyalar o sunucuda kalır.
             </p>
 
             <div className="hero-actions hero-in" style={{ ['--d' as string]: '440ms' }}>
@@ -175,7 +175,7 @@ export function DownloadPage() {
                   Kendi sunucunu kur
                   <span aria-hidden="true">→</span>
                 </a>
-                <p className="muted">10–15 kişilik gruplar için; kurulumu bir kişi yapar.</p>
+                <p className="muted hero-own-note">10–15 kişiye kadar gruplar için; kurulumu bir kişi yapar.</p>
               </div>
             </div>
           </div>
@@ -521,8 +521,8 @@ function OwnServer() {
             <li>
               <h3>Kodu ve sınırı yaz</h3>
               <p>
-                <code>TRIO_INVITE_CODE</code> grubuna vereceğin kod, <code>TRIO_MAX_USERS</code> kaç kişiyseniz o.
-                Farklı ağlardakiler birbirini duysun diye ücretsiz Cloudflare TURN anahtarı da öneriliyor.
+                <code>TRIO_INVITE_CODE</code>: grubuna vereceğin kod. <code>TRIO_MAX_USERS</code>: kaç kişiyseniz.
+                Farklı ağlardakiler birbirini duysun diye ücretsiz bir Cloudflare TURN anahtarı da ekle.
               </p>
             </li>
             <li>
