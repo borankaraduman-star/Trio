@@ -5,6 +5,7 @@ import { desktopVoiceBridge } from './lib/desktopVoice'
 import { hotkeyConflict, isBinding, matchesCombo, type HotkeyAction } from './lib/hotkeys'
 import { voicePrefsStore } from './lib/voicePrefs'
 import { setActiveEngine } from './lib/activeVoice'
+import { ducker } from './audio/ducking'
 import type { VoiceEngine } from './voice'
 
 /** Speech for AFK purposes: a peak over this (before the gate and the mute), or over the gate's threshold. */
@@ -42,6 +43,8 @@ export function useVoiceEvening({
     setActiveEngine(engine)
     return () => setActiveEngine(null)
   }, [engine])
+  useEffect(() => ducker.follow(engine), [engine]) // V12: speech ducks shared screens and music
+
 
   // --- the input gate ---------------------------------------------------------
   const gate = prefs.gateAuto ? null : dbToLinear(prefs.gateThresholdDb)
