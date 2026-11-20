@@ -21,10 +21,23 @@
 #     APPLE_API_KEY_ID, APPLE_API_ISSUER -> Developer ID signing +
 #     notarization. Without all five: ad-hoc signing (`mac.identity: "-"`),
 #     as before.
-#   * Windows: WIN_CSC_LINK (base64 .pfx) + WIN_CSC_KEY_PASSWORD, OR Azure
-#     Artifact Signing: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
-#     AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE,
-#     AZURE_SIGNING_PUBLISHER. Without either: unsigned, as before.
+#   * Windows, first match wins:
+#     - SignPath (the SignPath Foundation's free open-source certificate,
+#       docs/signpath-basvuru.md): secret SIGNPATH_API_TOKEN and repository
+#       variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
+#       SIGNPATH_SIGNING_POLICY_SLUG (optional SIGNPATH_PUBLISHER_NAME, default
+#       "SignPath Foundation"). electron-builder runs in the background and
+#       desktop/scripts/signpath-bridge.cjs hands Trio.exe, the uninstaller and
+#       the installer to SignPath one by one (.github/actions/signpath-sign), so
+#       the blockmap and latest.yml are computed from the signed installer.
+#     - WIN_CSC_LINK (base64 .pfx) + WIN_CSC_KEY_PASSWORD.
+#     - Azure Artifact Signing: AZURE_TENANT_ID, AZURE_CLIENT_ID,
+#       AZURE_CLIENT_SECRET, AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+#       AZURE_SIGNING_PROFILE, AZURE_SIGNING_PUBLISHER.
+#     Without any: unsigned, as before. Once a release has shipped signed, an
+#     unsigned Windows build is refused (installed apps would reject it as an
+#     update, CONTRACT-V10-UPDATE §8) unless the repository variable
+#     TRIO_ALLOW_UNSIGNED_WINDOWS is "true".
 #
 # signing.json says, per system, whether the build was REALLY signed (checked
 # after the build, not inferred from the secrets): a configured signing that
@@ -152,7 +165,13 @@ jobs:
     name: build (${{ matrix.os }})
     needs: prepare
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # Windows waits for up to three SignPath approvals by a person.
+    timeout-minutes: ${{ matrix.timeout }}
+    permissions:
+      contents: read
+      # signpath/github-action-submit-signing-request reads the job and the
+      # uploaded artifact with the job's token.
+      actions: read
     strategy:
       # Every OS finishes even if one fails, but `release` needs all of them:
       # one failed build means no release.
@@ -161,12 +180,14 @@ jobs:
         include:
           - os: windows-latest
             target: --win
+            timeout: 240
             files: |
               desktop/release/*.exe
               desktop/release/*.exe.blockmap
               desktop/release/latest.yml
           - os: macos-latest
             target: --mac
+            timeout: 45
             files: |
               desktop/release/*.dmg
               desktop/release/*.dmg.blockmap
@@ -175,6 +196,7 @@ jobs:
               desktop/release/latest-mac.yml
           - os: ubuntu-latest
             target: --linux
+            timeout: 45
             files: |
               desktop/release/*.AppImage
               desktop/release/latest-linux.yml
@@ -266,10 +288,18 @@ jobs:
             fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
           '
 
-      # Windows: a .pfx (WIN_CSC_LINK), else Azure Artifact Signing, else unsigned.
+      # Windows: SignPath, else a .pfx (WIN_CSC_LINK), else Azure Artifact
+      # Signing, else unsigned.
       - name: Signing setup (Windows)
         if: runner.os == 'Windows'
         env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SIGNPATH_SIGNING_POLICY_SLUG: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SIGNPATH_PUBLISHER_NAME: ${{ vars.SIGNPATH_PUBLISHER_NAME }}
+          ALLOW_UNSIGNED: ${{ vars.TRIO_ALLOW_UNSIGNED_WINDOWS }}
+          GH_TOKEN: ${{ github.token }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -281,7 +311,29 @@ jobs:
           AZURE_SIGNING_PUBLISHER: ${{ secrets.AZURE_SIGNING_PUBLISHER }}
         run: |
           set -euo pipefail
-          if [ -n "$WIN_CSC_LINK" ] && [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
+          if [ -n "$SIGNPATH_API_TOKEN" ] && [ -n "$SIGNPATH_ORGANIZATION_ID" ] \
+             && [ -n "$SIGNPATH_PROJECT_SLUG" ] && [ -n "$SIGNPATH_SIGNING_POLICY_SLUG" ]; then
+            publisher="${SIGNPATH_PUBLISHER_NAME:-SignPath Foundation}"
+            {
+              echo "SIGN_WINDOWS=true"
+              echo "SIGNPATH=true"
+              echo "SIGNPATH_DIRECTORY=$RUNNER_TEMP/trio-signpath"
+              echo "SIGNPATH_PUBLISHER=$publisher"
+            } >> "$GITHUB_ENV"
+            # The bridge is electron-builder's sign hook; publisherName goes into
+            # app-update.yml, and every later update must be signed by it.
+            PUBLISHER="$publisher" node -e '
+              const fs = require("fs");
+              const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              pkg.build.forceCodeSigning = true;
+              pkg.build.win.signtoolOptions = {
+                sign: "./scripts/signpath-bridge.cjs",
+                signingHashAlgorithms: ["sha256"],
+                publisherName: process.env.PUBLISHER,
+              };
+              fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+            '
+          elif [ -n "$WIN_CSC_LINK" ] && [ -n "$WIN_CSC_KEY_PASSWORD" ]; then
             {
               echo "SIGN_WINDOWS=true"
               echo "WIN_CSC_LINK=$WIN_CSC_LINK"
@@ -308,14 +360,77 @@ jobs:
               fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
             '
           else
-            if [ -n "$WIN_CSC_LINK$AZURE_CLIENT_ID" ]; then
+            if [ -n "$WIN_CSC_LINK$AZURE_CLIENT_ID$SIGNPATH_API_TOKEN$SIGNPATH_ORGANIZATION_ID" ]; then
               echo "::warning::Windows signing secrets are incomplete; building unsigned (see docs/imzalama.md)"
             fi
             echo "SIGN_WINDOWS=false" >> "$GITHUB_ENV"
+            # An app installed from a signed release refuses an unsigned update
+            # (electron-updater checks app-update.yml's publisherName). Only
+            # positive evidence stops the build: no release or no signing.json
+            # means nothing was ever signed.
+            last="$(gh release download --repo "$GITHUB_REPOSITORY" --pattern signing.json --output - 2>/dev/null || true)"
+            [ -n "$last" ] || last='{}'
+            was_signed="$(jq -r '.windows == true' <<<"$last" 2>/dev/null || echo false)"
+            echo "Latest release signed for Windows: ${was_signed}"
+            if [ "$was_signed" = "true" ] && [ "$ALLOW_UNSIGNED" != "true" ]; then
+              echo "::error::The latest release is signed for Windows; an unsigned build would not install as an update (set the variable TRIO_ALLOW_UNSIGNED_WINDOWS=true to release it anyway, see docs/signpath-basvuru.md)"
+              exit 1
+            fi
           fi
 
       - name: Build installers
+        if: env.SIGNPATH != 'true'
         run: npm run build && npx electron-builder ${{ matrix.target }} --publish never
+
+      # SignPath (Windows): the same `electron-builder --win --publish never`,
+      # in the background, with each file it signs taken through SignPath.
+      - name: Build installers (SignPath, in the background)
+        if: env.SIGNPATH == 'true'
+        run: npm run build && node scripts/signpath-bridge.cjs start
+
+      - name: SignPath - Trio.exe
+        if: env.SIGNPATH == 'true'
+        uses: ./.github/actions/signpath-sign
+        with:
+          role: app
+          artifact-configuration-slug: trio-app
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          publisher: ${{ env.SIGNPATH_PUBLISHER }}
+
+      - name: SignPath - uninstaller
+        if: env.SIGNPATH == 'true'
+        uses: ./.github/actions/signpath-sign
+        with:
+          role: uninstaller
+          artifact-configuration-slug: trio-uninstaller
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          publisher: ${{ env.SIGNPATH_PUBLISHER }}
+
+      - name: SignPath - installer
+        if: env.SIGNPATH == 'true'
+        uses: ./.github/actions/signpath-sign
+        with:
+          role: installer
+          artifact-configuration-slug: trio-installer
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          publisher: ${{ env.SIGNPATH_PUBLISHER }}
+
+      - name: Finish the SignPath build
+        if: env.SIGNPATH == 'true'
+        run: node scripts/signpath-bridge.cjs finish
+
+      - name: Stop the SignPath build after a failure
+        if: (failure() || cancelled()) && env.SIGNPATH == 'true'
+        run: node scripts/signpath-bridge.cjs cleanup
 
       # What the download page is told: true only for a signature that checks
       # out on the built file. Configured signing that does not check out
@@ -345,10 +460,18 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $signed = $true
-          foreach ($exe in Get-ChildItem release/*.exe) {
-            $status = (Get-AuthenticodeSignature $exe.FullName).Status
-            Write-Host "$($exe.Name): $status"
-            if ($status -ne 'Valid') { $signed = $false }
+          $files = @(Get-ChildItem release/*.exe)
+          # SignPath also signs the app inside, and its publisher is what
+          # app-update.yml names: check both.
+          if ($env:SIGNPATH -eq 'true') { $files += Get-Item release/win-unpacked/Trio.exe }
+          foreach ($exe in $files) {
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            Write-Host "$($exe.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { $signed = $false }
+            if ($env:SIGNPATH -eq 'true' -and $sig.Status -eq 'Valid') {
+              $cn = $sig.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+              if ($cn -cne $env:SIGNPATH_PUBLISHER) { $signed = $false; Write-Host "::error::$($exe.Name) is signed by '$cn', not '$($env:SIGNPATH_PUBLISHER)'" }
+            }
           }
           if ($env:SIGN_WINDOWS -eq 'true' -and -not $signed) {
             Write-Host "::error::Windows signing was configured but the installer has no valid signature"

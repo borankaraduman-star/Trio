@@ -73,7 +73,9 @@ and differ, `sha256` is `null`.
 
 The release asset `signing.json` = `{"windows": bool, "mac": bool}`, written by
 the workflow after checking the built files (Authenticode `Valid`; macOS
-`spctl` "Notarized Developer ID"). Absent or unreadable: both `false`.
+`spctl` "Notarized Developer ID"; on the SignPath path also the app inside
+the installer and the certificate's CN, CONTRACT-V10-UPDATE §9). Absent or
+unreadable: both `false`.
 
 ## The page (`web/indir.html`, `web/src/indir/`)
 
