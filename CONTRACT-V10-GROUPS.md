@@ -171,6 +171,58 @@ click whose header has not changed a second later is sent to the owner's
 client error log (`reportBreadcrumb`, CONTRACT-V6-OPS §5) with the viewport,
 the device pixel ratio and whether it is the desktop app.
 
+## 4b. Who is in which text channel, right now
+
+The owner, once more: "switching works, but it is not clear who is in which
+channel" — voice rooms list their people under the row, text channels did not.
+
+    client → server   client.viewing {viewing, channel_id?, show_channel?: bool}
+                      — CONTRACT-V6-PUSH §3's frame; show_channel (default true,
+                        not a boolean → BAD_REQUEST) is new; at most 240 a minute
+                        per user (RATE_LIMITED, request "client.viewing")
+    server → everyone presence.viewing {user_id, channel_id: int | null}
+    ready             {…, viewers: {"<channel id>": [user_id, …]}}   — sorted ids
+
+- **Per user, one text channel or none**: the channel of their most recently
+  reported connection that is being looked at (visible AND focused,
+  `lib/viewing.ts`) and shares it. None when no connection is looked at (a tab
+  in the background, the desktop app in the tray or behind another window, a
+  phone with the app closed), when the connection closes, when the person
+  turned "Hangi kanalda olduğumu göster" off, when the channel is a voice
+  channel, unknown or deleted, and for a client that never sends the frame.
+  Several devices: the one reported last wins (I sit down at the desktop and
+  open #oyun while the phone in my pocket still shows #genel: #oyun; the
+  desktop goes to the tray: #genel again if the phone is still looked at).
+- **Coalesced**: one `presence.viewing` per user per 500 ms at most; the first
+  change goes at once, the state at the end of the window follows if it
+  differs from what was sent. Fast hopping costs one or two frames, never one
+  per click. Sent to every socket, the person's own included.
+- **Push decisions are unchanged**: the notifier keeps the whole report as
+  before (a hidden channel still counts as "looking at the app", so pushes are
+  held back exactly as in V6). `show_channel: false` only stops the channel
+  being shown to people.
+- **Truthfully**: this is presence, live, nothing else. Nothing is stored (not
+  in the database, not in a log), there is no history, no "last seen in", no
+  read receipts — a person under a channel has it open now, which says nothing
+  about what they have read. It does show everyone, live, which channel you
+  have open; that is what the owner asked for, for a small group of people who
+  know each other, and "Hangi kanalda olduğumu göster" (Ayarlar › Hesap ›
+  Kanal görünürlüğü, `settings-show-channel`, per device:
+  `localStorage["trio.v10.showChannel"] = "0"` while off, on by default) turns
+  it off. Off, you are under no channel for anybody and still "çevrimiçi" in
+  Üyeler.
+- Online is not presence in a channel: somebody online with the app in the
+  background is under no channel and still "çevrimiçi" in Üyeler.
+
+**Client.** Under each text channel row (`channel-viewers-<id>`,
+`data-count`): up to four people as a light list (an 18 px avatar and the
+name, mine with "(sen)", `viewer-<channel>-<user>`); five or more fold into
+one row of four stacked faces, "+n" (`channel-viewers-more-<id>`) and the
+first name. In the channel header (wider than a phone) "Burada: Sen, Ece +2"
+with up to three faces (`here-line`; only the faces at ≤ 1100 px, the names in
+its title). At ≤ 680 px the drawer shows the same rows. Drops to nobody while
+the connection is down, until the next `ready`.
+
 ## 5. Server at this size
 
 - One process, one worker, the hub in memory: unchanged and fine. The load
@@ -231,7 +283,10 @@ separate machines (here eight contexts share one browser and four cores).
 `mention-list`, `mention-option-<id>`, `owner-people-search`,
 `owner-people-sort`, `owner-removed`, `owner-quota-total`,
 `owner-quota-shortfall`, `btn-members`, `members-panel`, `members-title`,
-`members-close`, `members-backdrop`. e2e 83 (channel rows and Üyeler at every
+`members-close`, `members-backdrop`, `channel-viewers-<id>`,
+`channel-viewers-more-<id>`, `viewer-<channel>-<user>`, `here-line`,
+`settings-show-channel`. e2e 84 (who is in which channel: three pages, moving,
+hidden, the setting, fifteen with "+n"), e2e 83 (channel rows and Üyeler at every
 width and scale), e2e 78 (join storm), 79 (cap 3: count, full, stale
 view), 80 (layouts with 15), 81 (measurements, camera encoding), 82 (defaults:
 8 at once, the ninth refused, nine tabs of chat).
