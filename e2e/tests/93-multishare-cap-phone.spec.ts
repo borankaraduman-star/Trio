@@ -1,5 +1,5 @@
 /**
- * CONTRACT-V12-MULTISHARE §5 and §4 on a phone:
+ * CONTRACT-V12-WATCHING §5 and §4 on a phone:
  *
  * - `TRIO_SCREEN_SHARES_MAX`: at the cap the share button says so and a click
  *   names who is sharing, without opening the picker; two people starting

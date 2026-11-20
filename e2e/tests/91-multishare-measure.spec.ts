@@ -1,5 +1,5 @@
 /**
- * CONTRACT-V12-MULTISHARE §2: several people share their screens at once, in
+ * CONTRACT-V12-WATCHING §2: several people share their screens at once, in
  * rooms of 3, 5 and 8. Measured with Chromium's fake screen capture on this
  * machine (every person a context of ONE browser, loopback, host candidates).
  *

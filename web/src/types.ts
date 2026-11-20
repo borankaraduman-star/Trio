@@ -141,7 +141,7 @@ export type ServerEvent =
       read_state?: Record<string, ReadStateEntry>
       /** V10: people per voice room (CONTRACT-V10-GROUPS §2); absent from an older server. */
       voice_room_max?: number
-      /** V12: simultaneous screen shares per voice room (CONTRACT-V12-MULTISHARE §5). */
+      /** V12: simultaneous screen shares per voice room (CONTRACT-V12-WATCHING §5). */
       screen_shares_max?: number
       /** V10: who is in which text channel now (§4b): "<channel id>": [user ids]. */
       viewers?: Record<string, number[]>

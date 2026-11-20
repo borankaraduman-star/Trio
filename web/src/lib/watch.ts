@@ -20,7 +20,7 @@ export interface WatchSignal {
   stream: string
   on: boolean
   /**
-   * V12 (CONTRACT-V12-MULTISHARE §3): how large the viewer shows the share,
+   * V12 (CONTRACT-V12-WATCHING §3): how large the viewer shows the share,
    * with `on: true`. Absent from a viewer that predates it (= unchanged, and
    * `full` for a new share); an unknown value is ignored as absent.
    */

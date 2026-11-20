@@ -796,7 +796,7 @@ export function Session({
     setDrawerOpen(true)
     requestAnimationFrame(() => document.getElementById(PRESENCE_ID)?.scrollIntoView({ block: 'start' }))
   }
-  // V12 (CONTRACT-V12-MULTISHARE §5): who shares in my room, and the room's cap.
+  // V12 (CONTRACT-V12-WATCHING §5): who shares in my room, and the room's cap.
   const roomPeople = voice.channelId === null ? [] : (state.voice[voice.channelId] ?? [])
   const sharers = roomPeople.filter((p) => p.screensharing).map((p) => p.user_id)
   const otherSharers = sharers.filter((id) => id !== state.me.id)

@@ -11,7 +11,7 @@ import type { ClientEvent, ServerEvent, SignalData, StreamMeta } from './types'
 // CONTRACT-V6-VOICE: share profiles, "İzlemeyi bırak", AFK.
 import { profileSettings, trackConstraints, type ShareProfile, type ShareQuality } from './lib/shareProfiles'
 import { parseWatch, watchApplies, type WatchSignal } from './lib/watch'
-// CONTRACT-V12-MULTISHARE: several shares at once, sized by what each viewer shows.
+// CONTRACT-V12-WATCHING: several shares at once, sized by what each viewer shows.
 import { sharesFullMessage, sizedEncoding, type ViewSize } from './lib/multishare'
 // CONTRACT-V8-MUSIC: the sound playing on my computer, as a third outgoing stream.
 import { captureMusic, defaultCaptureEnv, type CaptureEnv } from './music/capture'

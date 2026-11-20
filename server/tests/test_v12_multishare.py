@@ -1,4 +1,4 @@
-"""CONTRACT-V12-MULTISHARE §5: the cap on simultaneous screen shares per room.
+"""CONTRACT-V12-WATCHING §5: the cap on simultaneous screen shares per room.
 
 ``TRIO_SCREEN_SHARES_MAX`` (default 4, 1-16): a ``voice.state`` that starts
 a share in a room that already has that many is refused with

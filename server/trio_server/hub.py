@@ -56,7 +56,7 @@ TYPING_LIMIT = 10
 TYPING_WINDOW_SECONDS = 10.0
 # CONTRACT-V10-GROUPS §2: the default people per voice room (TRIO_VOICE_ROOM_MAX).
 DEFAULT_VOICE_ROOM_MAX = 8
-# CONTRACT-V12-MULTISHARE §5.
+# CONTRACT-V12-WATCHING §5.
 DEFAULT_SCREEN_SHARES_MAX = 4
 # CONTRACT-V10-GROUPS §2: right after a start (a deploy) the room lists are
 # empty and every call comes back with ``resume: true``; such resumes are not
@@ -125,7 +125,7 @@ class VoiceMember:
     muted: bool = False
     deafened: bool = False
     screensharing: bool = False
-    # CONTRACT-V12-MULTISHARE §5: joined by a resume right after a start (a deploy):
+    # CONTRACT-V12-WATCHING §5: joined by a resume right after a start (a deploy):
     # its share comes back even past the cap.
     restart_resume: bool = False
     camera: bool = False
@@ -252,7 +252,7 @@ class Hub:
             "activity_parts": list(ACTIVITY_PARTS),
             # CONTRACT-V10-GROUPS §2.
             "voice_room_max": self.voice_room_max,
-            # CONTRACT-V12-MULTISHARE §5.
+            # CONTRACT-V12-WATCHING §5.
             "screen_shares_max": self.screen_shares_max,
             # CONTRACT-V10-GROUPS §4b.
             "viewers": self.viewers.snapshot(),
@@ -529,7 +529,7 @@ class Hub:
         )
 
     def screen_shares_full(self, user_id: int, channel_id: int) -> bool:
-        """CONTRACT-V12-MULTISHARE §5: whether ``user_id`` starting a share is one too many.
+        """CONTRACT-V12-WATCHING §5: whether ``user_id`` starting a share is one too many.
 
         Somebody already sharing is never refused (a repeated state), nor right
         after a start (a deploy) somebody who came back with a resume: they

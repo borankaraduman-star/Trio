@@ -1,5 +1,5 @@
 /**
- * CONTRACT-V12-MULTISHARE: several people sharing their screens at once.
+ * CONTRACT-V12-WATCHING: several people sharing their screens at once.
  * Pure helpers; the engine and the stage use them.
  */
 import { formatMbps, type ProfileSettings } from './shareProfiles'

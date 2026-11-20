@@ -1,5 +1,5 @@
 /**
- * Helpers of the V12 specs (91–95, CONTRACT-V12-MULTISHARE): several people
+ * Helpers of the V12 specs (91–95, CONTRACT-V12-WATCHING): several people
  * sharing their screens at once. Everything here reads MEDIA (receiver and
  * sender statistics, decoded frames), never elements alone (CLAUDE.md).
  */

@@ -11,7 +11,7 @@ DEFAULT_STUN_URLS = ("stun:stun.l.google.com:19302",)
 # CONTRACT-V10-GROUPS §2: the bounds of TRIO_VOICE_ROOM_MAX.
 VOICE_ROOM_MIN = 2
 VOICE_ROOM_CEILING = 16
-# CONTRACT-V12-MULTISHARE §5: simultaneous screen shares in one voice room.
+# CONTRACT-V12-WATCHING §5: simultaneous screen shares in one voice room.
 SCREEN_SHARES_MIN = 1
 SCREEN_SHARES_CEILING = 16
 _TEST_PUSH_ORIGIN = re.compile(r"^http://(127\.0\.0\.1|localhost):[0-9]{2,5}$")
@@ -82,7 +82,7 @@ class Settings:
     # CONTRACT-V10-GROUPS §2: people in one voice room at once. Voice is a full
     # mesh (everybody sends to everybody), so a room has an honest ceiling.
     voice_room_max: int = 8
-    # CONTRACT-V12-MULTISHARE §5: people sharing a screen at once in one voice
+    # CONTRACT-V12-WATCHING §5: people sharing a screen at once in one voice
     # room. Every share is encoded once per viewer (a mesh), and every viewer
     # decodes every share; past this a share is refused with who is sharing.
     screen_shares_max: int = 4
