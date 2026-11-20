@@ -114,6 +114,7 @@ body.trio-mini-page,
 
 .mini input[type='range'] {
   width: 84px;
+  accent-color: #ee997f;
 }
 
 .mini-note {

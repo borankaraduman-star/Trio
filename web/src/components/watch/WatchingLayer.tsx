@@ -48,12 +48,12 @@ export function WatchingLayer({
       const choice = watchStore.choice(userId)
       return { light: choice.light || (state.lightInGame && state.inGame), audioOnly: choice.audioOnly }
     })
-    miniPlayers.bind({ getVoice: () => voiceRef.current, nameOf: (id) => nameRef.current(id) })
+    miniPlayers.bind({ getVoice: () => voiceRef.current, nameOf: (id) => (id === me ? 'Sen' : nameRef.current(id)) })
     return () => {
       viewSizes.attach(null)
       miniPlayers.bind(null)
     }
-  }, [engine])
+  }, [engine, me])
 
   useEffect(() => {
     if (watch.inGame !== inGame) watchStore.update({ inGame })
