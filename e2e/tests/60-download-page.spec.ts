@@ -23,7 +23,8 @@ test.beforeEach(async () => {
 test('Windows: the .exe is the primary button, with version, date, size and SHA-256', async ({ browser }) => {
   const v = await visit(browser, { userAgent: UA.windows })
   const { page } = v
-  await expect(page).toHaveTitle("Trio'yu indir")
+  // V10: the title is the site's, for search results (a deliberate product change from "Trio'yu indir").
+  await expect(page).toHaveTitle('Trio — grubunun sohbeti, kendi sunucunda')
   const primary = page.getByTestId('indir-primary')
   await expect(primary).toHaveText('Windows için indir')
   await expect(primary).toHaveAttribute('href', '/indir/dosya/windows')
