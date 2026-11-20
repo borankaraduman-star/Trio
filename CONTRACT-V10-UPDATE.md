@@ -189,6 +189,38 @@ explicitly (its v27 migration notes). This repository is on 26.18 /
 electron-updater 6.8.11, where unsigned simply means "not verified". When
 upgrading, set that option for unsigned builds only.
 
+## 9. Signed Windows builds and the publisher
+
+The Windows signature is checked by the INSTALLED app against ITS OWN
+`app-update.yml` (6.8.11 `NsisUpdater.verifySignature`): no `publisherName`
+there means no check; with one, the new installer must carry a `Valid`
+Authenticode signature whose certificate subject matches it (a plain name is
+compared with the certificate's CN, `windowsExecutableCodeSignatureVerifier`).
+A build writes `publisherName` only when it is signed
+(`win.signtoolOptions.publisherName`, or the CN of a configured certificate).
+Hence:
+
+- **unsigned 0.8.x → the first signed release**: no `publisherName` installed,
+  so the signed installer is accepted like an unsigned one; it installs the
+  new `app-update.yml` with `publisherName`.
+- **signed → signed**: verified against that name. The SignPath path writes
+  `SIGNPATH_PUBLISHER_NAME` (default `SignPath Foundation`) and the workflow
+  fails unless the CN of every signed file equals it
+  (`.github/actions/signpath-sign`, "Check signature (Windows)").
+- **signed → unsigned, or signed by another publisher**: refused by every
+  installed app, which then stays on its version with the update error. The
+  workflow therefore refuses an unsigned Windows build once the latest
+  release's `signing.json` says `windows: true` (override: repository variable
+  `TRIO_ALLOW_UNSIGNED_WINDOWS=true`). Changing publisher (SignPath to an own
+  certificate, say) needs one manual install from `/indir` for every Windows
+  user; building the new release with both names in `publisherName` does not
+  help apps that are already installed, only the ones it installs.
+
+SignPath signing happens inside electron-builder (`desktop/scripts/signpath-bridge.cjs`
+as the sign hook, the build in the background while the workflow submits each
+file), so `latest.yml`'s sha512 and the blockmap are computed from the signed
+installer. `docs/signpath-basvuru.md` is the owner's side.
+
 ## Test ids
 
 `desktop-update` (`data-kind` manual | available | ready, `data-version`,

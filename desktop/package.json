@@ -43,6 +43,16 @@
       "!dist/test/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "../THIRD-PARTY-NOTICES.md",
+        "to": "THIRD-PARTY-NOTICES.md"
+      }
+    ],
     "asarUnpack": [
       "node_modules/uiohook-napi/**"
     ],

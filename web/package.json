@@ -1,6 +1,7 @@
 {
   "name": "trio-web",
   "private": true,
+  "license": "MIT",
   "version": "0.8.0",
   "type": "module",
   "scripts": {

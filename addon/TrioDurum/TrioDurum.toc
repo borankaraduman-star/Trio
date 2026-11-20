@@ -3,6 +3,7 @@
 ## Notes: Trio için oyun durumu: seviye ve bölge. Yalnızca kendine fısıldar.
 ## Author: Trio
 ## Version: 0.1.0
+## X-License: MIT
 ## SavedVariables: TrioDurumDB
 ## DefaultState: enabled
 
