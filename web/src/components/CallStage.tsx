@@ -3,6 +3,8 @@ import { useSinkId } from '../useSinkId'
 import { useRemoteVolume } from '../useRemoteVolume'
 import type { RemoteMedia } from '../voice'
 import { ExpandIcon } from './icons2'
+import { stageTileLimit } from '../lib/groups'
+import { PHONE_QUERY, useMediaQuery } from '../lib/phone'
 
 /**
  * v2 stage (CONTRACT-V2 §4): shared screens AND cameras, several people at
@@ -101,6 +103,22 @@ export function buildTiles(input: {
   return tiles
 }
 
+/**
+ * V10 (CONTRACT-V10-GROUPS §3): on a crowded stage, which tiles show and how
+ * many fold into "+N". Screens first (they carry sound and are what people
+ * gathered for), then cameras in their order; my own tiles last. Folded tiles
+ * stay mounted and playing (hidden with CSS), like the V7 collapse.
+ */
+export function stageLayout(tiles: readonly StageTile[], limit: number, showAll: boolean): { shown: StageTile[]; folded: StageTile[] } {
+  const ordered = [
+    ...tiles.filter((tile) => tile.kind === 'screen' && tile.userId !== null),
+    ...tiles.filter((tile) => tile.kind === 'camera' && tile.userId !== null),
+    ...tiles.filter((tile) => tile.userId === null),
+  ]
+  if (showAll || ordered.length <= limit) return { shown: ordered, folded: [] }
+  return { shown: ordered.slice(0, limit - 1), folded: ordered.slice(limit - 1) }
+}
+
 function Tile({
   tile,
   deafened,
@@ -108,11 +126,14 @@ function Tile({
   small,
   onActivate,
   overlay,
+  folded = false,
 }: {
   tile: StageTile
   deafened: boolean
   focused: boolean
   small: boolean
+  /** V10: behind "+N": mounted and playing, not shown. */
+  folded?: boolean
   onActivate: () => void
   /** V6: controls drawn over the tile (İzlemeyi bırak, who watches). */
   overlay?: (tile: StageTile) => ReactNode
@@ -157,7 +178,8 @@ function Tile({
   return (
     <figure
       ref={figure}
-      className={`call-tile ${tile.kind}${focused ? ' focused' : ''}${small ? ' small' : ''}`}
+      className={`call-tile ${tile.kind}${focused ? ' focused' : ''}${small ? ' small' : ''}${folded ? ' folded' : ''}`}
+      aria-hidden={folded || undefined}
       data-kind={tile.kind}
       data-user-id={tile.userId ?? 'me'}
       role="button"
@@ -226,6 +248,8 @@ export function CallStage({
   const tiles = hide ? allTiles.filter((tile) => !hide(tile)) : allTiles
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const focused = tiles.find((tile) => tile.key === focusKey) ?? null
+  const phone = useMediaQuery(PHONE_QUERY)
+  const [showAll, setShowAll] = useState(false)
 
   // V6: the people strip sits right under the stage (and stays when every tile is hidden).
   const people = footer ? <div className="call-stage-people">{footer}</div> : null
@@ -252,17 +276,24 @@ export function CallStage({
     )
   }
 
-  const columns = gridColumns(tiles.length)
+  const limit = stageTileLimit(phone)
+  const { shown, folded } = stageLayout(tiles, limit, showAll)
+  const more = folded.length > 0
+  const less = showAll && tiles.length > limit
+  const cells = shown.length + (more || less ? 1 : 0)
+  const columns = gridColumns(cells)
+  const rows = Math.ceil(cells / columns)
   return (
     <>
     <section
-      className="call-stage grid"
+      className={`call-stage grid${showAll && tiles.length > limit ? ' all' : ''}`}
       aria-label="Kameralar ve paylaşılan ekranlar"
       data-testid="stage"
       data-count={tiles.length}
-      style={{ ['--stage-columns' as string]: String(columns), ['--stage-rows' as string]: String(Math.ceil(tiles.length / columns)) }}
+      data-shown={shown.length}
+      style={{ ['--stage-columns' as string]: String(columns), ['--stage-rows' as string]: String(rows) }}
     >
-      {tiles.map((tile) => (
+      {[...shown, ...folded].map((tile) => (
         <Tile
           key={tile.key}
           tile={tile}
@@ -271,8 +302,28 @@ export function CallStage({
           small={false}
           onActivate={() => activate(tile.key)}
           overlay={overlay}
+          folded={folded.includes(tile)}
         />
       ))}
+      {more && (
+        <button
+          type="button"
+          className="call-tile stage-more"
+          data-testid="stage-more"
+          aria-label={`${folded.length} görüntü daha: hepsini göster (${folded.map((tile) => tile.label).join(', ')})`}
+          title={folded.map((tile) => tile.label).join(', ')}
+          onClick={() => setShowAll(true)}
+        >
+          <strong>+{folded.length}</strong>
+          <span>Hepsini göster</span>
+        </button>
+      )}
+      {less && (
+        <button type="button" className="call-tile stage-more" data-testid="stage-less" onClick={() => setShowAll(false)}>
+          <strong>−</strong>
+          <span>Daha az göster</span>
+        </button>
+      )}
     </section>
     {people}
     </>

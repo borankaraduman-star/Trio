@@ -8,6 +8,18 @@ import { PaperclipIcon } from './icons2'
 import { VoiceRecordButton } from './media/VoiceRecordButton'
 import type { Recording } from '../lib/voiceRecorder'
 import { enterSends, focusWouldInterrupt, isTouchFirst } from '../lib/touchInput'
+import { filterMentionNames, mentionQueryAt } from '../lib/groups'
+import { Avatar } from './Avatar'
+
+/** V10: a person the "@" list can offer. */
+export interface MentionPerson {
+  id: number
+  name: string
+  avatar_url?: string | null
+}
+
+/** V10: "@herkes" as a row of the list (id 0: no user has it). */
+const EVERYONE_ROW: MentionPerson = { id: 0, name: 'herkes' }
 
 /** v2: the composer's attachment side (CONTRACT-V2 §2). */
 export interface ComposerAttachments {
@@ -54,7 +66,10 @@ export function Composer({
   onTextChange,
   voice,
   focusOnMount = false,
+  mentionPeople,
 }: {
+  /** V10 (CONTRACT-V10-GROUPS §3): the people "@" offers, filtered as one types. */
+  mentionPeople?: readonly MentionPerson[]
   /** V7-READING §5: the channel was switched to on purpose: take the focus (never on touch). */
   focusOnMount?: boolean
   channelName: string
@@ -80,6 +95,10 @@ export function Composer({
 }) {
   const [text, setText] = useState(initialText)
   const [recording, setRecording] = useState(false)
+  // V10: the "@" list: where the caret is, which row is chosen, and an "@" closed with Esc.
+  const [caret, setCaret] = useState<number | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionClosedAt, setMentionClosedAt] = useState<number | null>(null)
   const textReport = useRef(onTextChange)
   textReport.current = onTextChange
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -129,6 +148,31 @@ export function Composer({
     element.style.height = `${element.scrollHeight}px`
   }, [text])
 
+  const mention = mentionPeople && caret !== null ? mentionQueryAt(text, caret) : null
+  const mentionOptions =
+    mention && mention.start !== mentionClosedAt
+      ? filterMentionNames([...(mentionPeople ?? []), EVERYONE_ROW], mention.query, 8)
+      : []
+  const mentionOpen = mentionOptions.length > 0
+  const chosen = Math.min(mentionIndex, Math.max(0, mentionOptions.length - 1))
+
+  const pickMention = (person: MentionPerson) => {
+    const element = ref.current
+    if (!mention || !element) return
+    const end = caret ?? text.length
+    const inserted = `@${person.name} `
+    const next = text.slice(0, mention.start) + inserted + text.slice(end)
+    const position = mention.start + inserted.length
+    setText(next)
+    textReport.current?.(next)
+    setMentionIndex(0)
+    setCaret(position)
+    requestAnimationFrame(() => {
+      element.focus()
+      element.setSelectionRange(position, position)
+    })
+  }
+
   const send = () => {
     const content = length.content
     if (!canSend) return
@@ -147,6 +191,24 @@ export function Composer({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionOpen && !event.nativeEvent.isComposing) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const step = event.key === 'ArrowDown' ? 1 : -1
+        setMentionIndex((chosen + step + mentionOptions.length) % mentionOptions.length)
+        return
+      }
+      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+        event.preventDefault()
+        pickMention(mentionOptions[chosen])
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMentionClosedAt(mention?.start ?? null)
+        return
+      }
+    }
     // Enter confirms an IME composition (Japanese, Korean…) and must not send then.
     // V7-READING §4: on a touch-first device Enter is the newline key.
     if (
@@ -198,6 +260,32 @@ export function Composer({
         </div>
       )}
       {replyBar}
+      {mentionOpen && (
+        <ul className="mention-list" role="listbox" id="mention-list" aria-label="Bahsedilecek kişi" data-testid="mention-list">
+          {mentionOptions.map((person, index) => (
+            <li
+              key={person.id}
+              role="option"
+              id={`mention-option-${person.id}`}
+              aria-selected={index === chosen}
+              className={index === chosen ? 'mention-option chosen' : 'mention-option'}
+              data-testid={`mention-option-${person.id}`}
+              // Before the textarea's blur: the click must not lose the caret.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => pickMention(person)}
+              onMouseEnter={() => setMentionIndex(index)}
+            >
+              {person.id === 0 ? (
+                <span className="mention-everyone" aria-hidden="true">@</span>
+              ) : (
+                <Avatar id={person.id} name={person.name} size={22} url={person.avatar_url} />
+              )}
+              <span className="mention-name">{person.name}</span>
+              {person.id === 0 && <small>herkese bildirim</small>}
+            </li>
+          ))}
+        </ul>
+      )}
       {attachments && (
         <PendingAttachments
           items={attachments.items}
@@ -245,10 +333,18 @@ export function Composer({
         aria-invalid={length.over > 0}
         placeholder={`Mesaj yaz… (#${channelName})`}
         aria-label="Mesaj yaz"
+        aria-autocomplete={mentionPeople ? 'list' : undefined}
+        aria-controls={mentionOpen ? 'mention-list' : undefined}
+        aria-activedescendant={mentionOpen ? `mention-option-${mentionOptions[chosen].id}` : undefined}
+        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+        onBlur={() => setCaret(null)}
         enterKeyHint={touchFirst ? 'enter' : 'send'}
         data-enter={touchFirst ? 'newline' : 'send'}
         onChange={(event) => {
           setText(event.target.value)
+          setCaret(event.target.selectionStart)
+          setMentionIndex(0)
+          if (mentionClosedAt !== null && event.target.value[mentionClosedAt] !== '@') setMentionClosedAt(null)
           textReport.current?.(event.target.value)
           if (event.target.value.trim()) onTyping()
         }}

@@ -4,6 +4,7 @@
  * Pure helpers and one hook; no React state lives here.
  */
 import { useSyncExternalStore } from 'react'
+import { namesWithMore } from './groups'
 
 /** At or under this the sidebar is a drawer (styles.css): the call bar and the header presence show. */
 export const PHONE_QUERY = '(max-width: 680px)'
@@ -66,7 +67,8 @@ export function saveStageCollapsed(collapsed: boolean, storage: Pick<Storage, 's
 /** "Konuşuyor: Ayşe, Sen" / "3 kişi" — the call bar's second line. */
 export function talkingLine(speakingIds: readonly number[], me: number, participantCount: number, nameOf: (id: number) => string): string {
   const names = speakingIds.map((id) => (id === me ? 'Sen' : nameOf(id)))
-  if (names.length > 0) return `Konuşuyor: ${names.join(', ')}`
+  // V10: a crowded room names two and counts the rest ("Ayşe, Sen +3").
+  if (names.length > 0) return `Konuşuyor: ${namesWithMore(names)}`
   return participantCount <= 1 ? 'Odada yalnızsın' : `${participantCount} kişi`
 }
 

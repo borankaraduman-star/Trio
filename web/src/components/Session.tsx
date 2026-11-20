@@ -792,6 +792,7 @@ export function Session({
         users={state.users}
         channels={state.channels}
         voiceMembers={state.voice}
+        voiceRoomMax={state.voiceRoomMax}
         activeChannelId={activeChannelId}
         unread={state.unread}
         connection={state.connection}
@@ -976,6 +977,7 @@ export function Session({
               focusOnMount={takeComposerFocus(focusComposer, activeChannel.id)}
               onTextChange={(text) => drafts.setText(activeChannel.id, text)}
               voice={{ onRecorded: sendVoice, onError: setSendNotice }}
+              mentionPeople={Object.values(state.users).filter((user) => user.id !== state.me.id)}
               attachments={{
                 items: pendingHere,
                 files: attachments.files,

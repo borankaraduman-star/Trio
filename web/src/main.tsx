@@ -18,6 +18,7 @@ import './styles-v7-reading.css'
 import './styles-v8-music.css'
 import './theme.css'
 import './styles-v9-join.css'
+import './styles-v10-groups.css'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('missing #root')

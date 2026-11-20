@@ -1,0 +1,145 @@
+/* CONTRACT-V10-GROUPS: a small group (up to 10-15 people), not three friends. */
+
+/* --- "@" suggestions above the composer ----------------------------------------- */
+
+.mention-list {
+  list-style: none;
+  margin: 0 16px 6px;
+  padding: 4px;
+  max-height: min(296px, 40vh);
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.mention-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mention-option.chosen {
+  background: var(--bg-active);
+  color: var(--text-strong);
+}
+
+.mention-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-option small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mention-everyone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+@media (pointer: coarse) {
+  .mention-option {
+    min-height: 44px;
+  }
+}
+
+/* --- the voice room's count and "Oda dolu" ---------------------------------------- */
+
+.channel .room-count {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.channel .room-count.full {
+  background: rgb(228 119 127 / 16%);
+  color: #f0a3a9;
+}
+
+.channel.full {
+  cursor: not-allowed;
+}
+
+.channel.full .channel-name {
+  color: var(--text-muted);
+}
+
+.room-full-note {
+  margin: 2px 8px 6px 30px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* --- a crowded stage: "+N" and "Hepsini göster" ----------------------------------- */
+
+.call-tile.folded {
+  /* Mounted and playing (a folded screen's sound goes on), just not drawn. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.call-tile.stage-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  font: inherit;
+  cursor: pointer;
+}
+
+.call-tile.stage-more strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-tile.stage-more span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Every tile at once: the grid scrolls inside the stage's share of the screen. */
+.call-stage.grid.all {
+  height: min(58vh, calc((100vw - var(--sidebar-width) - var(--members-width)) / var(--stage-columns, 1) * 9 / 16 * var(--stage-rows, 1) + 16px));
+  grid-auto-rows: minmax(96px, 1fr);
+  overflow-y: auto;
+}
+
+@media (max-width: 680px) {
+  .call-stage.grid.all {
+    height: 50vh;
+    grid-auto-rows: calc((100vw - 24px) / var(--stage-columns, 1) * 9 / 16);
+  }
+}

@@ -78,6 +78,8 @@ export interface AppState {
    * channel or sending in it ends it).
    */
   divider: { channelId: number; after: number } | null
+  /** V10: `ready.voice_room_max`, or null from a server that predates it (no cap known). */
+  voiceRoomMax: number | null
 }
 
 export type Action =
@@ -153,6 +155,7 @@ export function createInitialState(init: {
     readSync: false,
     serverRead: {},
     divider: null,
+    voiceRoomMax: null,
   }
 }
 
@@ -417,6 +420,10 @@ function reduceServer(state: AppState, event: ServerEvent, now: number, viewing:
         me: normalizeUser(event.user),
         server: serverProfile(event.server) ?? state.server,
         serverVersion: typeof event.server_version === 'string' ? event.server_version : null,
+        voiceRoomMax:
+          typeof event.voice_room_max === 'number' && Number.isInteger(event.voice_room_max) && event.voice_room_max > 0
+            ? event.voice_room_max
+            : null,
         users,
         channels: event.channels,
         voice,

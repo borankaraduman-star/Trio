@@ -3,9 +3,30 @@ import { useState } from 'react'
 /**
  * The per-user colours behind an initial (and behind a picture while it
  * loads): picked by user id, muted to sit with the palette (design/palette.md)
- * while keeping the light initial at 4.4:1 or more.
+ * while keeping the white initial at 5.2:1 or more (WCAG AA).
+ *
+ * V10 (CONTRACT-V10-GROUPS §3): sixteen, so fifteen people (consecutive ids)
+ * never share one. The first seven are the colours of before, at the same
+ * places, so the first accounts of an existing server keep theirs.
  */
-export const AVATAR_COLORS = ['#52638f', '#37766c', '#97505f', '#86652f', '#a0574a', '#3e6e85', '#75507a']
+export const AVATAR_COLORS = [
+  '#52638f',
+  '#37766c',
+  '#97505f',
+  '#86652f',
+  '#a0574a',
+  '#3e6e85',
+  '#75507a',
+  '#2f6b3e',
+  '#5f6216',
+  '#5a4d93',
+  '#7a4a1c',
+  '#a1466f',
+  '#2b5a8c',
+  '#5c6470',
+  '#6d3f96',
+  '#6b5f52',
+]
 
 export function avatarColor(id: number): string {
   return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length]

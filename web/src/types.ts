@@ -139,6 +139,8 @@ export type ServerEvent =
       server?: ServerProfile
       /** V7-READING: per text channel; absent from an older server. */
       read_state?: Record<string, ReadStateEntry>
+      /** V10: people per voice room (CONTRACT-V10-GROUPS §2); absent from an older server. */
+      voice_room_max?: number
     }
   | { type: 'presence'; user_id: number; online: boolean }
   | { type: 'user.joined'; user: User }
@@ -178,7 +180,16 @@ export type ServerEvent =
   | { type: 'voice.ring'; channel_id: number; from: number }
   | { type: 'pong' }
   /** V6: `nonce` when it answers a `message.send` that carried one. */
-  | { type: 'error'; code: string; message: string; nonce?: string }
+  | {
+      type: 'error'
+      code: string
+      message: string
+      nonce?: string
+      /** V10: `ROOM_FULL` answers a `voice.join` with these. */
+      request?: string
+      channel_id?: number
+      limit?: number
+    }
 
 export type ClientEvent =
   | {
