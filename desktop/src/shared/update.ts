@@ -9,11 +9,24 @@
 export const UPDATE_OWNER = "borankaraduman-star";
 export const UPDATE_REPO = "Trio";
 
-/** First automatic check after start, then every few hours. */
-export const FIRST_CHECK_DELAY_MS = 45_000;
-export const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
-/** A check that came due during a voice call is retried this long after it ends. */
-export const AFTER_CALL_DELAY_MS = 60_000;
+/**
+ * The schedule (CONTRACT-V10-UPDATE §4). A check is three requests to
+ * github.com's web front (`releases.atom`, `releases/latest`, `latest*.yml`;
+ * electron-updater 6.8.11 `GitHubProvider` uses no REST API for github.com),
+ * from the user's own address. Once an hour (with jitter) is far below any
+ * limit and keeps the shell's own latency at about an hour; the page's
+ * "look now" (§4a) is what makes it minutes.
+ */
+export const FIRST_CHECK_DELAY_MS = 30_000;
+export const CHECK_INTERVAL_MS = 45 * 60 * 1000;
+/** Added to every periodic check, at random, so a group's apps do not ask in step. */
+export const CHECK_JITTER_MS = 15 * 60 * 1000;
+/** Waking from sleep or showing the window again checks only when the last check is older than this. */
+export const WAKE_MIN_GAP_MS = 15 * 60 * 1000;
+/** An update downloaded in an earlier run: the first check of the next start comes this soon. */
+export const START_INSTALL_CHECK_DELAY_MS = 5_000;
+/** ... and installs it only when it is ready within this long after start (and not in a call). */
+export const START_INSTALL_WINDOW_MS = 2 * 60 * 1000;
 
 /** Why self-update is not available here (the web client shows the manual notice instead). */
 export type ManualReason =
@@ -88,7 +101,7 @@ export interface UpdateState {
   error: string | null;
   /** Last finished check, ms since epoch. */
   checkedAt: number | null;
-  /** The page says the user is in a voice room: no restart, no automatic check. */
+  /** The page says the user is in a voice room: never a restart (checks and downloads go on). */
   inVoice: boolean;
 }
 
@@ -177,4 +190,42 @@ export function errorReason(error: unknown): string {
   if (/ENOSPC/i.test(message)) return "diskte yer yok";
   if (/EACCES|EPERM/i.test(message)) return "dosyaya yazma izni yok";
   return "beklenmeyen bir hata oluştu";
+}
+
+// ------------------------------------------------------- tray, notification
+
+/** The tray menu's update item (§5): null when there is nothing to say. */
+export function trayUpdateItem(state: UpdateState): { label: string; enabled: boolean; install: boolean } | null {
+  if (state.capability !== "auto" || !state.version) return null;
+  if (state.status === "ready") {
+    return state.inVoice
+      ? { label: `Güncelleme hazır: ${state.version} (sesli odadan çıkınca)`, enabled: false, install: false }
+      : { label: `Yeniden başlat ve güncelle (${state.version})`, enabled: true, install: true };
+  }
+  if (state.status === "downloading") {
+    // Tens only, so the menu is not rebuilt for every percent.
+    const tens = Math.floor((state.percent ?? 0) / 10) * 10;
+    return { label: `Güncelleme indiriliyor: ${state.version} (%${tens})`, enabled: false, install: false };
+  }
+  if (state.status === "available") return { label: `Yeni sürüm var: ${state.version}`, enabled: false, install: false };
+  if (state.status === "installing") return { label: "Yeniden başlatılıyor…", enabled: false, install: false };
+  return null;
+}
+
+/** Appended to the tray tooltip: "Trio — Güncelleme hazır: 0.9.1". */
+export function trayUpdateTooltip(state: UpdateState): string | null {
+  if (state.capability !== "auto" || !state.version) return null;
+  if (state.status === "ready") return `Güncelleme hazır: ${state.version}`;
+  return null;
+}
+
+/** The one native notification when an update becomes ready while the window is hidden. */
+export function readyNotification(state: UpdateState): { title: string; body: string } | null {
+  if (state.capability !== "auto" || state.status !== "ready" || !state.version) return null;
+  return {
+    title: "Trio güncellemesi hazır",
+    body: state.inVoice
+      ? `${state.version} indirildi. Sesli odadan çıkınca yeniden başlatabilirsin; uygulamadan çıkınca da kurulur.`
+      : `${state.version} indirildi. Tepsideki menüden yeniden başlatabilirsin; uygulamadan çıkınca da kurulur.`,
+  };
 }
