@@ -23,6 +23,25 @@ import { ChannelAddButton } from './phone/ChannelAddButton'
 import { screenShareSupported } from '../lib/phone'
 import { MusicMark, NowPlayingLine } from '../music/MusicUi'
 import { roomCount, roomFullMessage, roomIsFull } from '../lib/groups'
+import { reportBreadcrumb } from '../owner/errorReporter'
+
+/**
+ * V10: a click on a text channel row that has not changed the open channel a
+ * second later is logged to the client error log with the layout it happened
+ * in (the owner reported "I can't switch between channels" and it could not
+ * be reproduced; this is what tells us next time).
+ */
+function watchChannelSwitch(channelId: number, name: string): void {
+  window.setTimeout(() => {
+    const shown = document.querySelector('.main-header h1')?.textContent ?? ''
+    if (shown === name) return
+    reportBreadcrumb(
+      `channel click did not switch: channel ${channelId}, header "${shown.slice(0, 32)}", ` +
+        `viewport ${window.innerWidth}x${window.innerHeight} dpr ${window.devicePixelRatio}, ` +
+        `desktop ${typeof (window as unknown as { trioDesktop?: unknown }).trioDesktop === 'object'}`,
+    )
+  }, 1000)
+}
 
 export interface SidebarProps {
   open: boolean
@@ -173,7 +192,10 @@ export function Sidebar(props: SidebarProps) {
                   data-testid={`channel-${channel.id}`}
                   data-unread={unread}
                   aria-current={active ? 'page' : undefined}
-                  onClick={() => props.onSelectChannel(channel.id)}
+                  onClick={() => {
+                    props.onSelectChannel(channel.id)
+                    watchChannelSwitch(channel.id, channel.name)
+                  }}
                 >
                   <HashIcon size={16} />
                   <span className="channel-name">{channel.name}</span>

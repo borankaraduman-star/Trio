@@ -128,6 +128,49 @@ SFU), which Trio does not have. The site should state: **"Ses odasında en çok
   counts), the people strip under a screen: already scrolled and grouped;
   checked with 15 accounts at 1440 and 390 px (e2e 80, `v10-groups-*.png`).
 
+## 4a. Who is here, in a text channel (the owner's report, 20 Nov 2026)
+
+"Desktop app: when I join Sohbet I am listed under it, but in text channels I
+am not there." The member list was a right-hand column hidden at ≤ 960 CSS px
+with nothing in the channel view to bring it back; Windows display scaling
+puts common setups below that (a 1366×768 laptop at 150 % is ~911 px wide, a
+1280×720 one at 150 % ~853). Now:
+
+- **"Üyeler" in the channel header at every width above a phone**
+  (`btn-members`, the online count on it, `data-online`, `aria-pressed`). Wide
+  it shows/hides the column, remembered per device
+  (`localStorage["trio.v10.membersHidden"] = "1"` while hidden; shown by
+  default). At ≤ 880 px it opens the same panel over the chat from the right
+  (`members-panel` with class `overlay`, `members-backdrop`, `members-close`),
+  always starting closed. On a phone (≤ 680 px) the V7 presence pill is that
+  control (it opens the drawer at the people).
+- The panel's title says what it is: **"Üyeler — 5 çevrimiçi"**
+  (`members-title`) and one line under it: text channels are seen by
+  everybody; this lists everybody on the server and who is online. My own row
+  carries "(sen)". A text channel has no presence of its own (unlike a voice
+  room): who can read it is the whole group.
+- **The column now shows from 881 px** (`NO_MEMBERS_QUERY` and the CSS were
+  960): sidebar 260 + member list 220 leaves the chat 401 px at 881, which the
+  header, the composer and the stage were checked at (e2e 83 at 900 and 911).
+  This supersedes CONTRACT-V7-PHONE's "no member column = at most 960 px".
+- **Desktop app**: the first window is the default 1280×820 DIP clamped to the
+  primary display's work area (`desktop/src/shared/windowSize.ts`): DIP are
+  the page's CSS px, and scaling shrinks the work area, not the window; a
+  window larger than the screen was cut off at its edge.
+
+**"I can't switch between channels"** — not reproduced. e2e 83 clicks every
+text channel row at its left edge, middle and right edge, presses Enter on a
+focused row, and taps on a phone, at 1440, 1100, 1000, 960, 911 (150 %), 900,
+1024 (125 %), 853 (150 %), 800, 700 and 390 px, and checks the header, the
+active row, the composer's channel and that the choice survives a reload; it
+clicks the voice row and checks it joins and leaves the text view as it was
+(a voice room is joined, never "opened": the centre stays on the text
+channel, by design since v1). The desktop window has a native frame (no
+drag regions over the sidebar). What is left as diagnostics: a text channel
+click whose header has not changed a second later is sent to the owner's
+client error log (`reportBreadcrumb`, CONTRACT-V6-OPS §5) with the viewport,
+the device pixel ratio and whether it is the desktop app.
+
 ## 5. Server at this size
 
 - One process, one worker, the hub in memory: unchanged and fine. The load
@@ -187,6 +230,8 @@ separate machines (here eight contexts share one browser and four cores).
 (voice channel rows), `stage-more`, `stage-less`, `stage[data-shown]`,
 `mention-list`, `mention-option-<id>`, `owner-people-search`,
 `owner-people-sort`, `owner-removed`, `owner-quota-total`,
-`owner-quota-shortfall`. e2e 78 (join storm), 79 (cap 3: count, full, stale
+`owner-quota-shortfall`, `btn-members`, `members-panel`, `members-title`,
+`members-close`, `members-backdrop`. e2e 83 (channel rows and Üyeler at every
+width and scale), e2e 78 (join storm), 79 (cap 3: count, full, stale
 view), 80 (layouts with 15), 81 (measurements, camera encoding), 82 (defaults:
 8 at once, the ninth refused, nine tabs of chat).
