@@ -48,7 +48,8 @@ export async function openLanding(
     }).observe({ type: 'layout-shift', buffered: true })
   })
   context.on('console', (message) => {
-    if (message.type() === 'error' && /CSP-VIOLATION|Content Security Policy/.test(message.text())) csp.push(message.text())
+    if (message.type() === 'error' && /CSP-VIOLATION|Content Security Policy/.test(message.text()))
+      csp.push(message.text())
   })
   const page = await context.newPage()
   const throttle = Number(process.env.TRIO_E2E_CPU_THROTTLE ?? 0)

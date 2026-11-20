@@ -252,7 +252,9 @@ p {
   margin-left: 6px;
   border: 1px solid var(--border-strong);
   color: var(--text);
-  transition: border-color 0.15s, background-color 0.15s;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
 }
 
 .top-nav .top-open:hover {
@@ -280,7 +282,7 @@ p {
 
 @media (min-width: 1024px) {
   .hero {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-columns: minmax(0, 5.4fr) minmax(0, 6.6fr);
     align-items: center;
     gap: 56px;
   }
@@ -288,7 +290,7 @@ p {
 
 .hero-title {
   margin-top: 6px;
-  font-size: clamp(46px, 3.6vw + 26px, 78px);
+  font-size: clamp(46px, 2.9vw + 27px, 70px);
   font-weight: 780;
   line-height: 1.02;
   letter-spacing: -0.045em;
@@ -296,6 +298,17 @@ p {
 
 .hero-title span {
   display: inline-block;
+}
+
+@media (min-width: 1024px) {
+  /* Two lines, one thought each: "Üç kişiyiz," / "bir odamız var." */
+  .hero-title {
+    font-size: min(4.1vw, 64px);
+  }
+
+  .hero-title span {
+    white-space: nowrap;
+  }
 }
 
 .hero-accent {
@@ -346,7 +359,10 @@ p {
   color: var(--text);
   font-weight: 650;
   text-decoration: none;
-  transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    transform 0.15s;
 }
 
 .button-ghost:hover {
@@ -582,7 +598,9 @@ main h3 {
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--side);
-  transition: border-color 0.2s, transform 0.2s var(--ease-out);
+  transition:
+    border-color 0.2s,
+    transform 0.2s var(--ease-out);
 }
 
 .bento-item:hover {
@@ -606,6 +624,10 @@ main h3 {
 
 .bento-share {
   background: var(--surface);
+}
+
+.bento-share .vg {
+  flex: 1;
 }
 
 /* --- steps: three dots joined by one line ----------------------------------------------------- */

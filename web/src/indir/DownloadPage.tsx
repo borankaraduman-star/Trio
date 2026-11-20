@@ -199,8 +199,8 @@ export function DownloadPage() {
             </p>
             <h2 id="music-title">Senin çaldığını oda da duysun.</h2>
             <p>
-              Bilgisayarında çalan sesi (Spotify, bir YouTube sekmesi…) odadaki herkese stereo gönder. Mikrofonunu kapatsan
-              da müzik çalmaya devam eder; herkes müziğin sesini kendine göre ayarlar.
+              Bilgisayarında çalan sesi (Spotify, bir YouTube sekmesi…) odadaki herkese stereo gönder. Mikrofonunu
+              kapatsan da müzik çalmaya devam eder; herkes müziğin sesini kendine göre ayarlar.
             </p>
             <p className="muted">
               Windows 11 masaüstü uygulamasında tek tıkla sistem sesi; Chrome ve Edge'de müziğin çaldığı sekme. Şarkının
@@ -216,12 +216,10 @@ export function DownloadPage() {
             </p>
             <h2 id="phone-title">Uygulama mağazası yok, Trio yine cebinde.</h2>
             <p>
-              Telefonda Trio tarayıcıdan çalışır; ana ekrana eklersen simgesiyle açılır. Trio kapalıyken de yeni mesajlar,
-              seni ananlar ve çağrılar bildirim olarak gelir.
+              Telefonda Trio tarayıcıdan çalışır; ana ekrana eklersen simgesiyle açılır. Trio kapalıyken de yeni
+              mesajlar, seni ananlar ve çağrılar bildirim olarak gelir.
             </p>
-            <p>
-              Görüşmedeyken alttaki şerit kimin konuştuğunu gösterir; sessize almak ya da çıkmak tek dokunuş.
-            </p>
+            <p>Görüşmedeyken alttaki şerit kimin konuştuğunu gösterir; sessize almak ya da çıkmak tek dokunuş.</p>
             <p className="muted">iPhone'da bildirim almak için önce Trio'yu ana ekrana ekle.</p>
           </div>
           <div className="feature-demo" data-reveal>
@@ -260,8 +258,8 @@ export function DownloadPage() {
               <div className="bento-text">
                 <h3>Sunucu sizin</h3>
                 <p>
-                Mesajlar ve dosyalar arkadaşının kurduğu sunucuda durur. Reklam yok, e-posta ya da telefon numarası
-                istenmez.
+                  Mesajlar ve dosyalar arkadaşının kurduğu sunucuda durur. Reklam yok, e-posta ya da telefon numarası
+                  istenmez.
                 </p>
               </div>
             </article>
@@ -341,8 +339,8 @@ export function DownloadPage() {
             </Question>
             <Question q="Verilerim nerede duruyor?">
               Mesajlar ve dosyalar, Trio'yu kuran arkadaşının sunucusunda durur; Trio'nun ayrıca bir bulutu yok.
-              Sunucuda şifresiz saklanırlar, yani sunucuyu yöneten görebilir. Canlı ses, kamera ve ekran tarayıcılar arasında
-              şifreli gider ve kaydedilmez.
+              Sunucuda şifresiz saklanırlar, yani sunucuyu yöneten görebilir. Canlı ses, kamera ve ekran tarayıcılar
+              arasında şifreli gider ve kaydedilmez.
             </Question>
             <Question q="Telefonda var mı?">
               Ayrı bir uygulama yok, gerekmiyor: Trio telefonun tarayıcısında çalışır. Ana ekrana eklersen simgesiyle
@@ -355,8 +353,8 @@ export function DownloadPage() {
             </Question>
             <Question q="Nasıl güncellenir?">
               Tarayıcıda bir şey yapman gerekmez: sunucu güncellenince Trio da güncellenir. Masaüstü uygulaması da
-              ekranlarını sunucudan yüklediği için yenilikler ona kendiliğinden gelir; uygulamanın kendisinin yeni sürümü
-              çıkınca Ayarlar'da haber verilir, bu sayfadan indirip kurarsın.
+              ekranlarını sunucudan yüklediği için yenilikler ona kendiliğinden gelir; uygulamanın kendisinin yeni
+              sürümü çıkınca Ayarlar'da haber verilir, bu sayfadan indirip kurarsın.
             </Question>
           </div>
         </section>

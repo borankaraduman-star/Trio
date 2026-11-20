@@ -16,16 +16,18 @@ import {
   type Visitor,
 } from './platform'
 
-export function PrimaryButton({ file, version, date }: { file: DownloadFile; version: string | null; date: string | null }) {
+export function PrimaryButton({
+  file,
+  version,
+  date,
+}: {
+  file: DownloadFile
+  version: string | null
+  date: string | null
+}) {
   return (
     <div className="indir-primary-wrap">
-      <a
-        href={file.url}
-        className="indir-primary"
-        data-testid="indir-primary"
-        data-platform={file.platform}
-        download
-      >
+      <a href={file.url} className="indir-primary" data-testid="indir-primary" data-platform={file.platform} download>
         <DownloadIcon />
         {PLATFORM_SHORT[file.platform]} için indir
       </a>
@@ -129,8 +131,8 @@ export function WarningHelp({ downloads, visitor }: { downloads: Downloads; visi
         <p data-testid="indir-why">
           Trio arkadaşlar arasında kullanılan özel bir uygulama ve Microsoft ya da Apple'ın ücretli geliştirici
           sertifikasıyla imzalanmadı. Bu yüzden işletim sistemi yayımcıyı tanımaz ve bir kez uyarır. Uyarı dosyanın
-          zararlı olduğu anlamına gelmez; yine de indirdiğin dosyanın buradaki dosya olduğundan emin olmak için
-          SHA-256 değerini karşılaştırabilirsin (aşağıda).
+          zararlı olduğu anlamına gelmez; yine de indirdiğin dosyanın buradaki dosya olduğundan emin olmak için SHA-256
+          değerini karşılaştırabilirsin (aşağıda).
         </p>
       )}
 
@@ -184,8 +186,8 @@ export function WarningHelp({ downloads, visitor }: { downloads: Downloads; visi
                   <code>.dmg</code> dosyasını aç ve Trio'yu <b>Uygulamalar</b> klasörüne sürükle.
                 </li>
                 <li>
-                  Trio'yu aç. “Apple, Trio'nun kötü amaçlı yazılım içermediğini doğrulayamadı” uyarısını{' '}
-                  <b>Bitti</b> ile kapat.
+                  Trio'yu aç. “Apple, Trio'nun kötü amaçlı yazılım içermediğini doğrulayamadı” uyarısını <b>Bitti</b>{' '}
+                  ile kapat.
                 </li>
                 <li>
                   <b>Sistem Ayarları</b> › <b>Gizlilik ve Güvenlik</b>'i aç, en aşağıdaki “Trio engellendi” satırının
@@ -233,7 +235,17 @@ export function WarningHelp({ downloads, visitor }: { downloads: Downloads; visi
   )
 }
 
-function Help({ title, open, testId, children }: { title: string; open: boolean; testId: string; children: ReactNode }) {
+function Help({
+  title,
+  open,
+  testId,
+  children,
+}: {
+  title: string
+  open: boolean
+  testId: string
+  children: ReactNode
+}) {
   return (
     <details className="indir-help" open={open} data-testid={testId}>
       <summary>{title}</summary>
@@ -279,7 +291,9 @@ function SmartScreenDrawing({ name }: { name: string }) {
           </div>
         </div>
       </div>
-      <figcaption className="indir-muted">Temsili çizim; Windows sürümüne göre yazılar biraz farklı olabilir.</figcaption>
+      <figcaption className="indir-muted">
+        Temsili çizim; Windows sürümüne göre yazılar biraz farklı olabilir.
+      </figcaption>
     </figure>
   )
 }

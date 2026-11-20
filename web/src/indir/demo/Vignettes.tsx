@@ -10,8 +10,8 @@ import { useLive } from './useDemo'
 
 /** 32 bars of a made-up recording, 0..1. */
 const WAVE = [
-  0.2, 0.35, 0.6, 0.8, 0.55, 0.3, 0.45, 0.9, 0.7, 0.4, 0.25, 0.5, 0.75, 0.95, 0.6, 0.35, 0.2, 0.4, 0.65, 0.85, 0.5,
-  0.3, 0.55, 0.8, 0.6, 0.4, 0.3, 0.5, 0.7, 0.45, 0.25, 0.15,
+  0.2, 0.35, 0.6, 0.8, 0.55, 0.3, 0.45, 0.9, 0.7, 0.4, 0.25, 0.5, 0.75, 0.95, 0.6, 0.35, 0.2, 0.4, 0.65, 0.85, 0.5, 0.3,
+  0.55, 0.8, 0.6, 0.4, 0.3, 0.5, 0.7, 0.45, 0.25, 0.15,
 ]
 
 export function VoiceMessageVignette() {
@@ -63,6 +63,20 @@ export function PhotoVignette() {
   )
 }
 
+/** The "Metin" picture: lines of code (indent, width, colour), the cursor last. */
+const CODE_LINES: { x: number; w: string; kind?: string }[] = [
+  { x: 0, w: '34%', kind: 'c' },
+  { x: 1, w: '52%' },
+  { x: 1, w: '40%', kind: 't' },
+  { x: 2, w: '46%' },
+  { x: 2, w: '28%' },
+  { x: 1, w: '12%', kind: 'c' },
+  { x: 0, w: '0' },
+  { x: 0, w: '30%', kind: 'c' },
+  { x: 1, w: '58%' },
+  { x: 1, w: '3px', kind: 'cursor' },
+]
+
 const PROFILE_PICTURE: Record<ShareProfile, string> = {
   game: 'oyun',
   text: 'metin',
@@ -73,17 +87,26 @@ export function ShareProfilesVignette() {
   const [profile, setProfile] = useState<ShareProfile>('text')
   const { ref, live, reduced } = useLive<HTMLDivElement>()
   return (
-    <div className="vg vg-share" ref={ref} data-live={live} data-reduced={reduced} data-profile={profile} data-testid="vignette-share">
+    <div
+      className="vg vg-share"
+      ref={ref}
+      data-live={live}
+      data-reduced={reduced}
+      data-profile={profile}
+      data-testid="vignette-share"
+    >
       <div className={`vg-screen vg-screen-${PROFILE_PICTURE[profile]}`} aria-hidden="true">
         <span className="vg-screen-label">
           <Avatar friend={ECE} size={16} /> Ece ekranını paylaşıyor
         </span>
         <div className="vg-screen-art">
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
+          {CODE_LINES.map((line, n) => (
+            <i
+              key={n}
+              className={line.kind}
+              style={{ ['--n' as string]: String(n), ['--x' as string]: String(line.x), ['--w' as string]: line.w }}
+            />
+          ))}
         </div>
       </div>
       <div className="vg-seg" role="radiogroup" aria-label="Ekran paylaşımı profili">

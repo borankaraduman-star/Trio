@@ -1,0 +1,115 @@
+/*
+ * V9: the join screen, the app's other front door, in the same hand as the
+ * public page (/indir): the mark breathes, the card arrives once, the three
+ * colours sit under the lead, and the download link is a quiet chip.
+ * Imported after theme.css. Nothing here changes what the screen does.
+ */
+
+.join-card {
+  position: relative;
+}
+
+/* A thin warm edge along the top of the card: the lamp over the table. */
+.join-card::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(238 153 127 / 70%), transparent);
+}
+
+.join-card h1 {
+  font-size: 34px;
+  font-weight: 780;
+  letter-spacing: -0.03em;
+}
+
+.join-lead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The three colours, as three dots, under the lead. */
+.join-lead::after {
+  content: '';
+  width: 30px;
+  height: 6px;
+  background:
+    radial-gradient(circle 3px at 3px 3px, var(--trio-coral) 98%, transparent),
+    radial-gradient(circle 3px at 15px 3px, var(--trio-online) 98%, transparent),
+    radial-gradient(circle 3px at 27px 3px, #ddb174 98%, transparent);
+}
+
+.join .download-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin-top: 18px;
+  padding: 0 14px;
+  border: 1px solid var(--trio-border);
+  border-radius: 999px;
+  text-decoration: none;
+  transition:
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.join .download-link::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  margin-top: -4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.join .download-link:hover {
+  border-color: var(--trio-coral);
+}
+
+.living circle {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .join-card {
+    animation: join-arrive 0.7s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+  }
+
+  .living circle {
+    animation: join-breathe 4.8s ease-in-out infinite;
+  }
+
+  .living circle:nth-child(2) {
+    animation-delay: 1.6s;
+  }
+
+  .living circle:nth-child(3) {
+    animation-delay: 3.2s;
+  }
+}
+
+@keyframes join-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes join-breathe {
+  0%,
+  30%,
+  100% {
+    transform: scale(1);
+  }
+  12% {
+    transform: scale(0.82);
+  }
+}

@@ -46,14 +46,15 @@ test('390, 768 and 1440: nothing wider than the screen, the hero demo in place, 
   }
 })
 
-test('the hero does not jump: its box is fixed before the files arrive, and CLS stays near zero', async ({ browser }) => {
+test('the hero does not jump: its box is fixed before the files arrive, and CLS stays near zero', async ({
+  browser,
+}) => {
   const v = await openLanding(browser, { userAgent: UA.windows, width: 1440, height: 900 })
   const { page } = v
   const stage = page.locator('.hero-stage')
   await expect(stage).toBeVisible()
   // Layout boxes (offset sizes), not the painted ones: the entrance scales the stage for a moment.
-  const box = () =>
-    stage.evaluate((el: HTMLElement) => ({ w: el.offsetWidth, h: el.offsetHeight, top: el.offsetTop }))
+  const box = () => stage.evaluate((el: HTMLElement) => ({ w: el.offsetWidth, h: el.offsetHeight, top: el.offsetTop }))
   const before = await box()
   await expect(page.getByTestId('indir-primary')).toBeVisible()
   await page.waitForTimeout(2500) // the entrance and a few demo steps
@@ -146,4 +147,20 @@ test('screenshots: features and download sections at 1440', async ({ browser }) 
   await page.waitForTimeout(300)
   await page.screenshot({ path: shot('v9-landing-full-1440.png'), fullPage: true })
   await v.close()
+})
+
+test('the join screen: same hand as the page, every door still there', async ({ browser }) => {
+  const v = await openLanding(browser, { userAgent: UA.windows, width: 1280, height: 860, path: '/' })
+  const { page } = v
+  await expect(page.getByTestId('join-form')).toBeVisible()
+  await expect(page.getByTestId('join-mode-invite')).toBeVisible()
+  await expect(page.getByTestId('join-mode-link')).toBeVisible()
+  await expect(page.getByTestId('download-link')).toHaveAttribute('href', '/indir')
+  await page.waitForTimeout(900) // the card's arrival
+  await page.screenshot({ path: shot('v9-join.png') })
+  await v.close()
+  const narrow = await openLanding(browser, { userAgent: UA.android, width: 390, height: 844, isMobile: true, path: '/' })
+  await expect(narrow.page.getByTestId('join-form')).toBeVisible()
+  expect(await horizontalOverflow(narrow.page)).toBeLessThanOrEqual(0)
+  await narrow.close()
 })

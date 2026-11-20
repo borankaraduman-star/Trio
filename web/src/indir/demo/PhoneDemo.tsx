@@ -30,7 +30,11 @@ export function PhoneDemo() {
           Uygulama
         </button>
       </div>
-      <div className="ph" role="group" aria-label={lock ? 'Telefonun kilit ekranında Trio bildirimleri' : 'Telefonda Trio, görüşme şeridiyle'}>
+      <div
+        className="ph"
+        role="group"
+        aria-label={lock ? 'Telefonun kilit ekranında Trio bildirimleri' : 'Telefonda Trio, görüşme şeridiyle'}
+      >
         <div className="ph-notch" aria-hidden="true" />
         {lock ? (
           <div className="ph-lock" aria-hidden="true">

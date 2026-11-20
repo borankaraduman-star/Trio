@@ -114,13 +114,7 @@ export function Icon({ name, size = 18 }: { name: keyof typeof PATHS | string; s
  * Under every moving demo: pause/continue (WCAG 2.2.2), or, with reduced
  * motion, the steps by hand.
  */
-export function DemoControls<E extends HTMLElement>({
-  demo,
-  label,
-}: {
-  demo: Demo<E>
-  label: string
-}) {
+export function DemoControls<E extends HTMLElement>({ demo, label }: { demo: Demo<E>; label: string }) {
   const paused = demo.paused
   if (demo.reduced) {
     return (
@@ -159,6 +153,7 @@ export function demoAttributes<E extends HTMLElement>(demo: Demo<E>, name: strin
   return {
     'data-demo': name,
     'data-step': demo.step,
+    'data-last': demo.last,
     'data-playing': demo.playing ? 'true' : 'false',
     'data-reduced': demo.reduced ? 'true' : 'false',
   }

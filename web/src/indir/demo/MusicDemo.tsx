@@ -67,7 +67,11 @@ export function MusicDemo() {
           </li>
         </ul>
 
-        <div className={sharing ? 'mu-meter is-on' : 'mu-meter'} aria-hidden="true" style={{ ['--music' as string]: String(level / 50) }}>
+        <div
+          className={sharing ? 'mu-meter is-on' : 'mu-meter'}
+          aria-hidden="true"
+          style={{ ['--music' as string]: String(level / 50) }}
+        >
           {['L', 'R'].map((side) => (
             <div className="mu-channel" key={side}>
               <span>{side}</span>
@@ -106,7 +110,11 @@ export function MusicDemo() {
           <output data-testid="music-level">{level === 0 ? 'Sessiz' : `%${level}`}</output>
         </label>
         <p className="mu-note" aria-live="polite">
-          {eceMicOff ? 'Ece mikrofonunu kapattı; müzik çalmaya devam ediyor.' : sharing ? 'Ece müzik paylaşıyor, stereo.' : 'Ece “Müzik paylaş”a basıyor…'}
+          {eceMicOff
+            ? 'Ece mikrofonunu kapattı; müzik çalmaya devam ediyor.'
+            : sharing
+              ? 'Ece müzik paylaşıyor, stereo.'
+              : 'Ece “Müzik paylaş”a basıyor…'}
         </p>
       </div>
       <DemoControls demo={demo} label="Müzik paylaşımı örneği" />

@@ -110,7 +110,7 @@ export function JoinScreen({
   return (
     <main className="join">
       <form className="join-card" onSubmit={submit} data-testid="join-form" data-mode={mode}>
-        <BrandMark size={56} className="join-brand" />
+        <BrandMark size={56} className="join-brand living" />
         <div className="join-logo" aria-hidden="true">
           <span />
           <span />

@@ -75,7 +75,9 @@
   font: inherit;
   font-size: 13.5px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .d-controls button:hover {
@@ -304,6 +306,30 @@
   margin-top: auto;
 }
 
+.dw-new {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--coral);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  animation: rise-small 0.42s var(--ease-out) both;
+}
+
+.dw-new::before,
+.dw-new::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgb(238 153 127 / 45%);
+}
+
+.dw-new::before {
+  flex: 0 0 12px;
+}
+
 .dw-msg {
   display: flex;
   gap: 11px;
@@ -490,7 +516,9 @@
   font-weight: 700;
   font-size: 14px;
   cursor: pointer;
-  transition: opacity 0.15s, transform 0.15s;
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
 }
 
 .dw-composer button:disabled {
@@ -575,7 +603,9 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
-  transition: border-color 0.3s, background-color 0.3s;
+  transition:
+    border-color 0.3s,
+    background-color 0.3s;
 }
 
 .vr-tile.is-talking {
@@ -654,6 +684,25 @@
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.voice-demo {
+  container-type: inline-size;
+}
+
+@container (max-width: 480px) {
+  .vr-volume-tag {
+    display: none;
+  }
+
+  .vr-tiles {
+    padding: 18px 10px 14px;
+    gap: 8px;
+  }
+
+  .vr-name {
+    font-size: 13px;
+  }
 }
 
 .vr-tools {
@@ -756,7 +805,10 @@ button.vr-btn {
   cursor: pointer;
   outline-offset: 3px;
   box-shadow: 0 0 0 2px rgb(238 153 127 / 0%);
-  transition: background-color 0.15s, transform 0.15s, box-shadow 0.3s;
+  transition:
+    background-color 0.15s,
+    transform 0.15s,
+    box-shadow 0.3s;
 }
 
 button.vr-btn:hover {
@@ -983,7 +1035,9 @@ button.vr-btn:active {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
 
 .ph-switch button[aria-pressed='true'] {
@@ -1021,8 +1075,7 @@ button.vr-btn:active {
   padding: 64px 14px 14px;
   background:
     radial-gradient(ellipse 90% 60% at 30% 100%, rgb(105 185 170 / 22%), transparent 70%),
-    radial-gradient(ellipse 80% 50% at 80% 10%, rgb(238 153 127 / 18%), transparent 70%),
-    #15181e;
+    radial-gradient(ellipse 80% 50% at 80% 10%, rgb(238 153 127 / 18%), transparent 70%), #15181e;
   animation: rise-small 0.4s var(--ease-out) both;
 }
 
@@ -1425,8 +1478,9 @@ button.vr-btn:active {
 
 .vg-screen {
   position: relative;
-  aspect-ratio: 16 / 9;
-  max-height: 260px;
+  flex: 1;
+  min-height: 190px;
+  max-height: 340px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: #0f1115;
@@ -1458,49 +1512,30 @@ button.vr-btn:active {
   display: block;
 }
 
-/* Metin: crisp lines of text, a cursor blinking */
-.vg-screen-metin .vg-screen-art {
-  padding: 16px;
-}
-
+/* Metin: crisp lines of code, a cursor blinking */
 .vg-screen-metin .vg-screen-art i {
-  left: 18px;
+  left: calc(18px + var(--x, 0) * 18px);
+  top: calc(18px + var(--n) * 17px);
+  width: var(--w);
   height: 7px;
   border-radius: 3px;
   background: #3b4250;
 }
 
-.vg-screen-metin .vg-screen-art i:nth-child(1) {
-  top: 18px;
-  width: 38%;
+.vg-screen-metin .vg-screen-art i.c {
   background: var(--coral);
   opacity: 0.8;
 }
 
-.vg-screen-metin .vg-screen-art i:nth-child(2) {
-  top: 36px;
-  width: 62%;
-}
-
-.vg-screen-metin .vg-screen-art i:nth-child(3) {
-  top: 54px;
-  width: 48%;
-  left: 36px;
+.vg-screen-metin .vg-screen-art i.t {
   background: var(--teal);
   opacity: 0.7;
 }
 
-.vg-screen-metin .vg-screen-art i:nth-child(4) {
-  top: 72px;
-  width: 55%;
-  left: 36px;
-}
-
-.vg-screen-metin .vg-screen-art i:nth-child(5) {
-  top: 90px;
+.vg-screen-metin .vg-screen-art i.cursor {
   width: 3px;
   height: 12px;
-  left: 36px;
+  margin-top: -2px;
   background: var(--text);
   animation: blink 1s steps(1) infinite;
 }
@@ -1513,9 +1548,12 @@ button.vr-btn:active {
 
 /* Oyun: things racing past */
 .vg-screen-oyun .vg-screen-art {
-  background:
-    linear-gradient(to top, #253229 0 32%, transparent 32%),
-    linear-gradient(#1b2433, #13161c);
+  background: linear-gradient(to top, #253229 0 32%, transparent 32%), linear-gradient(#1b2433, #13161c);
+}
+
+.vg-screen-oyun .vg-screen-art i:nth-child(n + 6),
+.vg-screen-film .vg-screen-art i:nth-child(n + 4) {
+  display: none;
 }
 
 .vg-screen-oyun .vg-screen-art i {
@@ -1607,10 +1645,6 @@ button.vr-btn:active {
   animation-duration: 15s;
 }
 
-.vg-screen-film .vg-screen-art i:nth-child(n + 4) {
-  display: none;
-}
-
 @keyframes sun {
   to {
     transform: translateY(18px);
@@ -1643,7 +1677,9 @@ button.vr-btn:active {
   font: inherit;
   font-weight: 650;
   cursor: pointer;
-  transition: background-color 0.2s, color 0.2s;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
 
 .vg-seg button:hover {

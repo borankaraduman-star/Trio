@@ -3,7 +3,8 @@ import { StepPlayer } from './player'
 
 /** Whether the visitor asked for less motion; follows the setting live. */
 export function useReducedMotion(): boolean {
-  const query = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
+  const query =
+    typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
   const [reduced, setReduced] = useState(() => query?.matches ?? false)
   useEffect(() => {
     if (!query) return
