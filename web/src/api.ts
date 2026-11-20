@@ -147,6 +147,9 @@ const JOIN_ERRORS: Record<string, string> = {
   SERVER_FULL: 'Sunucu dolu, yeni üye alınamıyor.',
   INVALID_NAME: 'İsim 1–32 karakter olmalı.',
   NOT_CANONICAL: 'Bu kod sunucunun yeni adresinde girilmeli.',
+  INVALID_RECOVERY_CODE: 'Kurtarma kodu yanlış (ya da bu sunucuda TRIO_RECOVERY_CODE ayarlı değil).',
+  RECOVERY_LIMIT: 'Kurtarma kodu bu açılışta çok kullanıldı. Sunucuyu yeniden başlatıp tekrar dene.',
+  NO_OWNER: 'Bu sunucunun sahibi yok: TRIO_OWNER kimsenin adı değil.',
   INVALID_LINK_CODE:
     'Bu kod geçersiz: süresi dolmuş, daha önce kullanılmış ya da yanlış yazılmış olabilir. Diğer cihazdan yeni bir kod al.',
   RATE_LIMITED: 'Çok fazla deneme yapıldı. Biraz sonra tekrar dene.',

@@ -13,6 +13,8 @@ import type { User } from '../types'
 export interface AddressState {
   /** null: not known yet; '' : the server declares none; else an origin. */
   publicUrl: string | null
+  /** §8: the address the server will have soon (TRIO_NEXT_URL); '' none, null unknown. */
+  nextUrl?: string | null
 }
 
 type Listener = () => void
@@ -37,8 +39,8 @@ export async function fetchAddress(): Promise<AddressState> {
   try {
     const response = await fetch('/api/health', { cache: 'no-store' })
     if (response.ok) {
-      const body = (await response.json()) as { public_url?: unknown }
-      state = { publicUrl: cleanOrigin(body.public_url) ?? '' }
+      const body = (await response.json()) as { public_url?: unknown; next_url?: unknown }
+      state = { publicUrl: cleanOrigin(body.public_url) ?? '', nextUrl: cleanOrigin(body.next_url) ?? '' }
       for (const listener of listeners) listener()
     }
   } catch {
@@ -65,6 +67,11 @@ export const addressStore = {
 export function setAddressForTest(next: AddressState): void {
   state = next
   for (const listener of listeners) listener()
+}
+
+/** §8: an address is announced and this page is not on it yet. */
+export function nextPending(current: string = window.location.origin, known: AddressState = state): boolean {
+  return Boolean(known.nextUrl) && known.nextUrl !== current
 }
 
 /** Where links should point: the canonical address when declared, else this page's origin. */
@@ -269,6 +276,19 @@ export const moveApi = {
     // The address we go to is the server's own answer, rebuilt here: never anything else.
     return { code: body.code, expiresAt: body.expires_at, publicUrl, url: `${publicUrl}/#tasi=${body.code}` }
   },
+  /** §8: a 7-day code for the announced address (TRIO_NEXT_URL). */
+  async createNext(token: string, prefs: Record<string, string>): Promise<MoveCode> {
+    const body = await request<{ code?: unknown; expires_at?: unknown; next_url?: unknown }>('/api/move/next', {
+      method: 'POST',
+      token,
+      body: { prefs },
+    })
+    const nextUrl = cleanOrigin(body.next_url)
+    if (typeof body.code !== 'string' || typeof body.expires_at !== 'string' || !nextUrl) {
+      throw new ApiError(201, 'BAD_RESPONSE', 'bad response')
+    }
+    return { code: body.code, expiresAt: body.expires_at, publicUrl: nextUrl, url: `${nextUrl}/#tasi=${body.code}` }
+  },
   async peek(code: string): Promise<MovePeek> {
     const body = await request<{ user: User; expires_at: string }>('/api/move/peek', {
       method: 'POST',
@@ -311,6 +331,11 @@ export function finishRedeemedMove(token: string, move: unknown): void {
 
 export const RECOVERY_MIN_LENGTH = 24
 
+/** What the one "Zaten hesabım var" field holds: longer than a device code = a recovery code. */
+export function looksLikeRecovery(raw: string): boolean {
+  return raw.replace(/[\s-]/g, '').length > 10
+}
+
 export function recover(code: string): Promise<{ token: string; user: User }> {
   return request('/api/join', { method: 'POST', body: { recovery_code: code } })
 }
@@ -329,6 +354,7 @@ export const MOVE_ERRORS: Record<string, string> = {
   NOT_CANONICAL: 'Bu bağlantı sunucunun yeni adresinde açılmalı.',
   OTHER_ACCOUNT: 'Bu taşıma bağlantısı başka bir hesaba ait.',
   NO_PUBLIC_URL: 'Sunucunun yeni bir adresi yok.',
+  NO_NEXT_URL: 'Sunucu yeni bir adres duyurmadı.',
   ALREADY_HERE: 'Zaten yeni adrestesin.',
   RATE_LIMITED: 'Çok fazla deneme yapıldı. Biraz sonra tekrar dene.',
   NETWORK: 'Sunucuya ulaşılamadı.',

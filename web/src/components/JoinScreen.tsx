@@ -4,6 +4,7 @@ import { linkCodeProblem, normalizeLinkCode, tidyLinkCodeInput } from '../lib/li
 import { rateLimitMessage } from '../lib/retryAfter'
 import { desktopBridge } from '../ptt'
 import { BrandMark } from './BrandMark'
+import { looksLikeRecovery, recover, RECOVERY_MIN_LENGTH } from '../lib/address'
 import { DownloadLink } from './DownloadLink'
 
 export type JoinMode = 'invite' | 'link'
@@ -72,8 +73,16 @@ export function JoinScreen({
   }, [limitedUntil])
 
   const normalized = normalizeLinkCode(linkCode)
+  // V11-ADDRESS §6: the same field takes the owner's recovery code (anything longer than a device code).
+  const recovery = mode === 'link' && looksLikeRecovery(linkCode)
   const canSubmit =
-    !busy && !waiting && (mode === 'invite' ? name.trim().length > 0 && code.length > 0 : normalized !== null)
+    !busy &&
+    !waiting &&
+    (mode === 'invite'
+      ? name.trim().length > 0 && code.length > 0
+      : recovery
+        ? linkCode.trim().length >= RECOVERY_MIN_LENGTH
+        : normalized !== null)
 
   const switchMode = (next: JoinMode) => {
     if (next === mode) return
@@ -89,7 +98,11 @@ export function JoinScreen({
     setLimitedUntil(undefined)
     try {
       const result =
-        mode === 'invite' ? await api.join(code, name.trim()) : await api.joinWithLinkCode(normalized ?? '')
+        mode === 'invite'
+          ? await api.join(code, name.trim())
+          : recovery
+            ? await recover(linkCode.trim())
+            : await api.joinWithLinkCode(normalized ?? '')
       onJoined({ token: result.token, user: result.user }, mode === 'invite' ? code : null)
     } catch (failure) {
       // A wrong or old code from a link: back to the ordinary form, with the ordinary error.
@@ -104,7 +117,7 @@ export function JoinScreen({
     }
   }
 
-  const typedProblem = mode === 'link' ? linkCodeProblem(linkCode) : null
+  const typedProblem = mode === 'link' && !recovery ? linkCodeProblem(linkCode) : null
   const message = limited ? rateLimitMessage(secondsLeft) : (error ?? typedProblem)
 
   return (
@@ -197,15 +210,17 @@ export function JoinScreen({
                 Masaüstü uygulaması ayrı bir cihaz sayılır: tarayıcıda açık hesabından bir cihaz kodu al.
               </p>
             )}
-            <label htmlFor="join-link-code">Cihaz kodu</label>
+            <label htmlFor="join-link-code">Cihaz kodu ya da kurtarma kodu</label>
             <input
               id="join-link-code"
               data-testid="join-link-code"
-              className="link-code-input"
+              className={recovery ? 'recovery-code-input' : 'link-code-input'}
+              data-kind={recovery ? 'recovery' : 'device'}
               value={linkCode}
               onChange={(event) => {
                 // What the server said was about the code as it was; it no longer applies.
-                setLinkCode(tidyLinkCodeInput(event.target.value))
+                const raw = event.target.value
+                setLinkCode(looksLikeRecovery(raw) ? raw : tidyLinkCodeInput(raw))
                 setError(null)
               }}
               autoComplete="one-time-code"
@@ -219,6 +234,10 @@ export function JoinScreen({
             <p className="join-hint" id="join-link-help">
               Giriş yaptığın diğer cihazda Ayarlar › Hesap › “Cihaz ekle”ye bas ve çıkan kodu buraya yaz. Kod 10
               dakika geçerlidir, bir kez kullanılır.
+            </p>
+            <p className="join-hint" data-testid="join-recovery-hint">
+              Sunucunun sahibiysen ve hiçbir cihazında giriş kalmadıysa: Railway’de TRIO_RECOVERY_CODE’a yazdığın
+              kurtarma kodunu buraya gir.
             </p>
           </>
         )}

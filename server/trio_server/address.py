@@ -71,6 +71,11 @@ def hash_move_code(code: str) -> str:
     return hashlib.sha256(("trio-move:" + code).encode("ascii")).hexdigest()
 
 
+def recovery_key(value: str) -> str:
+    """§6: case, spaces and dashes do not matter (a phone keyboard capitalises)."""
+    return "".join(ch for ch in value.lower() if ch not in " -\t")
+
+
 def same_origin(a: str | None, b: str | None) -> bool:
     return a is not None and b is not None and a.lower() == b.lower()
 
@@ -372,10 +377,10 @@ def register_address_routes(
 
     async def recover(raw: Any, address: str) -> JSONResponse:
         configured = settings.recovery_code
-        supplied = raw.encode("utf-8") if isinstance(raw, str) else b""
+        supplied = recovery_key(raw).encode("utf-8") if isinstance(raw, str) else b""
         if configured is not None and state["recovery_uses"] >= RECOVERY_MAX_PER_BOOT:
             raise ApiError(429, "RECOVERY_LIMIT", "the recovery code was used too often")
-        expected = (configured or secrets.token_urlsafe(32)).encode("utf-8")
+        expected = recovery_key(configured or secrets.token_urlsafe(32)).encode("utf-8")
         right = hmac.compare_digest(
             hashlib.sha256(supplied).digest(), hashlib.sha256(expected).digest()
         )

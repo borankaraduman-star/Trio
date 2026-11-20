@@ -11,10 +11,12 @@ import {
   hostOf,
   MOVE_ERRORS,
   moveApi,
+  nextPending,
   offCanonical,
+  type MoveCode,
   saveMovedTo,
 } from '../../lib/address'
-import { askShellToMove, moveKind } from './desktopMove'
+import { askShellToMove, moveKind, shellKeepsNextCode, storeNextInShell } from './desktopMove'
 
 /** The owner's view of the address (GET /api/owner/address), the part a band needs. */
 interface OwnerAddress {
@@ -37,6 +39,24 @@ function installedApp(): boolean {
     return window.matchMedia('(display-mode: standalone)').matches
   } catch {
     return false
+  }
+}
+
+const NEXT_DISMISSED_KEY = 'trio.nextDismissed'
+
+function readDismissed(): string | null {
+  try {
+    return localStorage.getItem(NEXT_DISMISSED_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeDismissed(value: string | null): void {
+  try {
+    if (value) localStorage.setItem(NEXT_DISMISSED_KEY, value)
+  } catch {
+    // Shown again next time.
   }
 }
 
@@ -106,8 +126,42 @@ export function AddressBand({ auth, moveCode, onMoveCodeUsed }: { auth: Auth; mo
     })()
   }, [moveCode, off, address.publicUrl, auth.token, auth.user.id, auth.user.name, onMoveCodeUsed])
 
+  // §8: an address is announced. The desktop app keeps a 7-day code itself; a browser shows it.
+  const next = nextPending(window.location.origin, address) && !off
+  const nextHost = address.nextUrl ? hostOf(address.nextUrl) : ''
+  const [nextCode, setNextCode] = useState<MoveCode | null>(null)
+  const [nextStored, setNextStored] = useState(false)
+  const [dismissed, setDismissed] = useState(readDismissed)
+  const nextHidden = Boolean(address.nextUrl) && dismissed === address.nextUrl
+  const nextAsked = useRef(false)
+  useEffect(() => {
+    if (!next || !shellKeepsNextCode() || nextAsked.current) return
+    nextAsked.current = true
+    void (async () => {
+      try {
+        const made = await moveApi.createNext(auth.token, collectMovePrefs(localStorage))
+        const stored = await storeNextInShell(made.publicUrl, made.code, made.expiresAt)
+        setNextStored(stored.ok)
+      } catch {
+        setNextStored(false)
+      }
+    })()
+  }, [next, auth.token])
+
+  const showNextCode = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setNextCode(await moveApi.createNext(auth.token, collectMovePrefs(localStorage)))
+    } catch (failure) {
+      setError(errorText(MOVE_ERRORS, failure))
+    }
+    setBusy(false)
+  }
+
   const showMove = off && address.publicUrl !== null
-  useBanded(showMove || recoveryUsed || notice !== null)
+  const showNext = next && (!nextHidden || nextCode !== null)
+  useBanded(showMove || showNext || recoveryUsed || notice !== null)
 
   const move = async () => {
     if (!address.publicUrl || busy) return
@@ -132,17 +186,17 @@ export function AddressBand({ auth, moveCode, onMoveCodeUsed }: { auth: Auth; mo
     setBusy(false)
   }
 
-  const copy = async () => {
-    if (!manual) return
+  const copy = async (text: string | undefined = manual?.code) => {
+    if (!text) return
     try {
-      await navigator.clipboard.writeText(manual.code)
+      await navigator.clipboard.writeText(text)
       setCopied(true)
     } catch {
       setCopied(false)
     }
   }
 
-  if (!showMove && !recoveryUsed && !notice) return null
+  if (!showMove && !showNext && !recoveryUsed && !notice) return null
   const host = address.publicUrl ? hostOf(address.publicUrl) : ''
   const shell = moveKind()
   return (
@@ -158,6 +212,61 @@ export function AddressBand({ auth, moveCode, onMoveCodeUsed }: { auth: Auth; mo
           <button type="button" className="address-band-close" onClick={() => setNotice(null)} aria-label="Kapat">
             ×
           </button>
+        </div>
+      )}
+      {showNext && (
+        <div className="address-band next" role="status" data-testid="address-next" data-host={nextHost}>
+          <div className="address-band-main">
+            <span className="address-band-text">
+              Trio’nun adresi yakında değişecek: <b>{nextHost}</b>
+            </span>
+            {!nextCode && !shellKeepsNextCode() && (
+              <button
+                type="button"
+                className="address-band-action"
+                data-testid="address-next-show"
+                disabled={busy}
+                onClick={() => void showNextCode()}
+              >
+                Taşınma kodunu göster
+              </button>
+            )}
+            {!nextCode && (
+              <button
+                type="button"
+                className="address-band-close"
+                aria-label="Kapat"
+                onClick={() => {
+                  writeDismissed(address.nextUrl ?? null)
+                  setDismissed(address.nextUrl ?? null)
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
+          {shellKeepsNextCode() ? (
+            <p className="address-band-line" data-testid="address-next-shell">
+              {nextStored
+                ? 'Masaüstü uygulaması hazır: adres değişince yeni adrese kendisi geçer.'
+                : 'Masaüstü uygulaması yeni adrese geçmek için hazırlanıyor…'}
+            </p>
+          ) : nextCode ? (
+            <p className="address-band-line" data-testid="address-next-code">
+              Bu kodu bir yere not al (7 gün geçerli, bir kez kullanılır):{' '}
+              <code className="link-code" data-testid="address-next-code-value">
+                {formatLinkCode(nextCode.code)}
+              </code>{' '}
+              <button type="button" className="link" onClick={() => void copy(nextCode.url)}>
+                {copied ? 'Bağlantı kopyalandı' : 'Bağlantıyı kopyala'}
+              </button>
+              . Adres değişince bağlantıyı aç ya da yeni adreste “Zaten hesabım var”a kodu yaz.
+            </p>
+          ) : (
+            <p className="address-band-line">
+              Adres değişince bu cihazda yeniden giriş gerekir. Taşınma kodunu şimdi alırsan tek dokunuşla geçersin.
+            </p>
+          )}
         </div>
       )}
       {showMove && (

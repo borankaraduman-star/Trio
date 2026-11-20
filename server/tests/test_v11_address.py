@@ -465,6 +465,8 @@ def test_recovery_signs_in_the_owner(make_trio, caplog):
     ali = trio.user("Ali")
     trio.user("Berk")
     assert _recover(trio, RECOVERY[:-1] + "y").status_code == 403
+    # a phone keyboard's capitals and typed dashes do not matter
+    assert _recover(trio, RECOVERY.upper().replace("X", "X-", 3), "203.0.113.78").status_code == 200
     with caplog.at_level(logging.WARNING, logger="trio"):
         response = _recover(trio, RECOVERY)
     assert response.status_code == 200
@@ -478,7 +480,7 @@ def test_recovery_signs_in_the_owner(make_trio, caplog):
     view = trio.client.get("/api/owner/address", headers=auth).json()
     assert view["recovery"]["configured"] is True
     assert view["recovery"]["used_at"] is not None
-    assert view["recovery"]["uses_this_boot"] == 1
+    assert view["recovery"]["uses_this_boot"] == 2
 
 
 def test_recovery_per_boot_limit(make_trio):

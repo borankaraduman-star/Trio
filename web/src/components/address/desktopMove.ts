@@ -4,6 +4,7 @@ export type MoveServerResult = { ok: true } | { ok: false; reason?: string }
 interface MoveBridge {
   isDesktop?: unknown
   moveServer?: (request: { origin: string; code: string }) => Promise<MoveServerResult>
+  storeNextMove?: (request: { origin: string; code: string; expiresAt: string }) => Promise<MoveServerResult>
 }
 
 function bridge(): MoveBridge | null {
@@ -23,6 +24,22 @@ export async function askShellToMove(origin: string, code: string): Promise<Move
   if (typeof move !== 'function') return { ok: false, reason: 'unsupported' }
   try {
     const result = await move({ origin, code })
+    return result && result.ok === true ? { ok: true } : { ok: false, reason: result?.reason }
+  } catch {
+    return { ok: false, reason: 'failed' }
+  }
+}
+
+/** §8: can the shell keep a next code for after the rename? */
+export function shellKeepsNextCode(): boolean {
+  return typeof bridge()?.storeNextMove === 'function'
+}
+
+export async function storeNextInShell(origin: string, code: string, expiresAt: string): Promise<MoveServerResult> {
+  const store = bridge()?.storeNextMove
+  if (typeof store !== 'function') return { ok: false, reason: 'unsupported' }
+  try {
+    const result = await store({ origin, code, expiresAt })
     return result && result.ok === true ? { ok: true } : { ok: false, reason: result?.reason }
   } catch {
     return { ok: false, reason: 'failed' }

@@ -123,7 +123,7 @@ class Settings:
         ):
             raise ConfigError("TRIO_NEXT_URL must be given normalised")
         if self.recovery_code is not None and (
-            len(self.recovery_code) < RECOVERY_CODE_MIN
+            len("".join(ch for ch in self.recovery_code if ch != "-")) < RECOVERY_CODE_MIN
             or any(ch.isspace() for ch in self.recovery_code)
         ):
             raise ConfigError(

@@ -1,0 +1,185 @@
+/* CONTRACT-V11-ADDRESS: the address bands, the "moved" and "arrival" cards, Yönetim › Adres. */
+
+html.trio-banded #root {
+  display: flex;
+  flex-direction: column;
+}
+
+html.trio-banded .app,
+html.trio-banded .join {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.address-bands {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.address-band {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 16px;
+  background: #1f2a2c;
+  border-bottom: 1px solid rgb(105 185 170 / 35%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.address-band.next {
+  background: #2a2520;
+  border-bottom-color: rgb(229 181 103 / 35%);
+}
+
+.address-band.recovery {
+  background: #e5b567;
+  color: var(--trio-base, #111318);
+  font-weight: 650;
+  text-align: center;
+}
+
+.address-band-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.address-band-text b {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.address-band-action {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--trio-online, #69b9aa);
+  color: var(--trio-base, #111318);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.address-band.next .address-band-action {
+  background: #e5b567;
+}
+
+.address-band-action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.address-band-close {
+  margin-left: auto;
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.address-band-line {
+  margin: 0;
+  text-align: center;
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.address-band-line.error {
+  color: var(--trio-danger, #e4777f);
+}
+
+.address-band-line .link-code {
+  color: var(--trio-text, #f2f1ed);
+  font-size: 15px;
+}
+
+.address-moved-host {
+  margin: 4px 0 14px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.address-moved-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  text-decoration: none;
+}
+
+.address-moved-stay,
+.address-arrival .link {
+  display: block;
+  margin: 16px auto 0;
+}
+
+.address-arrival .join-lead b {
+  color: var(--trio-text, #f2f1ed);
+}
+
+.join-card input.recovery-code-input {
+  font-family: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Menlo, Consolas, monospace;
+  font-size: 15px;
+}
+
+.address-card .address-origins {
+  margin: 4px 0 8px 18px;
+}
+
+.address-safe {
+  color: var(--trio-online, #69b9aa);
+}
+
+.address-checklist {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(229 181 103 / 40%);
+  border-radius: 8px;
+}
+
+.address-checklist p {
+  margin: 0 0 6px;
+}
+
+.address-checklist ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.address-bulk {
+  margin-top: 10px;
+}
+
+.address-bulk-list ul {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+
+.address-bulk-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--trio-border, #2b303a);
+}
+
+.address-bulk-name {
+  min-width: 90px;
+  font-weight: 650;
+}

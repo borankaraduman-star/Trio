@@ -234,14 +234,19 @@ device in with nothing but the dashboard, also when every session is gone:
       429 RATE_LIMITED           the join limiter
 
 - Precedence in the body: `link_code`, then `recovery_code`, then the invite.
-- Compared in constant time (on SHA-256 digests, so the length is not timed);
+- Compared ignoring case, spaces and dashes (a phone keyboard capitalises;
+  24 characters of lower-case letters and digits are still ~124 bits), in
+  constant time (on SHA-256 digests, so the length is not timed);
   spends the join limiter like a join (a wrong value is a failed join).
 - Each use logs `WARNING recovery.used`; it records `meta.recovery_used_at`.
 - The owner (owner rule, CONTRACT-V6-OPS §1) sees a band on every screen while
   the variable is set and was used: “Kurtarma koduyla girildi — Railway'deki
   TRIO_RECOVERY_CODE değişkenini silmeyi unutma.” Removing the variable
   (a restart) clears `recovery_used_at` and the band.
-- Client: “Zaten hesabım var” › “Sunucunun sahibiysen: kurtarma kodu”.
+- Client: “Zaten hesabım var” takes either a device code or the recovery code
+  in its one field (“Cihaz kodu ya da kurtarma kodu”): what is longer than a
+  device code is sent as `recovery_code`. It works on a fresh origin with no
+  local state, from a phone.
 
 ## 7. The owner's order of steps
 
