@@ -2,7 +2,7 @@
 
 A small group's own chat on a server it runs itself (a friend group, a small
 team, a small community; up to about 10–15 people per server): text channels,
-voice rooms (full-mesh WebRTC, so a room works best up to about 8), screen and
+voice rooms (full-mesh WebRTC, so at most 8 in a room by default), screen and
 music sharing, camera, attachments. Each group self-hosts (Railway or a VPS);
 there is no central service. The public site is `/indir`. UI text is Turkish;
 code, comments and commit messages are English.

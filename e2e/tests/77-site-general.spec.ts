@@ -137,7 +137,7 @@ test('keyboard: the invited reader reaches the download first, the other one the
   const own = page.getByTestId('own-server')
   await expect(own.locator('.own-steps > li')).toHaveCount(5)
   await expect(own).toContainText('10–15 kişilik')
-  await expect(own).toContainText('8 kişiye kadar')
+  await expect(own).toContainText('en çok 8 kişi')
   await expect(own).toContainText('TRIO_INVITE_CODE')
   await expect(own).toContainText('/data')
   // The nav reaches it too, and the join screen has its way here.

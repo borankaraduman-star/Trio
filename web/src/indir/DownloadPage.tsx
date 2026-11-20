@@ -200,8 +200,8 @@ export function DownloadPage() {
               <li>“Çağır”a bas: odada olmayan birinin telefonu çalar.</li>
             </ul>
             <p className="muted">
-              Herkes herkese bağlandığı için bir oda yaklaşık 8 kişiye kadar rahat çalışır; kalabalıksanız ikinci bir
-              oda açın.
+              Herkes herkese bağlandığı için bir sesli odaya en çok 8 kişi girer (sunucu sahibi 16'ya kadar
+              açabilir); kalabalıksanız ikinci bir oda açın.
             </p>
             <p className="try">Dene: kendi mikrofonunu kapat, Ozan'ın sesini kıs.</p>
           </div>
@@ -365,7 +365,8 @@ export function DownloadPage() {
             </Question>
             <Question q="Kaç kişiyle kullanılır?">
               Trio küçük gruplar için yapıldı: bir sunucuda 10–15 kişiye kadar. Sesli odada herkes herkese doğrudan
-              bağlandığı için bir oda yaklaşık 8 kişiye kadar rahat çalışır; kamera ve ekran açıkken bu sayı düşer.
+              bağlandığı için bir odaya en çok 8 kişi girer (sunucu sahibi 16'ya kadar açabilir); kamera ve ekran
+              açıkken daha az kişiyle daha rahat.
               Yüzlerce kişilik bir topluluk için uygun değil.
             </Question>
             <Question q="Verilerim nerede duruyor?">
@@ -485,7 +486,7 @@ function OwnServer() {
           <div>
             <dt>Kaç kişi</dt>
             <dd>
-              Bir sunucu 10–15 kişilik bir grup için. Bir sesli oda yaklaşık 8 kişiye kadar rahat; daha kalabalık bir
+              Bir sunucu 15 kişiye kadar, bir sesli oda en çok 8 kişi (sahibi 16'ya açabilir). Daha kalabalık bir
               topluluk için Trio doğru araç değil.
             </dd>
           </div>

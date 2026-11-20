@@ -4,7 +4,7 @@ Bir grubun kendi sohbeti, kendi sunucusunda: yazı kanalları, sesli odalar, ekr
 
 ![Trio: #genel kanalında bir grup akşamı planlıyor, beş kişi sesli odada](web/public/og/trio-og.png)
 
-**Kimin için, ne kadar büyük.** Trio küçük gruplar için yapıldı: bir sunucuda 10–15 kişiye kadar. Sesli odada herkes herkese doğrudan bağlanır (sunucu sesi taşımaz), bu yüzden bir oda yaklaşık 8 kişiye kadar rahat çalışır; kamera ve ekran açıkken daha az. Yüzlerce kişilik bir topluluk için uygun değil. Merkezî bir Trio hizmeti de yok: her grup kendi sunucusunu çalıştırır.
+**Kimin için, ne kadar büyük.** Trio küçük gruplar için yapıldı: bir sunucuda 10–15 kişiye kadar. Sesli odada herkes herkese doğrudan bağlanır (sunucu sesi taşımaz), bu yüzden bir sesli odaya en çok 8 kişi girer (sunucu sahibi `TRIO_VOICE_ROOM_MAX` ile 16'ya kadar açabilir); kamera ve ekran açıkken daha az kişiyle daha rahattır. Yüzlerce kişilik bir topluluk için uygun değil. Merkezî bir Trio hizmeti de yok: her grup kendi sunucusunu çalıştırır.
 
 **Kurulum.** Gruptan bir kişi sunucuyu kurar. Önerilen yol **Railway** (tek servis, tek volume, komut satırı gerekmez, yaklaşık yarım saat); isteyen kendi VPS'inde Docker Compose + coturn ile çalıştırır. Adımlar: [Kendi sunucunu kur](#kendi-sunucunu-kur). Her sunucunun `/indir` sayfası Trio'yu tanıtır ve masaüstü uygulamasını indirtir.
 
@@ -29,7 +29,7 @@ tarayıcı <──── WebRTC (ses / kamera / ekran), doğrudan ya da Cloudfla
 
 - **app**: tek konteyner (kökteki `Dockerfile`). `/api/*` (REST), `/ws` (mesajlar, çevrimiçi durumu, WebRTC sinyalleşmesi) ve derlenmiş web istemcisini sunar. Veri: tek bir SQLite dosyası + yüklenen dosyalar, ikisi de `/data` volume'unda.
 - **TURN**: iki kişi birbirine doğrudan ulaşamadığında (simetrik NAT, mobil şebeke) medyayı aktarır. Railway'de UDP olmadığı için TURN, Cloudflare'in ücretsiz TURN hizmetinden gelir; sunucu kısa ömürlü kimlik bilgilerini Cloudflare'den alıp istemciye verir.
-- Sesli oda **tam ağ (mesh)**: herkes herkese doğrudan bağlanır, sunucu medyaya dokunmaz. Seste bir oda yaklaşık 8 kişiye kadar rahattır; kamera/ekran açıkken sınır daha erken gelir. Kalabalık bir grup birden fazla sesli oda kullanır.
+- Sesli oda **tam ağ (mesh)**: herkes herkese doğrudan bağlanır, sunucu medyaya dokunmaz. Bir ses odasına varsayılan olarak en çok 8 kişi girer (`TRIO_VOICE_ROOM_MAX`, 2–16); kamera/ekran açıkken sınır daha erken gelir. Kalabalık bir grup birden fazla sesli oda kullanır.
 - Uygulama **tek süreç** çalışır (durum bellekte). Birden fazla worker ya da replika çalıştırma.
 
 Sözleşmeler: [`CONTRACT.md`](CONTRACT.md), [`CONTRACT-V2.md`](CONTRACT-V2.md), [`CONTRACT-V3.md`](CONTRACT-V3.md) (güvenlik sertleştirmesi, cihaz bağlama, yönetim aracı).
@@ -214,7 +214,7 @@ cd web && npm install && npm run dev      # http://localhost:5173, /api ve /ws :
 
 ## Bilinen sınırlar
 
-- Küçük gruplar için: bir sunucu 10–15 kişiye göre düşünüldü. Mesh nedeniyle bir sesli odada pratik sınır yaklaşık 8 kişi; kamera ve ekran paylaşımı açıkken daha az.
+- Küçük gruplar için: bir sunucu 10–15 kişiye göre düşünüldü. Mesh nedeniyle bir sesli odaya en çok 8 kişi (`TRIO_VOICE_ROOM_MAX` ile 16'ya kadar); kamera ve ekran paylaşımı açıkken daha az kişiyle daha rahat.
 - Tek süreç, tek kopya; yatay ölçekleme yok. Deploy ya da yeniden başlatmada herkes kısa süre düşer ve yeniden bağlanır.
 - Roller, moderasyon, mesaj düzenleme/silme, özel mesaj yok. Davet kodunu bilen herkes eşit üyedir.
 - Oturum belirteçlerinin süresi dolmaz. Uzaktan çıkış yaptırma ve kullanıcı kaldırma yalnızca yönetim aracıyla (komut satırı) yapılır; web arayüzünde henüz yok.

@@ -134,8 +134,8 @@ and answers, and a footer with the version and the public repository.
 
 Trio is for any group that runs its own server (a friend group, a small team,
 a small community), built for up to about 10–15 people per server; a voice
-room works best up to about 8 (full mesh). The page says so and never
-promises more. It serves two readers:
+room takes at most 8 by default, 16 if the owner raises it (CONTRACT-V10-GROUPS,
+full mesh). The page says so and never promises more. It serves two readers:
 
 - **Invited**: the hero's primary action (download for this system, or the
   phone card) and "Kurmadan kullan: tarayıcıda aç", under the label "Davet
