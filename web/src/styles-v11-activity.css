@@ -76,12 +76,10 @@
 
 /* Ayarlar › Hesap › Durum */
 .settings-subtitle {
-  margin: 10px 0 4px;
-  font-size: 12px;
+  margin: 12px 0 4px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--trio-muted, var(--text-muted, #a0a6b2));
+  color: var(--trio-text, #f2f1ed);
 }
 
 .settings-toggle.settings-sub {
