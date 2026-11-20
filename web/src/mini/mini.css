@@ -1,6 +1,5 @@
 /* CONTRACT-V12-WATCHING §6: the mini player (a popup, the desktop shell's window, Document PiP). */
 
-html,
 body.trio-mini-page,
 .trio-mini-doc {
   margin: 0;
@@ -105,8 +104,8 @@ body.trio-mini-page,
 }
 
 .mini-button.on {
-  background: #3f7cff;
-  color: #fff;
+  background: #ee997f;
+  color: #1a1d24;
 }
 
 .mini-button.off {

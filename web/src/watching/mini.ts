@@ -256,6 +256,7 @@ class MiniPlayers {
   private renderInto(instance: Instance): void {
     const doc = instance.win.document
     for (const node of document.head.querySelectorAll('link[rel="stylesheet"], style')) doc.head.appendChild(node.cloneNode(true))
+    doc.documentElement.style.height = '100%'
     doc.body.className = 'trio-mini-doc'
     doc.title = 'Trio · küçük pencere'
     const holder = doc.createElement('div')

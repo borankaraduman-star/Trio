@@ -77,6 +77,9 @@ import { NO_MEMBERS_QUERY, PHONE_QUERY, useMediaQuery } from '../lib/phone'
 import { CallBar } from './phone/CallBar'
 import { DrawerPresence, PRESENCE_ID, PresencePill } from './phone/Presence'
 import { StageFrame } from './phone/StageFrame'
+import { StageToolbar } from './watch/StageToolbar'
+import { WatchingLayer } from './watch/WatchingLayer'
+import { shareButtonText, sharesFullMessage } from '../lib/multishare'
 // CONTRACT-V8-MUSIC: sharing the sound playing on my computer.
 import { MusicButton, MusicPanel, MusicVolumeControls, RemoteMusicList, useMusicTitle } from '../music/MusicUi'
 
@@ -147,6 +150,7 @@ export function Session({
         fetchIce: () => api.ice(token),
         prefs: () => settingsStore.getSnapshot(),
         sharePrefs: () => voicePrefsStore.getSnapshot(),
+        nameOf: (userId) => stateRef.current.users[userId]?.name ?? 'Biri',
         gate: () => {
           const v6 = voicePrefsStore.getSnapshot()
           return v6.gateAuto ? null : dbToLinear(v6.gateThresholdDb)
@@ -784,6 +788,24 @@ export function Session({
     setDrawerOpen(true)
     requestAnimationFrame(() => document.getElementById(PRESENCE_ID)?.scrollIntoView({ block: 'start' }))
   }
+  // V12 (CONTRACT-V12-MULTISHARE §5): who shares in my room, and the room's cap.
+  const roomPeople = voice.channelId === null ? [] : (state.voice[voice.channelId] ?? [])
+  const sharers = roomPeople.filter((p) => p.screensharing).map((p) => p.user_id)
+  const otherSharers = sharers.filter((id) => id !== state.me.id)
+  const shareText = shareButtonText({ sharing: voice.screensharing, others: otherSharers.length, max: state.screenSharesMax })
+  const toggleScreen = () => {
+    if (shareText.full && state.screenSharesMax !== null) {
+      engine.showNotice(sharesFullMessage(state.screenSharesMax, otherSharers.map(nameOf)))
+      return
+    }
+    void engine.toggleScreen()
+  }
+  const lastLine = (() => {
+    const items = activeChannelId === null ? [] : (state.messages[activeChannelId]?.items ?? [])
+    const last = items[items.length - 1]
+    if (!last || !last.content) return null
+    return { id: Number(last.id), name: last.author?.name ?? nameOf(last.author?.id ?? 0), text: last.content.slice(0, 140) }
+  })()
   const callBar = phone && (
     <CallBar
       voice={voice}
@@ -794,7 +816,8 @@ export function Session({
       onToggleMute={() => selfToggle('mute')}
       onToggleDeafen={() => selfToggle('deafen')}
       onToggleCamera={() => void engine.toggleCamera()}
-      onToggleScreen={() => void engine.toggleScreen()}
+      onToggleScreen={toggleScreen}
+      sharingNames={sharers.map((id) => (id === state.me.id ? 'Sen' : nameOf(id)))}
       onHangup={() => engine.leave()}
       onOpenRoom={() => setDrawerOpen(true)}
       musicButton={<MusicButton voice={voice} engine={engine} variant="callbar" />}
@@ -831,7 +854,8 @@ export function Session({
                 onRing: () => alerts.ring(ringChannelId),
               }
         }
-        onToggleScreen={() => void engine.toggleScreen()}
+        onToggleScreen={toggleScreen}
+        screenShareButton={shareText}
         onToggleCamera={() => void engine.toggleCamera()}
         onOpenSettings={() => setSettingsOpen(true)}
         onHangup={() => engine.leave()}
@@ -953,6 +977,16 @@ export function Session({
           localCamera={voice.localCamera}
           deafened={voice.deafened}
           nameOf={nameOf}
+          toolbar={
+            <StageToolbar
+              voice={voice}
+              sharers={sharers}
+              me={state.me.id}
+              nameOf={nameOf}
+              max={state.screenSharesMax}
+              onShare={toggleScreen}
+            />
+          }
           {...stageExtras({
             engine,
             voice,
@@ -963,6 +997,7 @@ export function Session({
           })}
         />
         </StageFrame>
+        <WatchingLayer engine={engine} voice={voice} me={state.me.id} nameOf={nameOf} lastLine={lastLine} />
 
         {activeChannel ? (
           <>

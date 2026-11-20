@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { MiniController } from './controller'
+import './mini.css'
 
 /**
  * The mini player's whole UI (CONTRACT-V12-WATCHING §6): one picture and a
@@ -9,7 +10,7 @@ import type { MiniController } from './controller'
  */
 export function MiniView({ controller, win }: { controller: MiniController; win: Window }) {
   const snap = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
-  const video = useRef<HTMLVideoElement>(null)
+  const video = useRef<HTMLVideoElement | null>(null)
   const [hover, setHover] = useState(true)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 

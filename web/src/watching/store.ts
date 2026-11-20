@@ -13,6 +13,19 @@
  */
 import { useSyncExternalStore } from 'react'
 import type { StageMode } from '../lib/multishare'
+import type { WatchHotkeyAction } from '../ptt'
+
+export type WatchKeys = Record<WatchHotkeyAction, string | null>
+
+export const NO_WATCH_KEYS: WatchKeys = {
+  toggleMini: null,
+  nextShare: null,
+  clickThrough: null,
+  muteShare: null,
+  shareVolumeUp: null,
+  shareVolumeDown: null,
+  theatre: null,
+}
 
 export interface ShareChoice {
   /** "Hafif izleme": a small, low-frame-rate picture for me (watch.size `thumb` at most). */
@@ -49,6 +62,13 @@ export interface WatchState extends WatchSettings {
   choices: Readonly<Record<number, ShareChoice>>
   /** True while my own game status says I am playing (set by the session). */
   inGame: boolean
+  /**
+   * §7 watching keys, unbound by default (a game owns most keys): in the
+   * desktop app single global keys (`KeyboardEvent.code`), in a browser
+   * in-page chords ("Ctrl+Alt+KeyW").
+   */
+  desktopKeys: WatchKeys
+  pageKeys: WatchKeys
 }
 
 const KEY = 'trio.v12.watch'
@@ -74,6 +94,8 @@ function load(): WatchState {
     minis: [],
     choices: {},
     inGame: false,
+    desktopKeys: { ...NO_WATCH_KEYS },
+    pageKeys: { ...NO_WATCH_KEYS },
   }
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Record<string, unknown> | null
@@ -93,6 +115,14 @@ function load(): WatchState {
       }
     }
     state.choices = choices
+    for (const kind of ['desktopKeys', 'pageKeys'] as const) {
+      const keys = raw[kind] as Record<string, unknown> | undefined
+      if (!keys || typeof keys !== 'object') continue
+      for (const action of Object.keys(NO_WATCH_KEYS) as WatchHotkeyAction[]) {
+        const value = keys[action]
+        if (typeof value === 'string' && value.length > 0 && value.length <= 64) state[kind][action] = value
+      }
+    }
   } catch {
     // Unreadable or private mode: the defaults.
   }
@@ -164,6 +194,8 @@ class WatchStore {
           lightInGame: s.lightInGame,
           stats: s.stats,
           notifyShare: s.notifyShare,
+          desktopKeys: s.desktopKeys,
+          pageKeys: s.pageKeys,
         }),
       )
     } catch {

@@ -1,0 +1,444 @@
+/* CONTRACT-V12-WATCHING: several shared screens, and watching them. */
+
+/* --- over the stage: who shares, the layout switch, "Sen de paylaş" ------------------ */
+
+.v12-stage-bar {
+  flex: none;
+  background: var(--trio-base, #111318);
+}
+
+.v12-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 12px 0;
+  font-size: 13px;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.v12-sharing-line {
+  min-width: 0;
+  flex: 1 1 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v12-mode {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 999px;
+}
+
+.v12-mode button,
+.v12-share-too {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--trio-muted, #a0a6b2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.v12-mode button.on {
+  background: var(--trio-raised, #232730);
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v12-share-too {
+  border: 1px solid var(--trio-coral, #ee997f);
+  color: var(--trio-coral, #ee997f);
+}
+
+.v12-share-too[aria-disabled='true'] {
+  border-color: var(--trio-border, #2b303a);
+  color: var(--trio-muted, #a0a6b2);
+  cursor: not-allowed;
+}
+
+.v12-tip {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--trio-raised, #232730);
+  color: var(--trio-text, #f2f1ed);
+}
+
+.v12-tip button {
+  margin-left: auto;
+  flex: none;
+}
+
+/* --- two or more screens: Yan yana / Odak --------------------------------------------- */
+
+.call-stage.v12-multi {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: min(64vh, 720px);
+  max-height: none;
+}
+
+.v12-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--v12-columns, 2), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--v12-rows, 1), minmax(0, 1fr));
+  gap: 10px;
+}
+
+.v12-cell {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.v12-cell > .call-tile {
+  flex: 1;
+}
+
+.v12-strip {
+  flex: none;
+}
+
+.v12-cell.small {
+  flex: none;
+}
+
+.call-stage.v12-multi.phone {
+  height: auto;
+  max-height: none;
+}
+
+.call-stage.v12-multi.phone .v12-main {
+  /* A phone stacks the screens at their own shape and scrolls. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: none;
+  grid-auto-rows: calc((100vw - 24px) * 9 / 16);
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.call-stage.v12-multi.phone.focus .v12-main {
+  grid-auto-rows: calc((100vw - 24px) * 9 / 16);
+}
+
+/* --- on a remote screen tile: ⋯, Hafif, Sadece ses, the receiving line ----------------- */
+
+.v12-tile-menu {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+}
+
+.v12-tile-menu-button {
+  min-width: 36px;
+  height: 32px;
+  border: 0;
+  border-radius: 10px;
+  background: rgb(17 19 24 / 78%);
+  color: var(--trio-text, #f2f1ed);
+  font: 700 18px/1 inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.call-tile:hover .v12-tile-menu-button,
+.call-tile:focus-within .v12-tile-menu-button,
+.v12-tile-menu-button[aria-expanded='true'] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .v12-tile-menu-button {
+    opacity: 1;
+  }
+}
+
+.call-tile.small .v12-tile-menu-button {
+  min-width: 28px;
+  height: 26px;
+  font-size: 15px;
+}
+
+.v12-menu {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  min-width: 230px;
+  padding: 6px;
+  border: 1px solid var(--trio-border, #2b303a);
+  border-radius: 12px;
+  background: var(--trio-surface, #1a1d24);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  cursor: default;
+}
+
+.call-tile.small .v12-menu {
+  position: fixed;
+  top: auto;
+  left: auto;
+  transform: translateY(-100%);
+}
+
+.v12-menu-item {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--trio-text, #f2f1ed);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v12-menu-item:hover,
+.v12-menu-item:focus-visible {
+  background: var(--trio-raised, #232730);
+}
+
+.v12-check {
+  color: var(--trio-coral, #ee997f);
+}
+
+.v12-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--trio-border, #2b303a);
+}
+
+.v12-menu-volume {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+.v12-menu-volume input {
+  flex: 1;
+  min-width: 60px;
+}
+
+.v12-audio-only {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgb(11 13 17 / 92%);
+  color: var(--trio-text, #f2f1ed);
+  font-size: 13px;
+}
+
+.v12-light-badge,
+.v12-receive-line {
+  position: absolute;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(17 19 24 / 78%);
+  color: var(--trio-muted, #a0a6b2);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.v12-light-badge {
+  top: 10px;
+  left: 50px;
+}
+
+.v12-receive-line {
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 120px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-tile.small .v12-receive-line,
+.call-tile.small .v12-light-badge {
+  display: none;
+}
+
+/* --- the share menu: what each viewer is sent ---------------------------------------- */
+
+.share-sending {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--trio-muted, #a0a6b2);
+}
+
+/* --- Sinema modu --------------------------------------------------------------------- */
+
+.v12-theatre {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  background: #000;
+  outline: none;
+  cursor: none;
+}
+
+.v12-theatre.controls {
+  cursor: default;
+}
+
+.v12-theatre-screens {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.v12-theatre.pair .v12-theatre-screens {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (orientation: portrait) and (max-width: 680px) {
+  .v12-theatre.pair .v12-theatre-screens {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.v12-theatre-video {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  background: #000;
+}
+
+.v12-theatre-top,
+.v12-theatre-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  color: #f2f1ed;
+  font-size: 13px;
+  transition: opacity 0.25s;
+}
+
+.v12-theatre-top {
+  top: 0;
+  padding-top: max(12px, env(safe-area-inset-top));
+  background: linear-gradient(rgb(0 0 0 / 78%), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.v12-theatre.controls .v12-theatre-top {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.v12-theatre-top button,
+.v12-theatre-switch button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  background: rgb(17 19 24 / 70%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.v12-theatre-top button.primary {
+  background: var(--trio-coral, #ee997f);
+  border-color: transparent;
+  color: #1a1d24;
+}
+
+.v12-theatre-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.v12-theatre-switch button.on {
+  border-color: var(--trio-coral, #ee997f);
+  color: var(--trio-coral, #ee997f);
+}
+
+.v12-theatre-spacer {
+  flex: 1;
+}
+
+.v12-theatre-bottom {
+  bottom: 0;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  pointer-events: none;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.v12-theatre-speaking,
+.v12-theatre-chat {
+  max-width: min(640px, 100%);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgb(17 19 24 / 72%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v12-theatre-speaking {
+  color: var(--trio-speaking, #85d9c5);
+}
+
+.v12-theatre-chat {
+  animation: v12-fade 6s ease forwards;
+}
+
+@keyframes v12-fade {
+  0% {
+    opacity: 0;
+  }
+  8%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v12-theatre-chat {
+    animation: none;
+  }
+}

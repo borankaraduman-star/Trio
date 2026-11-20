@@ -14,6 +14,8 @@ import {
   type ShareQuality,
 } from '../../lib/shareProfiles'
 import { voicePrefsStore } from '../../lib/voicePrefs'
+import { sendingText, sizedEncoding } from '../../lib/multishare'
+import { profileSettings } from '../../lib/shareProfiles'
 import type { VoiceEngine, VoiceSnapshot } from '../../voice'
 import { ChevronIcon } from './icons'
 
@@ -174,6 +176,18 @@ export function ShareMenu({
           {warning && (
             <p className="share-warning" role="alert" data-testid="share-warning">
               {warning}
+            </p>
+          )}
+          {sharing && (
+            // V12 (CONTRACT-V12-WATCHING §3): each viewer is sent the size they show it at.
+            <p className="share-sending" data-testid="share-sending">
+              {'Gönderilen: '}
+              {sendingText(
+                voice.screenWatchers.map((id) => {
+                  const size = voice.screenViewSizes[id] ?? 'full'
+                  return { name: nameOf(id), size, maxBitrate: sizedEncoding(profileSettings(voice.shareProfile, voice.shareQuality), size, 0).maxBitrate }
+                }),
+              )}
             </p>
           )}
           {sharing && (

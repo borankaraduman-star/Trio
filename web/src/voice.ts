@@ -679,6 +679,12 @@ export class VoiceEngine {
     this.leave()
   }
 
+  /** V12: a sentence for the user (e.g. the room's share cap), shown where voice errors are. */
+  showNotice(message: string): void {
+    this.error = message
+    this.emit()
+  }
+
   clearError(): void {
     if (this.error === null) return
     this.error = null
@@ -1594,6 +1600,46 @@ export class VoiceEngine {
     this.afk = afk
     this.sendState()
     this.emit()
+  }
+
+  /**
+   * V12: what I receive of `userId`'s screen now: the inbound video's frame
+   * size and decoded frames, bytes and decode time totals (the caller turns
+   * two readings into rates). Null when there is no such stream.
+   */
+  async screenReceiveStats(userId: number): Promise<{
+    width: number
+    height: number
+    framesDecoded: number
+    bytes: number
+    decodeSeconds: number
+    decoder: string | null
+    at: number
+  } | null> {
+    const peer = this.peers.get(userId)
+    const track = peer?.video?.getVideoTracks()[0]
+    if (!peer || !track) return null
+    const receiver = peer.pc.getReceivers().find((r) => r.track === track)
+    if (!receiver) return null
+    try {
+      let out: Record<string, unknown> | null = null
+      ;(await receiver.getStats()).forEach((s: Record<string, unknown>) => {
+        if (s.type === 'inbound-rtp' && s.kind === 'video') out = s
+      })
+      if (!out) return null
+      const o = out as Record<string, unknown>
+      return {
+        width: Number(o.frameWidth ?? 0),
+        height: Number(o.frameHeight ?? 0),
+        framesDecoded: Number(o.framesDecoded ?? 0),
+        bytes: Number(o.bytesReceived ?? 0),
+        decodeSeconds: Number(o.totalDecodeTime ?? 0),
+        decoder: typeof o.decoderImplementation === 'string' ? o.decoderImplementation : null,
+        at: performance.now(),
+      }
+    } catch {
+      return null
+    }
   }
 
   /** Per peer while sharing: whether it watches, and its sender's bandwidth estimate (bps). */
