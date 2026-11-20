@@ -3,6 +3,8 @@ name = "trio-server"
 version = "0.8.0"
 description = "Backend of Trio, a small self-hosted chat and voice server"
 requires-python = ">=3.12"
+# SPDX expression (PEP 639); the text is LICENSE at the repository root.
+license = "MIT"
 dependencies = [
     "fastapi>=0.115",
     # FileResponse answers Range requests (attachments) from 0.40 on.
@@ -29,7 +31,8 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools>=68"]
+# 77+: the PEP 639 `license = "MIT"` expression above.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

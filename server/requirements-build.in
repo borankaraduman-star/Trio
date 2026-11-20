@@ -1,2 +1,2 @@
 # Build backend for `pip install --no-build-isolation` in the image (see Dockerfile).
-setuptools>=68
+setuptools>=77
