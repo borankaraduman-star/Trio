@@ -47,7 +47,7 @@ describe('view sizes (CONTRACT-V12-WATCHING §3)', () => {
     const film = profileSettings('film', 'mid')
     expect(sizedEncoding(film, 'full', 1080)).toEqual({ maxBitrate: 3_000_000, maxFramerate: 30, scaleResolutionDownBy: 1 })
     expect(sizedEncoding(film, 'mid', 1080)).toEqual({ maxBitrate: 1_500_000, maxFramerate: 30, scaleResolutionDownBy: 1.5 })
-    expect(sizedEncoding(film, 'thumb', 1080)).toEqual({ maxBitrate: 300_000, maxFramerate: 8, scaleResolutionDownBy: 3 })
+    expect(sizedEncoding(film, 'thumb', 1080)).toEqual({ maxBitrate: 300_000, maxFramerate: 12, scaleResolutionDownBy: 3 })
     // A small capture is never scaled up.
     expect(sizedEncoding(film, 'thumb', 300).scaleResolutionDownBy).toBe(1)
     // Unknown height: no scaling.

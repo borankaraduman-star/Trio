@@ -94,6 +94,19 @@ test('two shares: Sen de paylaş, Yan yana and Odak, each viewer sent the size i
   expect(Math.abs(boxes[0].top - boxes[1].top)).toBeLessThan(2)
   await zeynep.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-1440-2-side.png') })
 
+  // Two shares' sound at once (both fake captures carry a tone): both flow, each with its own volume.
+  const sa = await shareAudioBytes(zeynep, ayse)
+  const sm = await shareAudioBytes(zeynep, mehmet)
+  await zeynep.page.waitForTimeout(1500)
+  expect(await shareAudioBytes(zeynep, ayse)).toBeGreaterThan(sa + 2000)
+  expect(await shareAudioBytes(zeynep, mehmet)).toBeGreaterThan(sm + 2000)
+  await zeynep.page.getByTestId(`tile-menu-${ayse.user.id}`).click()
+  await zeynep.page.getByTestId(`tile-share-volume-${ayse.user.id}`).fill('40')
+  await zeynep.page.keyboard.press('Escape')
+  const volumeOf = (id: number) => zeynep.page.locator(`figure.call-tile.screen[data-user-id="${id}"] video`).getAttribute('data-volume')
+  await expect.poll(() => volumeOf(ayse.user.id)).toBe('0.4')
+  expect(await volumeOf(mehmet.user.id)).toBe('1')
+
   const offersBefore = (await negotiationLog(ayse.page)).offers + (await negotiationLog(mehmet.page)).offers + (await negotiationLog(zeynep.page)).offers
 
   // Full size for both while side by side at 1440 (each tile ~ 600 lines? the sender says).
@@ -110,7 +123,7 @@ test('two shares: Sen de paylaş, Yan yana and Odak, each viewer sent the size i
   await zeynep.page.waitForTimeout(4000)
   const thumbOut = await towards(mehmet, zeynep, (s) => s.maxBitrate === 300_000, 'thumbnail settled')
   console.log(`[92] Odak strip: Mehmet→Zeynep ${Math.round(thumbOut.kbps)} kbit/s, ${Math.round(thumbOut.fps)} fps, h ${thumbOut.height}, scale ${thumb.scale}`)
-  expect(thumbOut.fps).toBeLessThanOrEqual(9)
+  expect(thumbOut.fps).toBeLessThanOrEqual(13)
   expect(thumbOut.height).toBeLessThanOrEqual(362)
   await zeynep.page.screenshot({ path: path.join(SCREENSHOTS, 'v12-multishare-1440-2-focus.png') })
 

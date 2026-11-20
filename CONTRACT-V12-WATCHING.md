@@ -99,7 +99,7 @@ the pair has a fresh connection.
 |---|---|---|
 | `full` | ≥ 600 device px of picture height (focused, fullscreen, theatre, a big tile on a HiDPI screen) | the profile as chosen (V6 §1) |
 | `mid` | 250–599 px (a grid cell) | at most 720 lines (`scaleResolutionDownBy`), half the bitrate |
-| `thumb` | < 250 px, or mounted but not on screen (strip, "+N", collapsed, scrolled away), or "Hafif izleme" | at most 360 lines, ≤ 300 kbit/s, ≤ 8 frames/s |
+| `thumb` | < 250 px, or mounted but not on screen (strip, "+N", collapsed, scrolled away), or "Hafif izleme" | at most 360 lines, ≤ 300 kbit/s, ≤ 12 frames/s |
 | `audio` | "Sadece ses", or the share shown nowhere (the page hidden and no mini window) | video encodings `active: false`; the share's sound still sent |
 
 Growing is told at once (60 ms); shrinking after it held 700 ms
@@ -231,7 +231,7 @@ first.
 Per share, remembered per sharer (`choices` in `trio.v12.watch`):
 
 - **Hafif izleme** — caps that share at `thumb` (360 lines, ≤ 300 kbit/s,
-  ≤ 8 frames/s) wherever it is shown; a "Hafif" mark on the tile.
+  ≤ 12 frames/s) wherever it is shown; a "Hafif" mark on the tile.
 - **Sadece ses** — `audio`: the picture stops for me (the sharer's encoder for
   me is inactive), the share's sound goes on; the tile says "sadece ses" with
   "Görüntüyü aç" (frames again ~0.2 s after, a keyframe).

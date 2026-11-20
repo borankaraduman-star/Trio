@@ -4,8 +4,9 @@
  * this machine like spec 91: every sharer's upload, frames and encoder time,
  * every viewer's received bitrate and decode time, in "Yan yana" and in
  * "Odak" (one large, the rest thumbnails), and with everybody on "Hafif".
- * Printed as `[95] …`; the assertions are the direction (Odak costs less
- * than Yan yana, Hafif less than Odak) and that every screen keeps decoding.
+ * Printed as `[95] …`; the assertions: the encoder time per frame of a
+ * four-screen grid stays far under spec 91's baseline, Hafif costs less than
+ * Odak, and every screen keeps decoding.
  */
 import { freshServer } from '../lib/server'
 import { crowd, expectFullMesh, joinAllAtOnce, round } from '../lib/groups'
@@ -76,6 +77,8 @@ test('four shares in a room of five: Yan yana, Odak, Hafif', async ({ browser, t
   const side = await sample('Yan yana', people, sharers)
   for (const person of people) await person.page.getByTestId('stage-mode-focus').click()
   const focus = await sample('Odak', people, sharers)
+  // Hafif on every share, chosen from the ⋯ menu (on the large tiles of Yan yana).
+  for (const person of people) await person.page.getByTestId('stage-mode-side').click()
   for (const viewer of people) {
     for (const sharer of sharers) {
       if (sharer === viewer) continue
@@ -85,6 +88,9 @@ test('four shares in a room of five: Yan yana, Odak, Hafif', async ({ browser, t
   }
   const light = await sample('Hafif (everybody, everything)', people, sharers)
   for (const viewer of people) await expectDecodingFrom(viewer, sharers.filter((s) => s !== viewer).map((s) => s.user.id), 60_000)
-  expect(focus.sum).toBeLessThan(side.sum)
+  // Before V12 the same room spent 230–490 ms of encoder time per frame (spec 91, the
+  // contract's §2): every viewer got every share at 1080p. Now a grid of four sends
+  // small pictures, and Odak sends one large one per viewer.
+  expect(side.encMax).toBeLessThan(60)
   expect(light.sum).toBeLessThan(focus.sum)
 })

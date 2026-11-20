@@ -14,7 +14,7 @@ import { formatMbps, type ProfileSettings } from './shareProfiles'
  *   pop-out window): the profile as chosen.
  * - `mid`: a medium grid cell: at most 720 lines, half the bitrate.
  * - `thumb`: a strip thumbnail, behind "+N", or a collapsed stage, or
- *   "Hafif izleme": at most 360 lines, at most 300 kbit/s and 8 frames a
+ *   "Hafif izleme": at most 360 lines, at most 300 kbit/s and 12 frames a
  *   second. Its sound is not touched (the viewer still hears it and is still
  *   counted as watching).
  * - `audio`: "Sadece ses": the picture is not encoded for this viewer at all
@@ -44,7 +44,7 @@ export const FULL_MIN_LINES = 600
 export const THUMB_MAX_LINES = 360
 export const MID_MAX_LINES = 720
 export const THUMB_MAX_BITRATE = 300_000
-export const THUMB_MAX_FRAMERATE = 8
+export const THUMB_MAX_FRAMERATE = 12
 
 /**
  * The size a tile asks for: its picture height in DEVICE pixels (CSS height ×
