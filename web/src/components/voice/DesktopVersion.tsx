@@ -148,7 +148,9 @@ function useUpdateHint(
     } catch {
       // The bridge went away with the window.
     }
-  }, [updater, appVersion, shell?.status, shell?.version, shell?.capability, release?.version])
+  // `release` is a new object after every successful poll, so a shell that found
+  // nothing yet is asked again once the ten minutes are over.
+  }, [updater, appVersion, shell?.status, shell?.version, shell?.capability, release])
 }
 
 function useNotice(): {
