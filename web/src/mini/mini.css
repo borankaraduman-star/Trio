@@ -1,0 +1,131 @@
+/* CONTRACT-V12-WATCHING §6: the mini player (a popup, the desktop shell's window, Document PiP). */
+
+html,
+body.trio-mini-page,
+.trio-mini-doc {
+  margin: 0;
+  height: 100%;
+  background: #0b0d11;
+  color: #e9ecf2;
+  font: 13px/1.3 Inter, system-ui, sans-serif;
+  overflow: hidden;
+}
+
+#mini-root,
+.trio-mini-root {
+  height: 100%;
+}
+
+.mini {
+  position: relative;
+  height: 100%;
+  background: #0b0d11;
+  user-select: none;
+}
+
+.mini video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0b0d11;
+}
+
+.mini.audio-only video {
+  opacity: 0.15;
+}
+
+.mini-top,
+.mini-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.mini-top {
+  top: 0;
+  background: linear-gradient(rgb(0 0 0 / 70%), transparent);
+  /* Frameless desktop window: the top strip moves it. */
+  -webkit-app-region: drag;
+}
+
+.mini-bar {
+  bottom: 0;
+  flex-wrap: wrap;
+  background: linear-gradient(transparent, rgb(0 0 0 / 75%));
+}
+
+.mini.controls .mini-top,
+.mini.controls .mini-bar,
+.mini:focus-within .mini-top,
+.mini:focus-within .mini-bar {
+  opacity: 1;
+}
+
+.mini-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-speaking {
+  color: #8fe3b0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-drag {
+  flex: 1;
+  min-width: 8px;
+  align-self: stretch;
+}
+
+.mini-button,
+.mini input {
+  -webkit-app-region: no-drag;
+}
+
+.mini-button {
+  min-width: 32px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(17 19 24 / 82%);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mini-button.on {
+  background: #3f7cff;
+  color: #fff;
+}
+
+.mini-button.off {
+  color: #e4777f;
+}
+
+.mini input[type='range'] {
+  width: 84px;
+}
+
+.mini-note {
+  position: absolute;
+  inset: 40% 12px auto;
+  margin: 0;
+  text-align: center;
+  color: #c9cfda;
+}
+
+.mini-orphan {
+  padding: 16px;
+  color: #c9cfda;
+}

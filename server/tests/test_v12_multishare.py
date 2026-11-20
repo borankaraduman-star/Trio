@@ -128,3 +128,25 @@ def test_a_join_carrying_a_share_past_the_cap_joins_without_it(make_trio):
         own_state(a, ali["id"])
         join(b, screensharing=True)
         assert trio.client.app.state.hub.voice[VOICE][berk["id"]].screensharing is False
+
+
+# -- the mini player page (CONTRACT-V12-WATCHING §6) -----------------------------
+
+
+def test_the_mini_player_page_carries_the_app_shells_policy(make_trio, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>Trio</title>")
+    (dist / "mini.html").write_text("<!doctype html><title>mini</title>")
+    trio = make_trio(static_dir=str(dist))
+    response = trio.client.get("/mini.html?m=3", headers={"Host": "trio.example"})
+    assert response.status_code == 200
+    assert "<title>mini</title>" in response.text
+    shell = trio.client.get("/", headers={"Host": "trio.example"})
+    for header in (
+        "content-security-policy",
+        "x-frame-options",
+        "permissions-policy",
+        "cache-control",
+    ):
+        assert response.headers[header] == shell.headers[header]

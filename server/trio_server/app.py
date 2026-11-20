@@ -754,7 +754,8 @@ def _mount_static(app: FastAPI, directory: Path) -> None:
         if path and "\x00" not in path:
             candidate = (root / path).resolve()
             # resolve() follows ".." and symlinks; anything outside the root is not ours.
-            if candidate == root / "index.html":
+            # CONTRACT-V12-WATCHING §6: the mini player is part of the app: same policy.
+            if candidate in (root / "index.html", root / "mini.html"):
                 return FileResponse(candidate, headers=_app_shell_headers(request))
             if candidate.is_relative_to(root) and candidate.is_file():
                 headers = {"X-Content-Type-Options": "nosniff"}

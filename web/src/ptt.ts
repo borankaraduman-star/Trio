@@ -109,6 +109,49 @@ export interface TrioDesktopBridge {
   downloadUpdate?: () => Promise<unknown>
   installUpdate?: () => Promise<{ ok: boolean; reason?: string }>
   setAutoUpdate?: (on: boolean) => void
+  /** CONTRACT-V12-WATCHING §6 (absent in older apps): the shell's mini player windows. */
+  mini?: DesktopMiniBridge
+  /** CONTRACT-V12-WATCHING §7: global keys for watching (KeyboardEvent.code values, null = unbound). */
+  setWatchHotkeys?: (keys: WatchHotkeyKeys) => void
+  onWatchHotkey?: (callback: (action: WatchHotkeyAction) => void) => () => void
+  /** CONTRACT-V12-WATCHING §6: the main window's state, for the automatic mini player. */
+  onWindowState?: (callback: (state: DesktopWindowState) => void) => () => void
+}
+
+/** CONTRACT-V12-WATCHING §7: what a watching hotkey does. */
+export type WatchHotkeyAction =
+  | 'toggleMini'
+  | 'nextShare'
+  | 'clickThrough'
+  | 'muteShare'
+  | 'shareVolumeUp'
+  | 'shareVolumeDown'
+  | 'theatre'
+
+export type WatchHotkeyKeys = Partial<Record<WatchHotkeyAction, string | null>>
+
+export interface DesktopMiniState {
+  id: string
+  visible: boolean
+  clickThrough: boolean
+  bounds: { x: number; y: number; width: number; height: number }
+}
+
+/** CONTRACT-V12-WATCHING §6: the desktop shell's side of a mini window (`trio-mini-<id>`). */
+export interface DesktopMiniBridge {
+  supported: true
+  setOptions(id: string, options: { opacity?: number; clickThrough?: boolean; alwaysOnTop?: boolean; aspect?: number }): void
+  show(id: string): void
+  hide(id: string): void
+  close(id: string): void
+  onState(callback: (state: DesktopMiniState) => void): () => void
+}
+
+export interface DesktopWindowState {
+  focused: boolean
+  minimized: boolean
+  hiddenToTray: boolean
+  fullscreenAppInFront?: boolean
 }
 
 export function desktopBridge(): TrioDesktopBridge | null {

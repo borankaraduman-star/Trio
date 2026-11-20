@@ -13,16 +13,30 @@ import { formatMbps, type ProfileSettings } from './shareProfiles'
  * - `full`: large on the screen (focused, a big grid cell, fullscreen, a
  *   pop-out window): the profile as chosen.
  * - `mid`: a medium grid cell: at most 720 lines, half the bitrate.
- * - `thumb`: a strip thumbnail, behind "+N", or a collapsed stage: at most
- *   360 lines, at most 300 kbit/s and 8 frames a second. Its sound is not
- *   touched (the viewer still hears it and is still counted as watching).
+ * - `thumb`: a strip thumbnail, behind "+N", or a collapsed stage, or
+ *   "Hafif izleme": at most 360 lines, at most 300 kbit/s and 8 frames a
+ *   second. Its sound is not touched (the viewer still hears it and is still
+ *   counted as watching).
+ * - `audio`: "Sadece ses": the picture is not encoded for this viewer at all
+ *   (its video encodings inactive), the share's sound still is.
  */
-export type ViewSize = 'full' | 'mid' | 'thumb'
+export type ViewSize = 'full' | 'mid' | 'thumb' | 'audio'
 
-export const VIEW_SIZES: readonly ViewSize[] = ['full', 'mid', 'thumb']
+/** Largest first: of several places showing one share, the largest wins. */
+export const VIEW_SIZES: readonly ViewSize[] = ['full', 'mid', 'thumb', 'audio']
 
 export function isViewSize(value: unknown): value is ViewSize {
-  return value === 'full' || value === 'mid' || value === 'thumb'
+  return value === 'full' || value === 'mid' || value === 'thumb' || value === 'audio'
+}
+
+/** The larger of two sizes. */
+export function largerSize(a: ViewSize, b: ViewSize): ViewSize {
+  return VIEW_SIZES.indexOf(a) <= VIEW_SIZES.indexOf(b) ? a : b
+}
+
+/** The smaller of two sizes. */
+export function smallerSize(a: ViewSize, b: ViewSize): ViewSize {
+  return VIEW_SIZES.indexOf(a) >= VIEW_SIZES.indexOf(b) ? a : b
 }
 
 /** Device pixels of picture height at and above which a tile is `full`; `mid` from THUMB_MIN_LINES. */
@@ -73,6 +87,7 @@ export function sizedEncoding(settings: ProfileSettings, size: ViewSize, sourceH
         maxFramerate: settings.maxFramerate,
         scaleResolutionDownBy: scaleTo(MID_MAX_LINES),
       }
+    case 'audio':
     case 'thumb':
       return {
         maxBitrate: Math.min(settings.maxBitrate, THUMB_MAX_BITRATE),
@@ -82,7 +97,7 @@ export function sizedEncoding(settings: ProfileSettings, size: ViewSize, sourceH
   }
 }
 
-export const SIZE_LABELS: Record<ViewSize, string> = { full: 'büyük', mid: 'orta', thumb: 'küçük' }
+export const SIZE_LABELS: Record<ViewSize, string> = { full: 'büyük', mid: 'orta', thumb: 'küçük', audio: 'sadece ses' }
 
 /**
  * What the sharer's menu says it sends (V12 §3): "3 izleyici ≈ 3,9 Mbps:
@@ -91,7 +106,7 @@ export const SIZE_LABELS: Record<ViewSize, string> = { full: 'büyük', mid: 'or
  */
 export function sendingText(viewers: readonly { name: string; size: ViewSize; maxBitrate: number }[]): string {
   if (viewers.length === 0) return 'Şu an kimse izlemiyor: yükleme yok.'
-  const total = viewers.reduce((sum, v) => sum + v.maxBitrate, 0)
+  const total = viewers.reduce((sum, v) => sum + (v.size === 'audio' ? 0 : v.maxBitrate), 0)
   return `${viewers.length} izleyici ≈ en çok ${formatMbps(total)}: ${viewers.map((v) => `${v.name} ${SIZE_LABELS[v.size]}`).join(', ')}`
 }
 

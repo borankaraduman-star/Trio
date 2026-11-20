@@ -1489,7 +1489,8 @@ export class VoiceEngine {
         continue
       }
       for (const encoding of params.encodings) {
-        encoding.active = peer.watching
+        // V12: "Sadece ses": the picture stops for this viewer, its sound does not.
+        encoding.active = peer.watching && !(video && peer.viewSize === 'audio')
         if (video) {
           encoding.maxBitrate = sized.maxBitrate
           encoding.maxFramerate = sized.maxFramerate
@@ -1520,7 +1521,9 @@ export class VoiceEngine {
       if (this.hiddenScreens.get(userId) === stream) return
       this.hiddenScreens.set(userId, stream)
     }
-    if (peer) this.signal(userId, { watch: { stream, on } })
+    // V12: watching again: at the size I show it (absent = full, as before).
+    const size = on ? this.viewSizes.get(userId) : undefined
+    if (peer) this.signal(userId, { watch: size ? { stream, on, size } : { stream, on } })
     this.emit()
   }
 
