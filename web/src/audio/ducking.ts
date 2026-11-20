@@ -29,9 +29,13 @@
  * Time: the factor is a function of the clock, not of how many ticks ran, so
  * a late tick lands on the right value instead of lagging. Ticks are a plain
  * interval timer while something moves (none at rest): requestAnimationFrame
- * stops in a hidden tab, and a hidden page that is PLAYING SOUND — the only
- * case where ducking has anything to do — is exempt from Chromium's timer
- * throttling (measured in e2e 96 with the tab hidden).
+ * stops in a hidden tab or minimised window, a timer does not, and Chromium
+ * exempts a page that is PLAYING SOUND — the only case where ducking has
+ * anything to do — from its background timer throttling. (That exemption is
+ * Chromium's documented policy, not measured here: headless Chromium never
+ * hides a page; see CONTRACT-V12-DUCKING §2. At worst a throttled timer
+ * makes the ramps coarse — one step a second — never wrong, because the
+ * value is computed from the clock.)
  */
 
 export const DUCK_PREFS_KEY = 'trio.duck12'
@@ -301,7 +305,7 @@ export class Ducker {
       target.last = factor
       target.apply(factor)
     }
-    this.probe(now)
+    this.probe(now, ducked)
     const busy = holding || this.depth.share.moving(now) || this.depth.music.moving(now)
     if (busy && this.timer === null) {
       this.lastTick = now
@@ -334,13 +338,13 @@ export class Ducker {
     return this.timer !== null
   }
 
-  private probe(now: number): void {
+  private probe(now: number, ducked: boolean): void {
     const w = globalThis as DuckProbe
     if (!w.__trioDuckProbe) return
     w.__trioDuck ??= { share: 1, music: 1, ticks: 0, maxGapMs: 0, hiddenTicks: 0, hiddenMaxGapMs: 0, speech: false }
     w.__trioDuck.share = this.factor('share', now)
     w.__trioDuck.music = this.factor('music', now)
-    w.__trioDuck.speech = this.speech || this.endedAt !== null
+    w.__trioDuck.speech = ducked
   }
 }
 
