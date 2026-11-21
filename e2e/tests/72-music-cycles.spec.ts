@@ -16,6 +16,7 @@ test.beforeEach(async () => {
 })
 
 const CYCLES = 15
+const HANDOVERS = 4
 const SIGNAL_CAP = 64 * 1024
 
 async function person(browser: Parameters<typeof personViaApi>[0], name: string): Promise<Person> {
@@ -35,7 +36,7 @@ async function setMusic(sharer: Person, listener: Person, on: boolean): Promise<
   await expect(listener.page.getByTestId(`remote-music-${sharer.user.id}`)).toHaveCount(on ? 1 : 0, { timeout: 30_000 })
 }
 
-test('music on and off 15 times: no rollback, the offer stays small, the microphones never stop', async ({ browser, trio }) => {
+test('music on and off 15 times: no rollback, the offer stays small, the microphones never stop; handing it over', async ({ browser, trio }) => {
   test.setTimeout(480_000)
   // Ayşe has the lower id (she offers when she likes); Mehmet the higher (he asks for a turn).
   const ayse = trio.add(await person(browser, 'Ayşe'))
@@ -80,6 +81,19 @@ test('music on and off 15 times: no rollback, the offer stays small, the microph
   }
   // The description of cycle 15 is the size of cycle 1's: transceivers were stopped and recycled.
   expect(sizes[CYCLES - 1]).toBeLessThan(sizes[0] + 2_000)
+  // Handing the music over: one stops at the moment the other starts, so the
+  // new share's track is added while the old one's stop is not negotiated
+  // yet. It must not land on the transceiver that stop is about to end.
+  for (let turn = 1; turn <= HANDOVERS; turn++) {
+    const [from, to] = turn % 2 === 1 ? [ayse, mehmet] : [mehmet, ayse]
+    await setMusic(from, to, true)
+    await expectMusicFlowing(to, from, `handover ${turn}: ${to.name} hears ${from.name}'s music first`)
+    await Promise.all([from.page.getByTestId('btn-music').click(), to.page.getByTestId('btn-music').click()])
+    await Promise.all([setMusic(from, to, false), setMusic(to, from, true)])
+    await expectMusicFlowing(from, to, `handover ${turn}: ${from.name} hears ${to.name}'s music after the handover`)
+    await setMusic(to, from, false)
+  }
+
   // And the microphones are heard both ways at the end.
   await expectHearing(ayse, mehmet)
   await expectHearing(mehmet, ayse)

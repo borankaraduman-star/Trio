@@ -122,6 +122,33 @@ test('room of 3: two, then three people share at once', async ({ browser, trio }
   await measureRoom(await crowd(browser, trio, 3, probe), 3)
 })
 
+/**
+ * One share stops at the moment another starts (a handover): the new share's
+ * track is added while the old one's stop is not negotiated yet, and must not
+ * land on the transceiver that stop is about to end (it did, and that viewer
+ * never got a frame of the new share).
+ */
+test('room of 3: a share starts as another one stops, both ways', async ({ browser, trio }) => {
+  test.setTimeout(240_000)
+  const people = await crowd(browser, trio, 3, probe)
+  await joinAllAtOnce(people)
+  await expectFullMesh(people)
+  const [ayse, mehmet] = people
+  for (let turn = 1; turn <= 4; turn += 1) {
+    const [from, to] = turn % 2 === 1 ? [ayse, mehmet] : [mehmet, ayse]
+    await shareOn(from)
+    for (const viewer of people) if (viewer !== from) await expectDecodingFrom(viewer, [from.user.id])
+    await Promise.all([from.page.getByTestId('btn-screen').click(), to.page.getByTestId('btn-screen').click()])
+    await expect(to.page.getByTestId('btn-screen')).toHaveAttribute('aria-pressed', 'true')
+    await expect(from.page.getByTestId('btn-screen')).toHaveAttribute('aria-pressed', 'false')
+    for (const viewer of people) if (viewer !== to) await expectDecodingFrom(viewer, [to.user.id])
+    await to.page.getByTestId('btn-screen').click()
+    for (const viewer of people) await expect(viewer.page.locator('figure.call-tile.screen')).toHaveCount(0, { timeout: 20_000 })
+  }
+  const logs = await Promise.all(people.map((p) => negotiationLog(p.page)))
+  expect(logs.reduce((a, l) => a + l.rollbacks, 0), 'no rollback').toBe(0)
+})
+
 test('room of 5: two, three, four people share at once', async ({ browser, trio }) => {
   test.setTimeout(360_000)
   await measureRoom(await crowd(browser, trio, 5, probe), 4)

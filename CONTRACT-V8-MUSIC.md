@@ -99,7 +99,11 @@ at once (the client does not forbid it; the UI shows each).
   rollback: e2e 72 counts explicit and implicit rollbacks (a remote offer
   applied in `have-local-offer`) over 15 on/off cycles, every fifth by both
   people at once — 0 — and every signalling state seen is `stable`,
-  `have-local-offer` or `have-remote-offer`. Received in e2e 71/73/74: ~128
+  `have-local-offer` or `have-remote-offer`. Each music track is added on a
+  transceiver of its own (`addTransceiver`, never one `addTrack` would
+  reuse): a share started at the moment the other person's ended used to
+  land on the transceiver that person's stop was ending, and never arrived;
+  e2e 72 hands the music over four times, both ways. Received in e2e 71/73/74: ~128
   kbit/s, left ≈ 0.50, right 0.
 - **The sharer's own Trio sound must not be in it.** If the captured sound
   included the voices of the room, everybody would hear themselves back.

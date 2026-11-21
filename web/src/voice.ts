@@ -403,6 +403,22 @@ function stopStream(stream: MediaStream | null): void {
 }
 
 /**
+ * Adds a camera, screen or music track on a transceiver of its own, never a
+ * reused one. `addTrack` reuses any transceiver of the same kind that has never
+ * sent, and that includes the one receiving the peer's media when the peer has
+ * just stopped it and its stop is not negotiated yet: the peer's offer then
+ * stops that transceiver, and the share added on it is gone for that peer with
+ * nothing to show for it (measured: a music share started right after the
+ * peer's music ended never arrived; a screen restarted in the same second as
+ * another one never reached some viewers). `addTransceiver` always makes a new
+ * one (a stopped m-line is still recycled). The microphone keeps `addTrack`:
+ * it is added before anything is received, and pairs with the peer's.
+ */
+function addSendTrack(pc: RTCPeerConnection, track: MediaStreamTrack, stream: MediaStream): RTCRtpSender {
+  return pc.addTransceiver(track, { direction: 'sendrecv', streams: [stream] }).sender
+}
+
+/**
  * Ends what these senders send, for good, by STOPPING their transceivers.
  *
  * Not `removeTrack`: that only turns a transceiver to `recvonly`, it stays in
@@ -1040,7 +1056,7 @@ export class VoiceEngine {
     for (const track of stream.getTracks()) {
       if (track.readyState !== 'live') continue
       try {
-        peer.screenSenders.push(peer.pc.addTrack(track, stream))
+        peer.screenSenders.push(addSendTrack(peer.pc, track, stream))
       } catch (error) {
         console.warn('trio: could not add screen track', error)
       }
@@ -1131,7 +1147,7 @@ export class VoiceEngine {
     for (const track of stream.getAudioTracks()) {
       if (track.readyState !== 'live') continue
       try {
-        peer.musicSenders.push(peer.pc.addTrack(track, stream))
+        peer.musicSenders.push(addSendTrack(peer.pc, track, stream))
       } catch (error) {
         console.warn('trio: could not add the music track', error)
       }
@@ -1334,7 +1350,7 @@ export class VoiceEngine {
     for (const track of stream.getVideoTracks()) {
       if (track.readyState !== 'live') continue
       try {
-        peer.cameraSenders.push(peer.pc.addTrack(track, stream))
+        peer.cameraSenders.push(addSendTrack(peer.pc, track, stream))
       } catch (error) {
         console.warn('trio: could not add camera track', error)
       }

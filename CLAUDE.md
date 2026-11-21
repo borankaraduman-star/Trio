@@ -100,6 +100,13 @@ the deploy) → dispatch the release.
   m-lines and the offer outgrows the server's 64 KiB signal cap after ~12. A
   negotiation the server refuses can never complete; the pair then starts
   again on fresh connections ("fresh connections" in `voice.ts`).
+- **A camera, screen or music track goes on a transceiver of its own**
+  (`addSendTrack` in `voice.ts`: `addTransceiver`, not `addTrack`). Chromium's
+  `addTrack` reuses any transceiver of the same kind that has never sent,
+  including the one receiving the peer's share when the peer has just stopped
+  it and that stop is not negotiated yet; the peer's offer then stops it, and
+  the new share is gone for that peer without an error (a music or screen
+  "handover" lost it every time; e2e 72 and 91 now hand over both ways).
 - **Assert on media, not on elements.** An `<audio>` element existing proves
   nothing; the e2e helpers check receiver stats and signal level.
 - **The sent microphone track never changes.** Mute, push-to-talk, noise

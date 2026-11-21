@@ -14,6 +14,16 @@ const WIDE = { viewport: { width: 1440, height: 900 } }
 const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
 const shot = (name: string) => path.join(SCREENSHOTS, `v10-groups-${name}.png`)
 
+/** For a failure message: the tiles and the people strip on a page. */
+async function stageTiles(page: import('@playwright/test').Page): Promise<string> {
+  return page.evaluate(() =>
+    [
+      ...[...document.querySelectorAll<HTMLElement>('figure.call-tile')].map((f) => `${f.dataset.kind}:${f.dataset.userId}`),
+      ...[...document.querySelectorAll<HTMLElement>('[data-testid^="stage-person-"]')].map((f) => f.dataset.testid),
+    ].join(' '),
+  )
+}
+
 test.beforeEach(async () => {
   await freshServer({ TRIO_VOICE_ROOM_MAX: '10' })
 })
@@ -129,7 +139,11 @@ test('the call stage with eight cameras and a shared screen, at 1440 and 390', a
 
   // 1440: nine tiles (the screen, seven cameras, my own) fit the stage's nine.
   const stage = ayse.page.getByTestId('stage')
-  await expect(stage).toHaveAttribute('data-count', '9', { timeout: 30_000 })
+  await expect(stage)
+    .toHaveAttribute('data-count', '9', { timeout: 30_000 })
+    .catch(async (error: unknown) => {
+      throw new Error(`Ayşe's stage: ${await stageTiles(ayse.page)}; ids ${people.map((p) => `${p.name}=${p.user.id}`).join(' ')}\n${String(error)}`)
+    })
   await expect(stage).toHaveAttribute('data-shown', '9')
   await expect(ayse.page.getByTestId('stage-more')).toHaveCount(0)
   await expect(stage.locator('.call-tile').first()).toHaveAttribute('data-kind', 'screen')
@@ -162,8 +176,11 @@ test('the call stage with eight cameras and a shared screen, at 1440 and 390', a
   await expect(bar).toBeVisible()
   await expect.poll(async () => (await bar.textContent()) ?? '', { timeout: 20_000 }).toMatch(/Konuşuyor: [^,]+, [^+]+ \+\d|Konuşuyor|kişi/)
   const line = (await bar.textContent()) ?? ''
-  // Never a list of nine names: at most two and "+N".
-  expect((line.match(/,/g) ?? []).length).toBeLessThanOrEqual(1)
+  // Never a list of nine names (CONTRACT-V10-GROUPS §3): up to three speakers
+  // are named as before; four or more lead with the count and name two, "+N".
+  const named = /^(?:.*?)(\d+) kişi konuşuyor: [^,]+, [^,+]+ \+\d+$/.exec(line.replace(/^Sohbet/, ''))
+  if (named) expect(Number(named[1])).toBeGreaterThan(3)
+  else expect((line.match(/,/g) ?? []).length, line).toBeLessThanOrEqual(2)
   await phone.page.screenshot({ path: shot('call-bar-390') })
 
   // The people strip under the screen when cameras go off: the room's people as small tiles.
@@ -173,7 +190,11 @@ test('the call stage with eight cameras and a shared screen, at 1440 and 390', a
   }
   // Nine people's cameras going off reach Ayşe as voice.state frames on a loaded machine.
   await expect(ayse.page.getByTestId('stage-people')).toBeVisible({ timeout: 30_000 })
-  await expect(ayse.page.locator('[data-testid^="stage-person-"]')).toHaveCount(7, { timeout: 30_000 })
+  await expect(ayse.page.locator('[data-testid^="stage-person-"]'))
+    .toHaveCount(7, { timeout: 30_000 })
+    .catch(async (error: unknown) => {
+      throw new Error(`Ayşe's stage: ${await stageTiles(ayse.page)}; ids ${people.map((p) => `${p.name}=${p.user.id}`).join(' ')}\n${String(error)}`)
+    })
   await ayse.page.waitForTimeout(1500)
   await ayse.page.screenshot({ path: shot('stage-people-1440') })
 })
