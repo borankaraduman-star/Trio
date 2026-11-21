@@ -56,11 +56,18 @@ export const FAKE_MUSIC_CAPTURE = `
       const audio = destination.stream.getAudioTracks()[0]
       const audioSettings = audio.getSettings.bind(audio)
       audio.getSettings = () => ({ ...audioSettings(), restrictOwnAudio: false })
+      // The app stops the track when the share ends; the context goes with it
+      // (a page runs at most 50 AudioContexts: past them a new one stays
+      // suspended and its track carries no sound, ~45 shares into a test).
+      const stop = audio.stop.bind(audio)
+      audio.stop = () => {
+        stop()
+        if (context.state !== 'closed') void context.close()
+      }
       tracks.push(audio)
       window.__trioMusicEnd = () => {
         audio.stop()
         audio.dispatchEvent(new Event('ended'))
-        void context.close()
       }
     }
     return new MediaStream(tracks)
@@ -277,25 +284,78 @@ export async function expectStereoMusic(listener: Person, sharer: Person, what: 
       )
       .toBe(true)
   } catch (error) {
-    throw new Error(`${what}: last ${JSON.stringify(last)}\n${String(error)}`)
+    const sides = [
+      `listener: ${JSON.stringify(await transceiverDump(listener.page, sharer.user.id))}`,
+      `sharer: ${JSON.stringify(await transceiverDump(sharer.page, null))}`,
+    ]
+    throw new Error(`${what}: last ${JSON.stringify(last)}\n${sides.join('\n')}\n${String(error)}`)
   }
   return last as unknown as MusicIn
+}
+
+/**
+ * For a failure message: the music element (when `musicOf` is given), and per
+ * live connection each transceiver's mid, directions, tracks and bytes.
+ */
+export async function transceiverDump(page: Page, musicOf: number | null): Promise<unknown> {
+  return page.evaluate(async (id) => {
+    const element = id === null ? null : document.querySelector<HTMLAudioElement>(`[data-testid="remote-music-${id}"]`)
+    const stream = (element?.srcObject as MediaStream | null) ?? null
+    const pcs = (window as unknown as { __trioPcs: RTCPeerConnection[] }).__trioPcs.filter((pc) => pc.connectionState !== 'closed')
+    const out: unknown[] = []
+    for (const pc of pcs) {
+      const bytes = new Map<string, number>()
+      ;(await pc.getStats()).forEach((s) => {
+        if (s.type === 'inbound-rtp' || s.type === 'outbound-rtp') bytes.set(`${s.type}:${s.mid ?? ''}`, s.bytesReceived ?? s.bytesSent ?? 0)
+      })
+      out.push({
+        state: `${pc.connectionState}/${pc.signalingState}`,
+        t: pc.getTransceivers().map((t) => ({
+          mid: t.mid,
+          kind: t.receiver.track.kind,
+          dir: `${t.direction}/${t.currentDirection}`,
+          send: t.sender.track
+            ? `${t.sender.track.label.slice(0, 24)}:${t.sender.track.readyState}${t.sender.track.enabled ? '' : ':disabled'}${t.sender.track.muted ? ':muted' : ''}`
+            : null,
+          enc: (t.sender.getParameters().encodings ?? []).map((e) => `${e.active ? 'on' : 'off'}/${e.maxBitrate ?? '-'}`).join(','),
+          recv: `${t.receiver.track.id.slice(0, 8)}:${t.receiver.track.readyState}${t.receiver.track.muted ? ':muted' : ''}`,
+          in: bytes.get(`inbound-rtp:${t.mid ?? ''}`) ?? null,
+          out: bytes.get(`outbound-rtp:${t.mid ?? ''}`) ?? null,
+        })),
+      })
+    }
+    return {
+      element: element ? { stream: stream?.id.slice(0, 8) ?? null, tracks: stream?.getTracks().map((t) => `${t.id.slice(0, 8)}:${t.readyState}`) ?? [] } : null,
+      pcs: out,
+    }
+  }, musicOf)
 }
 
 /** Music still arrives (any level on either channel, bytes growing). */
 export async function expectMusicFlowing(listener: Person, sharer: Person, what: string): Promise<MusicIn> {
   let last: MusicIn | null = null
-  await expect
-    .poll(
-      async () => {
-        last = await musicIn(listener, sharer, 1000)
-        return last !== null && last.kbps > 20 && Math.max(last.left, last.right) > 0.05
-      },
-      { timeout: 30_000, message: `${what}: last ${JSON.stringify(last)}` },
-    )
-    .toBe(true)
+  try {
+    await expect
+      .poll(
+        async () => {
+          last = await musicIn(listener, sharer, 1000)
+          return last !== null && last.kbps > 20 && Math.max(last.left, last.right) > 0.05
+        },
+        { timeout: 30_000, message: what },
+      )
+      .toBe(true)
+  } catch (error) {
+    // The last reading, taken when the poll gave up (a message built before
+    // the poll would always say null).
+    const sides = [
+      `listener: ${JSON.stringify(await transceiverDump(listener.page, sharer.user.id))}`,
+      `sharer: ${JSON.stringify(await transceiverDump(sharer.page, null))}`,
+    ]
+    throw new Error(`${what}: last ${JSON.stringify(last)}\n${sides.join('\n')}\n${String(error)}`)
+  }
   return last as unknown as MusicIn
 }
+
 
 // --- a display for the headed browser of spec 73 ------------------------------------
 

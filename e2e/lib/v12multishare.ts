@@ -17,16 +17,49 @@ export function screenTileSelector(sharerId: number): string {
  * page every 40 ms so the time is close to the frame's own.
  */
 export async function firstFrameAt(viewer: Person, sharerId: number, timeout = 30_000): Promise<number> {
-  const handle = await viewer.page.waitForFunction(
-    (selector) => {
-      const video = document.querySelector<HTMLVideoElement>(selector)
-      if (!video || video.videoWidth === 0) return false
-      return video.getVideoPlaybackQuality().totalVideoFrames > 0 ? Date.now() : false
-    },
-    screenTileSelector(sharerId),
-    { polling: 40, timeout },
-  )
-  return (await handle.jsonValue()) as number
+  try {
+    const handle = await viewer.page.waitForFunction(
+      (selector) => {
+        const video = document.querySelector<HTMLVideoElement>(selector)
+        if (!video || video.videoWidth === 0) return false
+        return video.getVideoPlaybackQuality().totalVideoFrames > 0 ? Date.now() : false
+      },
+      screenTileSelector(sharerId),
+      { polling: 40, timeout },
+    )
+    return (await handle.jsonValue()) as number
+  } catch (error) {
+    throw new Error(`${viewer.name}: no frame of ${sharerId}'s screen: ${JSON.stringify(await screenTileState(viewer.page, sharerId))}\n${String(error)}`)
+  }
+}
+
+/** For a failure message: the viewer's screen tiles and what arrives of `sharerId`'s video. */
+export async function screenTileState(page: Page, sharerId: number): Promise<unknown> {
+  return page
+    .evaluate(async (id) => {
+      const tiles = [...document.querySelectorAll<HTMLElement>('figure.call-tile')].map((f) => `${f.dataset.kind}:${f.dataset.userId}${f.classList.contains('folded') ? ':folded' : ''}`)
+      const video = document.querySelector<HTMLVideoElement>(`figure.call-tile.screen[data-user-id="${id}"] video`)
+      const track = (video?.srcObject as MediaStream | null)?.getVideoTracks()[0] ?? null
+      const pcs = (window as unknown as { __trioPcs: RTCPeerConnection[] }).__trioPcs.filter((pc) => pc.connectionState !== 'closed')
+      let inbound: Record<string, unknown> | null = null
+      let transceiver: string | null = null
+      for (const pc of pcs) {
+        const t = pc.getTransceivers().find((x) => x.receiver.track === track)
+        if (!t) continue
+        transceiver = `${t.mid} ${t.direction}/${t.currentDirection} ${pc.connectionState}/${pc.signalingState}`
+        ;(await t.receiver.getStats()).forEach((s) => {
+          if (s.type === 'inbound-rtp') inbound = { bytes: s.bytesReceived, frames: s.framesDecoded, w: s.frameWidth, keyFrames: s.keyFramesDecoded, pli: s.pliCount }
+        })
+      }
+      return {
+        tiles,
+        video: video ? { w: video.videoWidth, frames: video.getVideoPlaybackQuality().totalVideoFrames, ready: video.readyState, paused: video.paused } : null,
+        track: track ? `${track.readyState}${track.muted ? ':muted' : ''}` : null,
+        transceiver,
+        inbound,
+      }
+    }, sharerId)
+    .catch((error: unknown) => String(error))
 }
 
 /** Every screen of `sharerIds` is decoding on the viewer's page (frames grow over 700 ms). */
