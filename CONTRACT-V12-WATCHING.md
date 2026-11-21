@@ -37,13 +37,21 @@ host candidates only. Spec 91 prints `[91] …`, 95 prints `[95] …`.
 **The protocol held everywhere.** In every room size and number of shares
 (rooms of 3, 5, 8; 1–4 shares; one after another and all starting within the
 same second): **0 rollbacks** (explicit or an offer applied in
-`have-local-offer`), **0 fresh connections**, one video m-line per connection
-whatever the number of shares (a share reuses the transceiver the other side's
-share created), and the largest description **7.4 KB**, far under the 64 KiB
-signal cap. Starting a share costs one offer per connection of the sharer
-(n−1); four people starting within the same second in a room of five: 17
-offers in all, every viewer decoding every share. No bug was found in the
-negotiation.
+`have-local-offer`), **0 fresh connections**, and the largest description
+far under the 64 KiB signal cap. Starting a share costs one offer per
+connection of the sharer (n−1); four people starting within the same second
+in a room of five: 16–17 offers in all, every viewer decoding every share.
+
+**One bug was found later (21 Nov 2026, CI): a share started at the moment
+another one stopped.** The new share's track was added with `addTrack`, which
+reused the transceiver receiving the other person's share; that person's stop
+(not negotiated yet) then stopped it, and the viewer on that connection never
+got a frame (CI's room-of-8 storm, and every time in a room-of-3 handover).
+Since then a share always gets a transceiver of its own (`addTransceiver`):
+**two video m-lines** on a connection where both sides share (it was one, the
+second share riding on the first's transceiver), and the largest description
+**11.3 KB** (was 7.4 KB), same rooms and shares. Spec 91 hands a share over
+four times, both ways, in a room of three.
 
 **Time to the first decoded frame and what it does to the others**
 (baseline, before §3; median over the viewers):
