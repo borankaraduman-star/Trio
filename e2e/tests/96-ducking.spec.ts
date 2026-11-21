@@ -215,7 +215,9 @@ test('a shared screen ducks while somebody speaks, comes back after hold and rel
   expect(full!).toBeGreaterThan(TONE_LEVEL * 1.5 * 0.8)
   expect(duckedPeak! / full!).toBeGreaterThan(DUCKED - 0.06)
   expect(duckedPeak! / full!).toBeLessThan(DUCKED + 0.06)
-  expect(after! / full!).toBeGreaterThan(0.95)
+  // The decoded tone's own peak drifts by several percent between reads (0.33 then 0.30 on a CI runner with
+  // nothing ducked), so "back to full" is told from the ducked level (0.4), not held to 5 %.
+  expect(after! / full!).toBeGreaterThan(0.85)
   expect(voice.tap).not.toBeNull()
   expect(Math.abs(voice.tap! / voice.source - 1.5) / 1.5).toBeLessThan(0.15)
   // Back to the element for the hidden-tab part (its volume is read without an analyser).
